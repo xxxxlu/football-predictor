@@ -30,7 +30,25 @@ export const sessions = identitySchema.table("sessions", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("identity_sessions_user_idx").on(table.userId)]);
+
+export const reauthProofs = identitySchema.table("reauth_proofs", {
+  tokenHash: text("token_hash").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  sessionTokenHash: text("session_token_hash").notNull().references(() => sessions.tokenHash, { onDelete: "cascade" }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("identity_reauth_proofs_user_expiry_idx").on(table.userId, table.expiresAt)]);
+
+export const adminAccountAuditEvents = identitySchema.table("admin_account_audit_events", {
+  auditId: uuid("audit_id").primaryKey(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => identityUsers.id),
+  targetUserId: uuid("target_user_id").notNull().references(() => identityUsers.id),
+  action: text("action").notNull(),
+  result: text("result").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+});
 
 export const authAttempts = identitySchema.table("auth_attempts", {
   id: uuid("id").defaultRandom().primaryKey(),

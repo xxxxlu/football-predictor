@@ -7,7 +7,7 @@ import { recoveryReceiptContinueHref, safeReturnTo } from "./navigation";
 
 type Mode = "login" | "register" | "recover";
 type ApiError = { error?: { code?: string; message?: string; correlationId?: string } };
-type ApiSuccess = { data?: { recoveryCode?: string; redirectTo?: string } };
+type ApiSuccess = { data?: { recoveryCode?: string; redirectTo?: string; mustChangePassword?: boolean } };
 
 const errors: Record<string, string> = { INVALID_CREDENTIALS: "用户名或密码不正确。", USERNAME_TAKEN: "这个用户名已被使用，请换一个。", RECOVERY_CODE_INVALID: "恢复码无效或已使用。", RATE_LIMITED: "尝试次数过多，请稍后再试。", VALIDATION_ERROR: "请检查填写内容。" };
 
@@ -25,7 +25,7 @@ export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) 
       const result = await response.json().catch(() => ({})) as ApiError & ApiSuccess;
       if (!response.ok) { const code = result.error?.code || "UNKNOWN"; setError(errors[code] || result.error?.message || "暂时无法完成，请稍后重试。"); return; }
       if (result.data?.recoveryCode) { setRecoveryCode(result.data.recoveryCode); return; }
-      router.replace(safeReturnTo(returnTo || result.data?.redirectTo));
+      router.replace(result.data?.mustChangePassword ? "/change-password" : safeReturnTo(returnTo || result.data?.redirectTo));
     } catch { setError("网络连接失败。你的账户和积分没有发生变化，请检查网络后重试。"); } finally { setPending(false); }
   }
   if (recoveryCode) return <RecoveryReceipt code={recoveryCode} continueHref={recoveryReceiptContinueHref(returnTo)} />;

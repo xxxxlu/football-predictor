@@ -1,6 +1,6 @@
 /*看球账本 Service Worker：只读缓存，不实现后台同步或写请求重放。*/
 const CACHE_PREFIX = "matchday-ledger-shell-";
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
@@ -52,11 +52,10 @@ self.addEventListener("fetch", (event) => {
   if (request.mode === "navigate") {
     event.respondWith((async () => {
       try {
-        const response = await fetch(request);
-        return await cacheSuccessfulResponse(request, response);
+        /*导航可能包含私人房间或账户外壳，绝不持久化到 Cache Storage。*/
+        return await fetch(request);
       } catch {
-        const cachedNavigation = await caches.match(request);
-        return cachedNavigation || await caches.match(OFFLINE_URL) || Response.error();
+        return await caches.match(OFFLINE_URL) || Response.error();
       }
     })());
     return;
