@@ -10,5 +10,10 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
   },
-  "dependencies": { "@football-predictor/config": "workspace:*" }
+  "dependencies": {
+    "@football-predictor/api-football": "workspace:*",
+    "@football-predictor/config": "workspace:*",
+    "@football-predictor/db": "workspace:*",
+    "@football-predictor/domain": "workspace:*"
+  }
 }

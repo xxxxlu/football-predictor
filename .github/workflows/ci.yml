@@ -11,7 +11,27 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: football
+          POSTGRES_PASSWORD: football_ci
+          POSTGRES_DB: football_predictor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U football -d football_predictor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: test
+      APP_VERSION: ci
+      LOG_LEVEL: info
+      RULES_VERSION: phase-1-ci
+      DATABASE_URL: postgresql://football:football_ci@127.0.0.1:5432/football_predictor_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -22,6 +42,20 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Migration smoke and idempotency
+        run: |
+          pnpm db:migrate
+          pnpm db:migrate
+          pnpm --filter @football-predictor/db exec node --input-type=module -e '
+            import { readdir } from "node:fs/promises";
+            import postgres from "postgres";
+            const expected = (await readdir("migrations")).filter((name) => name.endsWith(".sql")).length;
+            const sql = postgres(process.env.DATABASE_URL, { max: 1, prepare: false });
+            const [{ count }] = await sql`SELECT count(*)::int AS count FROM public.app_schema_migrations`;
+            await sql.end();
+            if (count !== expected) throw new Error(`migration smoke mismatch: expected ${expected}, got ${count}`);
+            console.log(`migration smoke passed: ${count} migrations, second run idempotent`);
+          '
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test

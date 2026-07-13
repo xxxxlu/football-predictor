@@ -1,0 +1,72 @@
+import { sql } from "drizzle-orm";
+import { check, foreignKey, index, numeric, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { identityUsers } from "../identity/schema.js";
+
+export const roomSchema = pgSchema("room");
+export const ledgerSchema = pgSchema("ledger");
+export const roomStatus = pgEnum("room_status", ["ACTIVE", "RESTRICTED", "CLOSED"]);
+export const roomRole = pgEnum("room_role", ["OWNER", "MEMBER"]);
+
+export const rooms = roomSchema.table("rooms", {
+  id: uuid("id").primaryKey(),
+  name: text("name").notNull(),
+  status: roomStatus("status").notNull().default("ACTIVE"),
+  inviteTokenHash: text("invite_token_hash").notNull(),
+  createdBy: uuid("created_by").notNull().references(() => identityUsers.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [unique("room_invite_token_hash_unique").on(table.inviteTokenHash)]);
+
+export const roomMembers = roomSchema.table("members", {
+  roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  role: roomRole("role").notNull(),
+  acceptedRulesVersion: text("accepted_rules_version").notNull(),
+  acceptedRulesAt: timestamp("accepted_rules_at", { withTimezone: true }).notNull(),
+  joinedAt: timestamp("joined_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.roomId, table.userId] }),
+  index("room_members_user_idx").on(table.userId),
+]);
+
+export const pointAccounts = ledgerSchema.table("point_accounts", {
+  roomId: uuid("room_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  availablePoints: numeric("available_points", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  frozenPoints: numeric("frozen_points", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  correctionDebt: numeric("correction_debt", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.roomId, table.userId] }),
+  foreignKey({ columns: [table.roomId, table.userId], foreignColumns: [roomMembers.roomId, roomMembers.userId] }).onDelete("restrict"),
+  check("point_accounts_nonnegative", sql`${table.availablePoints} >= 0 AND ${table.frozenPoints} >= 0 AND ${table.correctionDebt} >= 0`),
+]);
+
+export const pointLedgerEntries = ledgerSchema.table("entries", {
+  id: uuid("id").primaryKey(),
+  roomId: uuid("room_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  kind: text("kind").notNull(),
+  amount: numeric("amount", { precision: 20, scale: 2 }).notNull(),
+  availableDeltaPoints: numeric("available_delta_points", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  frozenDeltaPoints: numeric("frozen_delta_points", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  correctionDebtDeltaPoints: numeric("correction_debt_delta_points", { precision: 20, scale: 2 }).notNull().default("0.00"),
+  ticketId: uuid("ticket_id"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  auditId: uuid("audit_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.roomId, table.userId], foreignColumns: [pointAccounts.roomId, pointAccounts.userId] }).onDelete("restrict"),
+  unique("ledger_entries_idempotency_unique").on(table.idempotencyKey),
+  index("ledger_entries_account_idx").on(table.roomId, table.userId, table.createdAt),
+]);
+
+export const roomAuditEvents = roomSchema.table("audit_events", {
+  auditId: uuid("audit_id").primaryKey(),
+  actorUserId: uuid("actor_user_id").notNull().references(() => identityUsers.id),
+  roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "restrict" }),
+  action: text("action").notNull(),
+  result: text("result").notNull(),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+});

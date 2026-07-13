@@ -11,10 +11,15 @@
     "predev": "pnpm --filter @football-predictor/config build"
   },
   "dependencies": {
+    "@football-predictor/config": "workspace:*",
+    "@football-predictor/db": "workspace:*",
+    "@football-predictor/domain": "workspace:*",
+    "@node-rs/argon2": "2.0.2",
     "next": "16.2.10",
+    "postgres": "3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
-    "@football-predictor/config": "workspace:*"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

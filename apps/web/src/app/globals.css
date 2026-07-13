@@ -1,19 +1,60 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fafafa;
-  --foreground: #18181b;
+  --paper: #f4f0e6;
+  --paper-raised: #fffdf7;
+  --ink: #17233b;
+  --field: #176b4d;
+  --field-dark: #0f5039;
+  --coral: #d85b45;
+  --amber: #9a641c;
+  --line: #cbc4b5;
+  --muted: #665f54;
+  --focus: #315f9e;
+  --shadow: 0 12px 34px rgb(23 35 59 / 9%);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--paper);
+  --color-foreground: var(--ink);
+  --font-sans: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Source Serif 4", "Songti SC", "STSong", ui-serif, Georgia, serif;
 }
 
+* { box-sizing: border-box; }
+html { background: var(--paper); }
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  margin: 0;
+  background:
+    radial-gradient(circle at 14% -5%, rgb(23 107 77 / 8%), transparent 28rem),
+    var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+a { color: inherit; }
+button, input { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+::selection { background: rgb(23 107 77 / 20%); }
+
+.display { font-family: var(--font-serif); letter-spacing: -0.025em; }
+.tabular { font-variant-numeric: tabular-nums; }
+.eyebrow {
+  color: var(--field);
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+.surface { background: rgb(255 253 247 / 84%); border: 1px solid var(--line); }
+.rule { border-color: var(--line); }
+.skip-link {
+  position: fixed; left: 1rem; top: -5rem; z-index: 100;
+  background: var(--ink); color: white; padding: .75rem 1rem;
+}
+.skip-link:focus { top: 1rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }

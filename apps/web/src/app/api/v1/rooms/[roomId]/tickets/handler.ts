@@ -1,0 +1,59 @@
+import { AuthError, RoomError, TicketSubmissionError, type PredictionSelection } from "@football-predictor/domain";
+import { z } from "zod";
+import { readSessionToken } from "../../../auth/_lib/handlers";
+
+const bodySchema = z.object({
+  matchId: z.string().min(1),
+  marketId: z.union([z.string().min(1), z.number().int()]).transform(String),
+  marketVersion: z.string().min(1),
+  selection: z.enum(["HOME", "DRAW", "AWAY"]),
+  stakePoints: z.union([z.string().regex(/^\d+$/), z.number().int()]).transform(Number),
+  acceptedOdds: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/),
+});
+
+interface IdentityLookup { authenticate(token: string): Promise<{ id: string } | null> }
+interface TicketApplication { submit(input: { userId: string; roomId: string; marketId: string; selection: PredictionSelection; stakePoints: number; acceptedOddsVersion: string; acceptedDecimalOdds: string; idempotencyKey: string }): Promise<{ id: string; status: string; stakePoints: number }> }
+
+export function createTicketPost(identity: IdentityLookup, tickets: TicketApplication) {
+  return async (request: Request, roomId: string) => {
+    try {
+      assertSameOrigin(request);
+      const token = readSessionToken(request);
+      const account = token ? await identity.authenticate(token) : null;
+      if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+      const idempotencyKey = request.headers.get("idempotency-key")?.trim();
+      if (!idempotencyKey || idempotencyKey.length > 128) throw new AuthError("IDEMPOTENCY_KEY_REQUIRED", 422, "Retry with a valid Idempotency-Key.");
+      const input = bodySchema.parse(await request.json());
+      const ticket = await tickets.submit({
+        userId: account.id,
+        roomId,
+        marketId: input.marketId,
+        selection: input.selection,
+        stakePoints: input.stakePoints,
+        acceptedOddsVersion: input.marketVersion,
+        acceptedDecimalOdds: input.acceptedOdds,
+        idempotencyKey,
+      });
+      return Response.json({ data: { ticketId: ticket.id, status: ticket.status, stakePoints: ticket.stakePoints } }, { status: 201, headers: { "cache-control": "no-store" } });
+    } catch (error) {
+      if (error instanceof TicketSubmissionError) return ticketError(error);
+      if (error instanceof AuthError || error instanceof RoomError) return failure(error.code, error.action ?? "The request could not be completed.", error.status);
+      if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", "Check the prediction fields and try again.", 422);
+      return failure("INTERNAL_ERROR", "The prediction could not be submitted.", 500);
+    }
+  };
+}
+
+function ticketError(error: TicketSubmissionError) {
+  const status = error.code === "DATA_UNAVAILABLE" ? 503 : error.code === "MARKET_CLOSED" || error.code === "ODDS_CHANGED" ? 409 : 422;
+  const messages: Record<TicketSubmissionError["code"], string> = {
+    MARKET_CLOSED: "This market is closed. No points were frozen.",
+    ODDS_CHANGED: "Odds changed. Confirm the latest odds and submit again.",
+    DATA_UNAVAILABLE: "Verified fresh market data is unavailable. No points were frozen.",
+    INSUFFICIENT_POINTS: "The room account does not have enough available points.",
+    INVALID_STAKE: "Use a whole-number stake from 1 to 20,000 points.",
+  };
+  return failure(error.code, messages[error.code], status);
+}
+function failure(code: string, message: string, status: number) { return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } }); }
+function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403, "Reload this page and try again."); }

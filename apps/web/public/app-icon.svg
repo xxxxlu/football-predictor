@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">看球账本</title>
+  <rect width="512" height="512" rx="72" fill="#F4F0E6"/>
+  <path d="M92 72h328v368H92z" fill="#17233B"/>
+  <path d="M124 104h264v304H124z" fill="#FFFDF7"/>
+  <path d="M164 176h184M164 232h184M164 288h116M164 344h150" stroke="#CBC4B5" stroke-width="20"/>
+  <circle cx="336" cy="330" r="64" fill="#176B4D"/>
+  <path d="m306 330 20 20 40-44" fill="none" stroke="#fff" stroke-linecap="square" stroke-width="18"/>
+</svg>
