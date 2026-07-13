@@ -1,0 +1,12 @@
+import Link from "next/link";
+import { BrandMark } from "./brand-mark";
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return <div className="min-h-screen pb-20 md:pb-0">
+    <header className="border-b border-[var(--line)] bg-[rgb(244_240_230/92%)] backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 md:px-8"><BrandMark/><nav aria-label="账户"><Link href="/login" className="text-sm font-bold underline-offset-4 hover:underline">登录</Link><Link href="/register" className="ml-4 border border-[var(--ink)] bg-[var(--ink)] px-4 py-2 text-sm font-bold text-white no-underline hover:bg-[var(--field)]">创建账户</Link></nav></div>
+    </header>
+    {children}
+    <footer className="border-t border-[var(--line)] px-4 py-8 text-center text-xs leading-5 text-[var(--muted)]">仅使用虚拟积分，不支持充值、提现或兑换。18 岁以上用户可使用。</footer>
+  </div>;
+}

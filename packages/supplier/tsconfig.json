@@ -1,0 +1,1 @@
+{"extends":"../../tsconfig.base.json","compilerOptions":{"noEmit":true,"rootDir":"../.."},"include":["src/**/*.ts","../domain/src/competition/**/*.ts","../domain/src/supplier-budget/**/*.ts"]}

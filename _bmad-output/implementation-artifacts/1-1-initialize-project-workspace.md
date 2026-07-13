@@ -1,6 +1,6 @@
 # Story 1.1: 从 Starter Template 初始化项目工作区
 
-Status: review
+Status: done
 
 ## Story
 
@@ -198,4 +198,5 @@ GPT-5.5 Codex
 
 ### Change Log
 
+- 2026-07-13: User explicitly waived code review for rapid launch; Story marked done after previously passing all DoD checks.
 - 2026-07-13: Initialized monorepo foundation, health/config/Worker baselines, automated tests, CI and documentation; moved Story 1.1 to review.
