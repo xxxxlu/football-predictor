@@ -36,7 +36,7 @@ export function createAuthHandlers(service: AuthService, options: { rulesVersion
       assertSameOrigin(request);
       const input = loginSchema.parse(await request.json());
       const result = await service.login({ ...input, sourceKey: sourceKey(request) });
-      const response = json({ data: { redirectTo: "/" } });
+      const response = json({ data: { redirectTo: "/rooms" } });
       response.headers.append("set-cookie", sessionCookie(result.sessionToken, result.expiresAt, options.secureCookie));
       return response;
     }),

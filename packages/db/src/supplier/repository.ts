@@ -62,20 +62,26 @@ export function statusForSync(syncState: SyncState, sourceVerified: boolean, dat
 
 type FixtureRow = {
   id: string; supplier: "API_FOOTBALL"; supplierFixtureId: string; competitionId: string; competitionName: string;
-  season: number; kickoffAt: Date; status: MatchStatus; homeTeamId: string; homeTeamName: string; awayTeamId: string;
-  awayTeamName: string; currentVersion: string; dataAsOf: Date; capturedAt: Date;
+  season: number; kickoffAt: Date | string; status: MatchStatus; homeTeamId: string; homeTeamName: string; awayTeamId: string;
+  awayTeamName: string; currentVersion: string; dataAsOf: Date | string; capturedAt: Date | string;
 };
 
 type OddsRow = {
   productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL"; supplierFixtureId: string; bookmakerId: string;
-  bookmakerName: string; supplierMarketId: string; marketName: string; currentVersion: string; dataAsOf: Date;
-  capturedAt: Date; outcomes: OddsSnapshotRecord["outcomes"];
+  bookmakerName: string; supplierMarketId: string; marketName: string; currentVersion: string; dataAsOf: Date | string;
+  capturedAt: Date | string; outcomes: OddsSnapshotRecord["outcomes"];
 };
 
 type LiveRow = {
   fixtureId: string; supplierFixtureId: string; homeScore: number; awayScore: number; minute: number | null;
-  dataAsOf: Date; capturedAt: Date; markets: LiveSnapshotRecord["markets"];
+  dataAsOf: Date | string; capturedAt: Date | string; markets: LiveSnapshotRecord["markets"];
 };
+
+function isoTimestamp(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  if (!Number.isFinite(date.getTime())) throw new TypeError("Invalid PostgreSQL timestamp");
+  return date.toISOString();
+}
 
 function mapFixture(row: FixtureRow): FixtureSnapshotRecord {
   return {
@@ -85,13 +91,13 @@ function mapFixture(row: FixtureRow): FixtureSnapshotRecord {
     competitionId: Number(row.competitionId),
     competitionName: row.competitionName,
     season: row.season,
-    kickoffAt: row.kickoffAt.toISOString(),
+    kickoffAt: isoTimestamp(row.kickoffAt),
     status: row.status,
     homeTeam: { supplierTeamId: Number(row.homeTeamId), name: row.homeTeamName },
     awayTeam: { supplierTeamId: Number(row.awayTeamId), name: row.awayTeamName },
     version: row.currentVersion,
-    dataAsOf: row.dataAsOf.toISOString(),
-    capturedAt: row.capturedAt.toISOString(),
+    dataAsOf: isoTimestamp(row.dataAsOf),
+    capturedAt: isoTimestamp(row.capturedAt),
   };
 }
 
@@ -106,8 +112,8 @@ function mapOdds(row: OddsRow): OddsSnapshotRecord & { productMarketId: string }
     marketId: Number(row.supplierMarketId),
     marketName: row.marketName,
     version: row.currentVersion,
-    dataAsOf: row.dataAsOf.toISOString(),
-    capturedAt: row.capturedAt.toISOString(),
+    dataAsOf: isoTimestamp(row.dataAsOf),
+    capturedAt: isoTimestamp(row.capturedAt),
     outcomes: row.outcomes,
   };
 }
@@ -195,7 +201,7 @@ export class PostgresMatchSnapshotRepository {
     const [row] = await this.sql<LiveRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",home_score AS "homeScore",
       away_score AS "awayScore",minute,data_as_of AS "dataAsOf",captured_at AS "capturedAt",markets
       FROM supplier.live_snapshots WHERE fixture_id=${matchId} LIMIT 1`;
-    return row ? { ...row, supplierFixtureId: Number(row.supplierFixtureId), dataAsOf: row.dataAsOf.toISOString(), capturedAt: row.capturedAt.toISOString() } : null;
+    return row ? { ...row, supplierFixtureId: Number(row.supplierFixtureId), dataAsOf: isoTimestamp(row.dataAsOf), capturedAt: isoTimestamp(row.capturedAt) } : null;
   }
 
   async setSyncState(matchId: string, state: SyncState): Promise<void> {

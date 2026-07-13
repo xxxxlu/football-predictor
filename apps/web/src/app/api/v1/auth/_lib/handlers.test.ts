@@ -33,7 +33,7 @@ describe("auth HTTP handlers", () => {
   it("sets and clears an HttpOnly session cookie", async () => {
     const { handlers, service } = setup();
     const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123" }));
-    expect(await login.json()).toEqual({ data: { redirectTo: "/" } });
+    expect(await login.json()).toEqual({ data: { redirectTo: "/rooms" } });
     expect(login.headers.get("set-cookie")).toContain("fp_session=opaque-token");
     expect(login.headers.get("set-cookie")).toContain("HttpOnly");
     expect(login.headers.get("set-cookie")).toContain("SameSite=Lax");
@@ -42,6 +42,15 @@ describe("auth HTTP handlers", () => {
     const logout = await handlers.logout(request("/api/v1/auth/logout", undefined, "fp_session=opaque-token"));
     expect(service.logout).toHaveBeenCalledWith("opaque-token");
     expect(logout.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("does not mark a local HTTP development cookie as Secure", async () => {
+    const service = setup().service;
+    const handlers = createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: false });
+    const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123" }));
+
+    expect(login.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(login.headers.get("set-cookie")).not.toContain("Secure");
   });
 
   it("returns a stable error envelope without sensitive details", async () => {

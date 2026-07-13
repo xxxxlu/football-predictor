@@ -13,7 +13,7 @@ export type ApiFailure = { error?: { code?: string; message?: string; correlatio
 type ProductMatch = {
   id?: string; kickoffAt?: string; status?: string; dataAsOf?: string;
   homeTeam?: string | { name?: string }; awayTeam?: string | { name?: string };
-  market?: { marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: Array<{ selection?: string; decimalOdds?: string }>; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
+  market?: { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: Array<{ selection?: string; decimalOdds?: string }>; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
 };
 
 export function normalizeMatch(value: ProductMatch): MatchView | null {
@@ -24,5 +24,5 @@ export function normalizeMatch(value: ProductMatch): MatchView | null {
   const dataState = value.market?.dataState;
   const state: MatchState = status === "FINISHED" ? "FINISHED" : ["CANCELLED", "POSTPONED", "LIVE"].includes(status || "") ? "CLOSED" : value.market?.marketStatus === "OPEN" ? "OPEN" : dataState === "PAUSED" || dataState === "SYNCING" ? "PAUSED" : "DATA_UNAVAILABLE";
   const home = outcome("HOME"), draw = outcome("DRAW"), away = outcome("AWAY");
-  return { id: value.id, kickoffAt: value.kickoffAt, homeTeam: team(value.homeTeam), awayTeam: team(value.awayTeam), state, dataAsOf: value.market?.dataAsOf || value.dataAsOf, stale: dataState === "STALE", supplierStatus: dataState, market: home && draw && away && value.market?.trace?.marketId != null && value.market.trace.oddsVersion ? { id: value.market.trace.marketId, version: value.market.trace.oddsVersion, home, draw, away } : undefined };
+  return { id: value.id, kickoffAt: value.kickoffAt, homeTeam: team(value.homeTeam), awayTeam: team(value.awayTeam), state, dataAsOf: value.market?.dataAsOf || value.dataAsOf, stale: dataState === "STALE", supplierStatus: dataState, market: home && draw && away && value.market?.id && value.market.trace?.oddsVersion ? { id: value.market.id, version: value.market.trace.oddsVersion, home, draw, away } : undefined };
 }

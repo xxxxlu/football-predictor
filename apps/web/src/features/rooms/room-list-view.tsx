@@ -1,0 +1,97 @@
+"use client";
+
+import Link from "next/link";
+import { FormEvent, useEffect, useId, useState } from "react";
+import { useRouter } from "next/navigation";
+import { DataStatePanel } from "@/components/data-state-panel";
+import { StatusMessage } from "@/components/status-message";
+import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { buildInvitePath, createRoomRequest, type RoomSummaryRecord } from "./room-flow";
+
+type CreatedRoom = RoomSummaryRecord & { inviteToken: string };
+
+export function RoomListView() {
+  const router = useRouter();
+  const nameId = useId();
+  const rulesId = useId();
+  const [rooms, setRooms] = useState<RoomSummaryRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
+  const [created, setCreated] = useState<CreatedRoom>();
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch("/api/v1/rooms", { credentials: "same-origin", signal: controller.signal });
+        const result = await response.json().catch(() => ({})) as ApiEnvelope<RoomSummaryRecord[]> & ApiFailure;
+        if (!response.ok) throw new Error(result.error?.message || "无法加载房间");
+        setRooms(Array.isArray(result.data) ? result.data : []);
+      } catch (reason) {
+        if ((reason as Error).name !== "AbortError") setLoadError((reason as Error).message || "无法加载房间");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  async function createRoom(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const formElement = event.currentTarget;
+    setCreating(true);
+    setCreateError("");
+    setCreated(undefined);
+    setCopied(false);
+    const form = new FormData(formElement);
+    const request = createRoomRequest(String(form.get("name") || ""));
+    try {
+      const response = await fetch(request.url, request.init);
+      const result = await response.json().catch(() => ({})) as ApiEnvelope<CreatedRoom> & ApiFailure;
+      if (!response.ok) throw new Error(roomError(result.error?.code, result.error?.message));
+      setCreated(result.data);
+      setRooms((current) => [result.data, ...current.filter((room) => room.id !== result.data.id)]);
+      formElement.reset();
+    } catch (reason) {
+      setCreateError((reason as Error).message || "暂时无法创建房间");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const invitePath = created ? buildInvitePath(created.inviteToken) : "";
+  const inviteUrl = invitePath && typeof window !== "undefined" ? `${window.location.origin}${invitePath}` : invitePath;
+
+  return <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.72fr)]">
+    <section aria-labelledby="my-rooms-title">
+      <div className="mb-4 flex items-end justify-between gap-4"><div><p className="eyebrow">私人房间</p><h2 id="my-rooms-title" className="display mt-1 text-2xl font-bold">已加入的房间</h2></div><span className="tabular text-xs text-[var(--muted)]">{rooms.length} 个</span></div>
+      {loading ? <DataStatePanel state="loading" title="正在加载房间" description=""/> : loadError ? <DataStatePanel state="error" title="房间加载失败" description={loadError} action={<button type="button" onClick={() => window.location.reload()} className="border border-[var(--ink)] px-4 py-2 font-bold">重新加载</button>}/> : rooms.length ? <ul className="space-y-3">{rooms.map((room) => <li key={room.id}><Link href={`/rooms/${encodeURIComponent(room.id)}`} className="surface flex min-h-20 items-center justify-between gap-4 p-4 no-underline hover:border-[var(--field)]"><div><strong className="block">{room.name}</strong><span className="mt-1 block text-xs text-[var(--muted)]">{room.role === "room_owner" ? "房主" : "成员"}{room.memberCount === undefined ? "" : ` · ${room.memberCount} 人`}</span></div><span aria-hidden="true" className="text-xl">→</span></Link></li>)}</ul> : <DataStatePanel state="empty" title="还没有房间" description="创建一个私人房间，或打开朋友发来的邀请链接。"/>}
+    </section>
+
+    <aside className="surface h-fit p-5 sm:p-6" aria-labelledby="create-room-title">
+      <p className="eyebrow">开始比赛日</p><h2 id="create-room-title" className="display mt-1 text-2xl font-bold">创建私人房间</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">你会成为房主，并获得一条只应发送给朋友的邀请链接。</p>
+      {createError && <div className="mt-4"><StatusMessage tone="error" title="未能创建">{createError}</StatusMessage></div>}
+      {created && <div className="mt-4"><StatusMessage tone="success" title="房间已创建">邀请链接只展示在当前结果中；离开后可在房间内重置生成新链接。</StatusMessage><label className="mt-4 block text-xs font-bold" htmlFor={`${nameId}-invite`}>邀请链接</label><input id={`${nameId}-invite`} readOnly value={inviteUrl} className="mt-2 min-h-11 w-full border border-[var(--line)] bg-white px-3 text-sm"/><div className="mt-3 grid gap-2 sm:grid-cols-2"><button type="button" onClick={async () => { try { await copyInvite(inviteUrl); setCopied(true); } catch { setCreateError("浏览器无法自动复制，请手动选择上方链接。"); } }} className="min-h-11 border border-[var(--ink)] px-3 font-bold">{copied ? "已复制" : "复制邀请"}</button><button type="button" onClick={() => router.push(`/rooms/${encodeURIComponent(created.id)}`)} className="min-h-11 bg-[var(--field)] px-3 font-bold text-white">进入房间</button></div></div>}
+      <form onSubmit={createRoom} className="mt-5 space-y-4">
+        <div><label htmlFor={nameId} className="mb-2 block text-sm font-bold">房间名称</label><input id={nameId} name="name" required minLength={2} maxLength={80} placeholder="例如：周末看球局" className="min-h-12 w-full border border-[var(--line)] bg-white px-3"/></div>
+        <label htmlFor={rulesId} className="flex cursor-pointer items-start gap-3 text-sm leading-6"><input id={rulesId} name="rulesAccepted" type="checkbox" required className="mt-1 size-5 shrink-0 accent-[var(--field)]"/><span>我确认当前私人房间规则，并理解积分不可购买、转让或兑换。 <Link href="/terms" className="font-bold underline">查看规则</Link></span></label>
+        <button disabled={creating} className="min-h-12 w-full bg-[var(--field)] px-4 font-bold text-white disabled:opacity-55">{creating ? "正在创建…" : "创建房间并生成邀请"}</button>
+      </form>
+    </aside>
+  </div>;
+}
+
+async function copyInvite(value: string) {
+  if (!value) return;
+  await navigator.clipboard.writeText(value);
+}
+
+function roomError(code?: string, fallback?: string) {
+  if (code === "ROOM_RULES_REQUIRED") return "请确认当前私人房间规则。";
+  if (code === "INVALID_ROOM_NAME") return "房间名称需要 2–80 个字符。";
+  if (code === "UNAUTHENTICATED") return "登录状态已失效，请重新登录。";
+  return fallback || "暂时无法创建房间，请稍后重试。";
+}
