@@ -1,0 +1,23 @@
+{
+  "name": "football-predictor",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.4.0",
+  "engines": { "node": "24.x" },
+  "scripts": {
+    "build:packages": "pnpm --filter './packages/**' -r build",
+    "dev:web": "pnpm --filter @football-predictor/web dev",
+    "dev:worker": "pnpm --filter @football-predictor/worker dev",
+    "lint": "pnpm --filter @football-predictor/web lint",
+    "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
+    "test": "pnpm build:packages && vitest run",
+    "build": "pnpm build:packages && pnpm --filter @football-predictor/worker build && pnpm --filter @football-predictor/web build",
+    "verify:workspace": "node --test scripts/workspace-structure.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}
