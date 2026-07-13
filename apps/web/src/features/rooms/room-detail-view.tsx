@@ -21,6 +21,8 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
   const [inviteToken, setInviteToken] = useState("");
   const [inviteError, setInviteError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const [reportMessage, setReportMessage] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,6 +59,13 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
     }
   }
 
+  async function reportRoom() {
+    const reason = window.prompt("请说明举报原因（10–500 字）。举报将提交给超级管理员。");
+    if (!reason) return; setReporting(true); setReportMessage("");
+    try { const response = await fetch(`/api/v1/rooms/${encodeURIComponent(roomId)}/reports`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reason }) }); const result = await response.json().catch(() => ({})) as ApiFailure; if (!response.ok) throw new Error(result.error?.message || "举报提交失败"); setReportMessage("举报已提交，超级管理员会进行处理。"); }
+    catch (reason) { setReportMessage((reason as Error).message || "举报提交失败"); } finally { setReporting(false); }
+  }
+
   if (loading) return <DataStatePanel state="loading" title="正在加载房间" description=""/>;
   if (error || !detail) return <DataStatePanel state="error" title="房间暂不可用" description={error || "找不到这个房间，或你已不再是成员。"} action={<Link href="/rooms" className="border border-[var(--ink)] px-4 py-2 font-bold no-underline">返回我的房间</Link>}/>;
   const invitePath = inviteToken ? buildInvitePath(inviteToken) : "";
@@ -70,7 +79,7 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
       {detail.isOwner ? <aside className="surface h-fit p-5" aria-labelledby="invite-title"><h2 id="invite-title" className="display text-xl font-bold">邀请朋友</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">出于安全原因，已有邀请不会再次显示。生成新链接会让旧链接立即失效，不影响现有成员和积分。</p>{inviteError && <div className="mt-4"><StatusMessage tone="error" title="邀请操作失败">{inviteError}</StatusMessage></div>}{inviteToken ? <div className="mt-4"><StatusMessage tone="success" title="新邀请已生成">请只发送给你认识的人。</StatusMessage><label htmlFor="room-invite-url" className="mt-4 block text-xs font-bold">邀请链接</label><input id="room-invite-url" readOnly value={inviteUrl} className="mt-2 min-h-11 w-full border border-[var(--line)] bg-white px-3 text-sm"/><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteUrl); setCopied(true); } catch { setInviteError("浏览器无法自动复制，请手动选择上方链接。"); } }} className="mt-3 min-h-11 w-full border border-[var(--ink)] px-3 font-bold">{copied ? "已复制" : "复制邀请链接"}</button></div> : <button type="button" onClick={resetInvite} disabled={resetting} className="mt-4 min-h-11 w-full bg-[var(--field)] px-3 font-bold text-white disabled:opacity-55">{resetting ? "正在生成…" : "生成新的邀请链接"}</button>}</aside> : <aside className="surface h-fit p-5"><h2 className="display text-xl font-bold">成员权限</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">只有房主可以重置邀请。你仍可以查看成员、比赛、预测历史和当前房间账本。</p></aside>}
     </div>
 
-    <section aria-labelledby="room-matches-title"><h2 id="room-matches-title" className="display mb-4 text-2xl font-bold">本房间比赛</h2><MatchList roomId={roomId} interactive/></section>
+    <section aria-labelledby="room-matches-title"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="room-matches-title" className="display text-2xl font-bold">本房间比赛</h2><button type="button" onClick={reportRoom} disabled={reporting} className="min-h-10 border border-[var(--coral)] px-3 text-sm font-bold text-[var(--coral)] disabled:opacity-50">{reporting ? "正在提交…" : "举报此房间"}</button></div>{reportMessage && <div className="mb-4"><StatusMessage tone={reportMessage.includes("已提交") ? "success" : "error"} title={reportMessage}/></div>}<MatchList roomId={roomId} interactive={detail.status === "ACTIVE"}/></section>
   </div>;
 }
 

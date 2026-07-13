@@ -13,10 +13,12 @@ function request(path: string, body?: unknown, cookie?: string) {
 function setup() {
   const service = {
     register: vi.fn().mockResolvedValue({ userId: "user-1", username: "alice", recoveryCode: "FP-ABCD-EFGH-JKLM-NPQR-STUV-WXYZ-2345-6789" }),
-    login: vi.fn().mockResolvedValue({ sessionToken: "opaque-token", expiresAt: new Date("2026-08-12T10:00:00Z"), userId: "user-1" }),
+    login: vi.fn().mockResolvedValue({ sessionToken: "opaque-token", expiresAt: new Date("2026-08-12T10:00:00Z"), userId: "user-1", mustChangePassword: false }),
     logout: vi.fn().mockResolvedValue(undefined),
     recover: vi.fn().mockResolvedValue({ recoveryCode: "FP-NEW1-NEW2-NEW3-NEW4-NEW5-NEW6-NEW7-NEW8" }),
     authenticate: vi.fn(),
+    changePassword: vi.fn().mockResolvedValue({ sessionToken: "rotated-token", expiresAt: new Date("2026-08-12T10:00:00Z"), mustChangePassword: false }),
+    reauthenticate: vi.fn().mockResolvedValue({ proofToken: "proof-token", expiresAt: new Date("2026-07-13T10:05:00Z") }),
   };
   return { service, handlers: createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: true }) };
 }
@@ -30,10 +32,29 @@ describe("auth HTTP handlers", () => {
     expect(service.register).toHaveBeenCalledWith({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
   });
 
+  it("routes a seeded super-admin to mandatory password change, then rotates the session cookie", async () => {
+    const { handlers, service } = setup();
+    service.login.mockResolvedValueOnce({ sessionToken: "initial-token", expiresAt: new Date("2026-08-12T10:00:00Z"), userId: "admin-1", mustChangePassword: true });
+    const login = await handlers.login(request("/api/v1/auth/login", { username: "ops_admin", password: "initial-password-123" }));
+    expect(await login.json()).toEqual({ data: { redirectTo: "/change-password", mustChangePassword: true } });
+
+    const changed = await handlers.changePassword(request("/api/v1/auth/change-password", { currentPassword: "initial-password-123", newPassword: "rotated-password-456" }, "fp_session=initial-token"));
+    expect(service.changePassword).toHaveBeenCalledWith({ sessionToken: "initial-token", currentPassword: "initial-password-123", newPassword: "rotated-password-456" });
+    expect(changed.headers.get("set-cookie")).toContain("fp_session=rotated-token");
+  });
+
+  it("stores a five-minute re-auth proof in a separate HttpOnly cookie", async () => {
+    const { handlers } = setup();
+    const response = await handlers.reauthenticate(request("/api/v1/auth/reauthenticate", { password: "rotated-password-456" }, "fp_session=opaque-token"));
+    expect(response.headers.get("set-cookie")).toContain("fp_reauth=proof-token");
+    expect(response.headers.get("set-cookie")).toContain("HttpOnly");
+    expect(await response.json()).toEqual({ data: { verified: true, expiresAt: "2026-07-13T10:05:00.000Z" } });
+  });
+
   it("sets and clears an HttpOnly session cookie", async () => {
     const { handlers, service } = setup();
     const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123" }));
-    expect(await login.json()).toEqual({ data: { redirectTo: "/rooms" } });
+    expect(await login.json()).toEqual({ data: { redirectTo: "/rooms", mustChangePassword: false } });
     expect(login.headers.get("set-cookie")).toContain("fp_session=opaque-token");
     expect(login.headers.get("set-cookie")).toContain("HttpOnly");
     expect(login.headers.get("set-cookie")).toContain("SameSite=Lax");
@@ -72,10 +93,10 @@ describe("auth HTTP handlers", () => {
 
   it("resolves an active cookie without exposing credential hashes", async () => {
     const { handlers, service } = setup();
-    service.authenticate.mockResolvedValueOnce({ id: "user-1", usernameCanonical: "alice", status: "ACTIVE", passwordHash: "secret", recoveryCodeHash: "secret" });
+    service.authenticate.mockResolvedValueOnce({ id: "user-1", usernameCanonical: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false, passwordHash: "secret", recoveryCodeHash: "secret" });
     const response = await handlers.session(new Request("https://example.test/api/v1/auth/session", { headers: { cookie: "fp_session=opaque-token" } }));
     const payload = await response.json();
-    expect(payload).toEqual({ data: { user: { id: "user-1", username: "alice", status: "ACTIVE" } } });
+    expect(payload).toEqual({ data: { user: { id: "user-1", username: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false } } });
     expect(JSON.stringify(payload)).not.toContain("passwordHash");
   });
 });

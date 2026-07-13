@@ -13,11 +13,14 @@ describe("service worker static safety contract", () => {
     expect(source).not.toMatch(/indexedDB|BackgroundSync/i);
   });
 
-  it("keeps a versioned shell cache, removes old versions and has an offline navigation fallback", async () => {
+  it("keeps a versioned shell cache, removes old versions and never persists private navigations", async () => {
     const source = await readFile(workerPath, "utf8");
     expect(source).toContain("matchday-ledger-shell-");
     expect(source).toContain("key !== CACHE_NAME");
-    expect(source).toContain("cachedNavigation || await caches.match(OFFLINE_URL)");
+    expect(source).toContain("return await fetch(request)");
+    expect(source).toContain("await caches.match(OFFLINE_URL)");
+    expect(source).not.toContain("cachedNavigation");
+    expect(source).not.toContain("return await cacheSuccessfulResponse(request, response)");
     expect(source).toContain("if (!response.ok");
   });
 });

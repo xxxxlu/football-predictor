@@ -10,7 +10,8 @@ import {
   type TicketSubmissionTransactionPort,
 } from "@football-predictor/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
-import { pointAccounts, pointLedgerEntries } from "../rooms/schema.js";
+import { pointAccounts, pointLedgerEntries, rooms } from "../rooms/schema.js";
+import { roomAllowsPredictions } from "../operations/moderation-privacy.js";
 import { predictionLegs, predictionTickets } from "./schema.js";
 
 /** Supplier-owned cache adapter. Implementations must return the current immutable product-cache snapshot and never call the supplier on demand. */
@@ -23,9 +24,10 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
 
   async run<T>(scope: IdempotencyScope, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
     return this.db.transaction(async (tx) => {
-      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId }).from(pointAccounts)
+      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId, roomStatus: rooms.status }).from(pointAccounts).innerJoin(rooms, eq(rooms.id, pointAccounts.roomId))
         .where(and(eq(pointAccounts.roomId, scope.roomId), eq(pointAccounts.userId, scope.userId))).for("update").limit(1);
       if (!lockedAccount) throw new RoomError("ROOM_NOT_FOUND", 404);
+      if (!roomAllowsPredictions(lockedAccount.roomStatus)) throw new RoomError("ROOM_RESTRICTED", 403, "This room is not accepting predictions.");
 
       const transaction: TicketSubmissionTransaction = {
         findByIdempotencyKey: async (key) => {

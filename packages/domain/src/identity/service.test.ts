@@ -11,8 +11,10 @@ import {
 
 class MemoryIdentityRepository implements IdentityRepository {
   accounts = new Map<string, IdentityAccount>();
-  sessions = new Map<string, { userId: string; expiresAt: Date; revokedAt: Date | null }>();
+  sessions = new Map<string, { userId: string; expiresAt: Date; revokedAt: Date | null; lastSeenAt: Date }>();
   failures: Array<{ kind: AuthAttemptKind; accountKey: string; sourceKey: string; occurredAt: Date }> = [];
+  proofs = new Map<string, { userId: string; sessionTokenHash: string; expiresAt: Date }>();
+  adminEvents: Array<{ actorUserId: string; targetUserId: string; action: string }> = [];
 
   async createRegisteredAccount(account: IdentityAccount): Promise<void> {
     if (this.accounts.has(account.usernameCanonical)) throw new AuthError("USERNAME_UNAVAILABLE", 409);
@@ -20,18 +22,46 @@ class MemoryIdentityRepository implements IdentityRepository {
   }
   async findAccountByUsername(usernameCanonical: string) { return this.accounts.get(usernameCanonical) ?? null; }
   async createSession(input: { tokenHash: string; userId: string; expiresAt: Date }) {
-    this.sessions.set(input.tokenHash, { userId: input.userId, expiresAt: input.expiresAt, revokedAt: null });
+    this.sessions.set(input.tokenHash, { userId: input.userId, expiresAt: input.expiresAt, revokedAt: null, lastSeenAt: new Date(input.expiresAt.getTime() - 86_400_000) });
   }
   async revokeSession(tokenHash: string, revokedAt: Date) {
     const session = this.sessions.get(tokenHash);
     if (session) session.revokedAt = revokedAt;
   }
-  async findActiveSession(tokenHash: string, now: Date) {
+  async findActiveSession(tokenHash: string, now: Date, superAdminIdleSince: Date) {
     const session = this.sessions.get(tokenHash);
     if (!session || session.revokedAt || session.expiresAt <= now) return null;
     const account = [...this.accounts.values()].find((candidate) => candidate.id === session.userId);
-    return account?.status === "ACTIVE" ? account : null;
+    if (account?.status !== "ACTIVE") return null;
+    if (account.isSuperAdmin && session.lastSeenAt <= superAdminIdleSince) { session.revokedAt = now; return null; }
+    session.lastSeenAt = now;
+    return account;
   }
+  async changePassword(input: { userId: string; currentPasswordHash: string; passwordHash: string; changedAt: Date }) {
+    const account = [...this.accounts.values()].find((candidate) => candidate.id === input.userId);
+    if (!account || account.passwordHash !== input.currentPasswordHash) return false;
+    account.passwordHash = input.passwordHash;
+    account.mustChangePassword = false;
+    for (const session of this.sessions.values()) if (session.userId === input.userId) session.revokedAt = input.changedAt;
+    return true;
+  }
+  async createReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; expiresAt: Date }) {
+    this.proofs.set(input.tokenHash, { userId: input.userId, sessionTokenHash: input.sessionTokenHash, expiresAt: input.expiresAt });
+  }
+  async verifyReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; now: Date }) {
+    const proof = this.proofs.get(input.tokenHash);
+    return Boolean(proof && proof.userId === input.userId && proof.sessionTokenHash === input.sessionTokenHash && proof.expiresAt > input.now);
+  }
+  async setNormalAccountStatus(input: { actorUserId: string; targetUserId: string; status: "ACTIVE" | "DISABLED"; changedAt: Date; auditId: string }) {
+    const actor = [...this.accounts.values()].find((candidate) => candidate.id === input.actorUserId);
+    const target = [...this.accounts.values()].find((candidate) => candidate.id === input.targetUserId);
+    if (!actor?.isSuperAdmin || !target || target.isSuperAdmin) return false;
+    target.status = input.status;
+    if (input.status === "DISABLED") for (const session of this.sessions.values()) if (session.userId === target.id) session.revokedAt = input.changedAt;
+    this.adminEvents.push({ actorUserId: actor.id, targetUserId: target.id, action: input.status === "DISABLED" ? "ACCOUNT_DISABLED" : "ACCOUNT_RESTORED" });
+    return true;
+  }
+  async listNormalAccounts() { return [...this.accounts.values()].filter((account) => !account.isSuperAdmin).map(({ id, usernameCanonical, status }) => ({ id, username: usernameCanonical, status })); }
   async recoverAccount(input: { userId: string; expectedRecoveryCodeHash: string; passwordHash: string; recoveryCodeHash: string; recoveredAt: Date }) {
     const account = [...this.accounts.values()].find((candidate) => candidate.id === input.userId);
     if (!account) throw new Error("missing account");
@@ -107,6 +137,69 @@ describe("IdentityService sessions", () => {
       await expect(identity.login({ username: "alice", password: "wrong-password-123", sourceKey: "ip:bad" })).rejects.toMatchObject({ code: "INVALID_CREDENTIALS" });
     }
     await expect(identity.login({ username: "alice", password: "correct-horse-123", sourceKey: "ip:bad" })).rejects.toMatchObject({ code: "RATE_LIMITED", status: 429 });
+  });
+});
+
+describe("IdentityService super-admin controls", () => {
+  it("marks a seeded super-admin login for mandatory password change and rotates every session after the change", async () => {
+    const { service: identity, repository } = service();
+    await identity.register({ username: "ops_admin", password: "initial-password-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    const admin = repository.accounts.get("ops_admin")!;
+    admin.isSuperAdmin = true;
+    admin.mustChangePassword = true;
+
+    const login = await identity.login({ username: "ops_admin", password: "initial-password-123", sourceKey: "ip:ops" });
+    expect(login).toMatchObject({ mustChangePassword: true });
+    expect(await identity.authenticate(login.sessionToken)).toBeNull();
+    expect((await identity.authenticate(login.sessionToken, true))?.mustChangePassword).toBe(true);
+    const changed = await identity.changePassword({ sessionToken: login.sessionToken, currentPassword: "initial-password-123", newPassword: "rotated-password-456" });
+
+    expect(await identity.authenticate(login.sessionToken)).toBeNull();
+    expect(changed.sessionToken).not.toBe(login.sessionToken);
+    expect((await identity.authenticate(changed.sessionToken))?.mustChangePassword).toBe(false);
+  });
+
+  it("expires a super-admin session after 30 minutes of inactivity while normal sessions retain their configured TTL", async () => {
+    let clock = new Date("2026-07-13T10:00:00.000Z");
+    const repository = new MemoryIdentityRepository();
+    const identity = new IdentityService(repository, passwordHasher, tokens, () => clock, { currentRulesVersion: "rules-2026-07", sessionTtlMs: 86_400_000, superAdminIdleTimeoutMs: 30 * 60_000 });
+    await identity.register({ username: "ops_admin", password: "rotated-password-456", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    repository.accounts.get("ops_admin")!.isSuperAdmin = true;
+    const login = await identity.login({ username: "ops_admin", password: "rotated-password-456", sourceKey: "ip:ops" });
+    clock = new Date("2026-07-13T10:31:00.000Z");
+    expect(await identity.authenticate(login.sessionToken)).toBeNull();
+  });
+
+  it("requires a session-bound five-minute re-auth proof to disable and restore a normal user", async () => {
+    let clock = new Date("2026-07-13T10:00:00.000Z");
+    const repository = new MemoryIdentityRepository();
+    const identity = new IdentityService(repository, passwordHasher, tokens, () => clock, { currentRulesVersion: "rules-2026-07", sessionTtlMs: 86_400_000, reauthTtlMs: 5 * 60_000 });
+    await identity.register({ username: "ops_admin", password: "rotated-password-456", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    await identity.register({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    repository.accounts.get("ops_admin")!.isSuperAdmin = true;
+    const adminLogin = await identity.login({ username: "ops_admin", password: "rotated-password-456", sourceKey: "ip:ops" });
+    const userLogin = await identity.login({ username: "alice", password: "correct-horse-123", sourceKey: "ip:user" });
+
+    await expect(identity.setAccountStatus({ actorSessionToken: adminLogin.sessionToken, proofToken: "missing", targetUserId: repository.accounts.get("alice")!.id, status: "DISABLED" })).rejects.toMatchObject({ code: "REAUTH_REQUIRED", status: 403 });
+    const proof = await identity.reauthenticate({ sessionToken: adminLogin.sessionToken, password: "rotated-password-456" });
+    await expect(identity.authorizeSuperAdminAction({ sessionToken: adminLogin.sessionToken, proofToken: proof.proofToken })).resolves.toMatchObject({ id: repository.accounts.get("ops_admin")!.id });
+    await expect(identity.setAccountStatus({ actorSessionToken: adminLogin.sessionToken, proofToken: proof.proofToken, targetUserId: repository.accounts.get("alice")!.id, status: "DISABLED" })).resolves.toHaveProperty("auditId");
+    expect(await identity.authenticate(userLogin.sessionToken)).toBeNull();
+
+    clock = new Date("2026-07-13T10:05:01.000Z");
+    await expect(identity.authorizeSuperAdminAction({ sessionToken: adminLogin.sessionToken, proofToken: proof.proofToken })).rejects.toMatchObject({ code: "REAUTH_REQUIRED" });
+    await expect(identity.setAccountStatus({ actorSessionToken: adminLogin.sessionToken, proofToken: proof.proofToken, targetUserId: repository.accounts.get("alice")!.id, status: "ACTIVE" })).rejects.toMatchObject({ code: "REAUTH_REQUIRED" });
+  });
+
+  it("never permits a super-admin account to be disabled through the product API", async () => {
+    const { service: identity, repository } = service();
+    await identity.register({ username: "ops_admin", password: "rotated-password-456", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    await identity.register({ username: "ops_backup", password: "backup-password-789", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    repository.accounts.get("ops_admin")!.isSuperAdmin = true;
+    repository.accounts.get("ops_backup")!.isSuperAdmin = true;
+    const login = await identity.login({ username: "ops_admin", password: "rotated-password-456", sourceKey: "ip:ops" });
+    const proof = await identity.reauthenticate({ sessionToken: login.sessionToken, password: "rotated-password-456" });
+    await expect(identity.setAccountStatus({ actorSessionToken: login.sessionToken, proofToken: proof.proofToken, targetUserId: repository.accounts.get("ops_backup")!.id, status: "DISABLED" })).rejects.toMatchObject({ code: "TARGET_NOT_MANAGEABLE" });
   });
 });
 

@@ -1,4 +1,4 @@
-export type SessionUser = { id: string; username: string; status: string };
+export type SessionUser = { id: string; username: string; status: string; isSuperAdmin?: boolean; mustChangePassword?: boolean };
 export type SessionState =
   | { kind: "authenticated"; user: SessionUser }
   | { kind: "anonymous" }

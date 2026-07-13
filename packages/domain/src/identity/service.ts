@@ -11,6 +11,8 @@ export interface IdentityAccount {
   acceptedRulesVersion: string;
   acceptedRulesAt: Date;
   status: AccountStatus;
+  isSuperAdmin: boolean;
+  mustChangePassword: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,8 +21,13 @@ export interface IdentityRepository {
   createRegisteredAccount(account: IdentityAccount): Promise<void>;
   findAccountByUsername(usernameCanonical: string): Promise<IdentityAccount | null>;
   createSession(input: { tokenHash: string; userId: string; expiresAt: Date }): Promise<void>;
-  findActiveSession(tokenHash: string, now: Date): Promise<IdentityAccount | null>;
+  findActiveSession(tokenHash: string, now: Date, superAdminIdleSince: Date): Promise<IdentityAccount | null>;
   revokeSession(tokenHash: string, revokedAt: Date): Promise<void>;
+  changePassword(input: { userId: string; currentPasswordHash: string; passwordHash: string; changedAt: Date }): Promise<boolean>;
+  createReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; expiresAt: Date }): Promise<void>;
+  verifyReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; now: Date }): Promise<boolean>;
+  setNormalAccountStatus(input: { actorUserId: string; targetUserId: string; status: AccountStatus; changedAt: Date; auditId: string }): Promise<boolean>;
+  listNormalAccounts(): Promise<Array<{ id: string; username: string; status: AccountStatus }>>;
   recoverAccount(input: { userId: string; expectedRecoveryCodeHash: string; passwordHash: string; recoveryCodeHash: string; recoveredAt: Date }): Promise<boolean>;
   countRecentFailures(kind: AuthAttemptKind, accountKey: string, sourceKey: string, since: Date): Promise<number>;
   recordFailure(kind: AuthAttemptKind, accountKey: string, sourceKey: string, occurredAt: Date): Promise<void>;
@@ -51,6 +58,8 @@ export interface IdentityServiceOptions {
   sessionTtlMs: number;
   failureWindowMs?: number;
   maximumFailures?: number;
+  superAdminIdleTimeoutMs?: number;
+  reauthTtlMs?: number;
 }
 
 const USERNAME_PATTERN = /^[a-z0-9_]{3,32}$/;
@@ -58,6 +67,8 @@ const USERNAME_PATTERN = /^[a-z0-9_]{3,32}$/;
 export class IdentityService {
   private readonly failureWindowMs: number;
   private readonly maximumFailures: number;
+  private readonly superAdminIdleTimeoutMs: number;
+  private readonly reauthTtlMs: number;
 
   constructor(
     private readonly repository: IdentityRepository,
@@ -68,6 +79,8 @@ export class IdentityService {
   ) {
     this.failureWindowMs = options.failureWindowMs ?? 15 * 60_000;
     this.maximumFailures = options.maximumFailures ?? 5;
+    this.superAdminIdleTimeoutMs = options.superAdminIdleTimeoutMs ?? 30 * 60_000;
+    this.reauthTtlMs = options.reauthTtlMs ?? 5 * 60_000;
   }
 
   async register(input: { username: string; password: string; isAdultConfirmed: boolean; nonCashRulesVersion: string }) {
@@ -87,6 +100,8 @@ export class IdentityService {
       acceptedRulesVersion: input.nonCashRulesVersion,
       acceptedRulesAt: occurredAt,
       status: "ACTIVE",
+      isSuperAdmin: false,
+      mustChangePassword: false,
       createdAt: occurredAt,
       updatedAt: occurredAt,
     };
@@ -108,12 +123,66 @@ export class IdentityService {
     const sessionToken = this.tokens.sessionToken();
     const expiresAt = new Date(this.now().getTime() + this.options.sessionTtlMs);
     await this.repository.createSession({ tokenHash: this.tokens.hash(sessionToken), userId: account.id, expiresAt });
-    return { sessionToken, expiresAt, userId: account.id };
+    return { sessionToken, expiresAt, userId: account.id, mustChangePassword: account.mustChangePassword };
   }
 
-  async authenticate(sessionToken: string) {
+  async authenticate(sessionToken: string, allowPasswordChange = false) {
     if (!sessionToken) return null;
-    return this.repository.findActiveSession(this.tokens.hash(sessionToken), this.now());
+    const now = this.now();
+    const account = await this.repository.findActiveSession(this.tokens.hash(sessionToken), now, new Date(now.getTime() - this.superAdminIdleTimeoutMs));
+    return account?.mustChangePassword && !allowPasswordChange ? null : account;
+  }
+
+  async changePassword(input: { sessionToken: string; currentPassword: string; newPassword: string }) {
+    assertPassword(input.newPassword);
+    const account = await this.authenticate(input.sessionToken, true);
+    if (!account || !await this.passwordHasher.verify(account.passwordHash, input.currentPassword)) throw new AuthError("INVALID_CREDENTIALS", 401, "Check the current password and try again.");
+    const changedAt = this.now();
+    const changed = await this.repository.changePassword({ userId: account.id, currentPasswordHash: account.passwordHash, passwordHash: await this.passwordHasher.hash(input.newPassword), changedAt });
+    if (!changed) throw new AuthError("PASSWORD_CHANGE_CONFLICT", 409, "Log in again and retry the password change.");
+    const sessionToken = this.tokens.sessionToken();
+    const expiresAt = new Date(changedAt.getTime() + this.options.sessionTtlMs);
+    await this.repository.createSession({ tokenHash: this.tokens.hash(sessionToken), userId: account.id, expiresAt });
+    return { sessionToken, expiresAt, mustChangePassword: false as const };
+  }
+
+  async reauthenticate(input: { sessionToken: string; password: string }) {
+    const account = await this.authenticate(input.sessionToken);
+    if (!account || !account.isSuperAdmin || account.mustChangePassword) throw new AuthError("FORBIDDEN", 403, "This operation requires an active super-admin account.");
+    if (!await this.passwordHasher.verify(account.passwordHash, input.password)) throw new AuthError("INVALID_CREDENTIALS", 401, "Check the password and try again.");
+    const proofToken = this.tokens.sessionToken();
+    const now = this.now();
+    const expiresAt = new Date(now.getTime() + this.reauthTtlMs);
+    await this.repository.createReauthProof({ tokenHash: this.tokens.hash(proofToken), userId: account.id, sessionTokenHash: this.tokens.hash(input.sessionToken), expiresAt });
+    return { proofToken, expiresAt };
+  }
+
+  async listManageableAccounts(actorSessionToken: string) {
+    const actor = await this.requireReadySuperAdmin(actorSessionToken);
+    return { actorId: actor.id, users: await this.repository.listNormalAccounts() };
+  }
+
+  async authorizeSuperAdminAction(input: { sessionToken: string; proofToken: string }) {
+    const actor = await this.requireReadySuperAdmin(input.sessionToken);
+    const validProof = input.proofToken && await this.repository.verifyReauthProof({ tokenHash: this.tokens.hash(input.proofToken), userId: actor.id, sessionTokenHash: this.tokens.hash(input.sessionToken), now: this.now() });
+    if (!validProof) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
+    return actor;
+  }
+
+  async setAccountStatus(input: { actorSessionToken: string; proofToken: string; targetUserId: string; status: AccountStatus }) {
+    const actor = await this.authorizeSuperAdminAction({ sessionToken: input.actorSessionToken, proofToken: input.proofToken });
+    const auditId = randomUUID();
+    const changed = await this.repository.setNormalAccountStatus({ actorUserId: actor.id, targetUserId: input.targetUserId, status: input.status, changedAt: this.now(), auditId });
+    if (!changed) throw new AuthError("TARGET_NOT_MANAGEABLE", 422, "Only normal user accounts can be changed here.");
+    return { targetUserId: input.targetUserId, status: input.status, auditId };
+  }
+
+  private async requireReadySuperAdmin(sessionToken: string) {
+    const account = await this.authenticate(sessionToken);
+    if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+    if (!account.isSuperAdmin) throw new AuthError("FORBIDDEN", 403, "This operation is limited to super administrators.");
+    if (account.mustChangePassword) throw new AuthError("PASSWORD_CHANGE_REQUIRED", 403, "Change the initial password before continuing.");
+    return account;
   }
 
   async logout(sessionToken: string) {
