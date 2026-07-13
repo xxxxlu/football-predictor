@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { authorizeMatchRead } from "../access";
+import { getMatchApiRuntime, type MatchReadAccess } from "../runtime";
 
 export interface MatchCachePort {
   get(matchId: string): Promise<{ view: unknown; etag: string }>;
@@ -11,9 +13,11 @@ function correlationId(request: Request): string {
   return candidate && candidate.length <= 128 ? candidate : randomUUID();
 }
 
-export function createMatchGet(cache: MatchCachePort) {
+export function createMatchGet(cache: MatchCachePort, access: MatchReadAccess) {
   return async function GET(request: Request, context: RouteContext): Promise<Response> {
     const requestId = correlationId(request);
+    const authorization = await authorizeMatchRead(request, access);
+    if (authorization instanceof Response) return authorization;
     try {
       const { matchId } = await context.params;
       const result = await cache.get(matchId);
@@ -26,8 +30,7 @@ export function createMatchGet(cache: MatchCachePort) {
   };
 }
 
-const unavailableCache: MatchCachePort = {
-  async get() { throw Object.assign(new Error("Persistent match cache is not configured"), { code: "CACHE_UNAVAILABLE" }); },
+export const GET = (request: Request, context: RouteContext) => {
+  const runtime = getMatchApiRuntime();
+  return createMatchGet(runtime.cache, runtime.access)(request, context);
 };
-
-export const GET = createMatchGet(unavailableCache);

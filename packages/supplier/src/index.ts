@@ -1,6 +1,15 @@
 import { createHash } from "node:crypto";
-import { createMatchView, type FixtureSnapshot, type LiveSnapshot, type MatchView, type OddsSnapshot, type SyncState } from "../../domain/src/competition/index.js";
-import type { BudgetSnapshot, SupplierBudgetPort, SupplierRequestCategory } from "../../domain/src/supplier-budget/index.js";
+import {
+  createMatchView,
+  type BudgetSnapshot,
+  type FixtureSnapshot,
+  type LiveSnapshot,
+  type MatchView,
+  type OddsSnapshot,
+  type SupplierBudgetPort,
+  type SupplierRequestCategory,
+  type SyncState,
+} from "@football-predictor/domain";
 
 export interface MatchSnapshotRepository {
   saveFixtures(fixtures: FixtureSnapshot[]): Promise<void>;

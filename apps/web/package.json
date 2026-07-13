@@ -14,6 +14,7 @@
     "@football-predictor/config": "workspace:*",
     "@football-predictor/db": "workspace:*",
     "@football-predictor/domain": "workspace:*",
+    "@football-predictor/supplier": "workspace:*",
     "@node-rs/argon2": "2.0.2",
     "next": "16.2.10",
     "postgres": "3.4.9",
