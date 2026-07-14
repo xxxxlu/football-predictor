@@ -38,7 +38,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 ::selection { background: rgb(23 107 77 / 20%); }
 
-.display { font-family: var(--font-serif); letter-spacing: -0.025em; }
+.display { font-family: var(--font-sans); font-weight: 900; letter-spacing: -0.02em; }
 .tabular { font-variant-numeric: tabular-nums; }
 .eyebrow {
   color: var(--field);
@@ -47,7 +47,7 @@ button, a { -webkit-tap-highlight-color: transparent; }
   letter-spacing: .14em;
   text-transform: uppercase;
 }
-.surface { background: rgb(255 253 247 / 84%); border: 1px solid var(--line); }
+.surface { background: rgb(255 253 247 / 84%); border: 1px solid var(--line); border-radius: 16px; }
 .rule { border-color: var(--line); }
 .skip-link {
   position: fixed; left: 1rem; top: -5rem; z-index: 100;
