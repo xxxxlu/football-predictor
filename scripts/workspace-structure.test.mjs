@@ -10,11 +10,24 @@ const required = [
   "packages/config/package.json",
   "packages/contracts/package.json",
   "packages/testkit/package.json",
+  "render.yaml",
 ];
 
 test("workspace contains every architecture boundary", async () => {
   await Promise.all(required.map((path) => access(path)));
-  assert.equal(required.length, 7);
+  assert.equal(required.length, 8);
+});
+
+test("production blueprint gates web and worker deploys on passing CI", async () => {
+  const blueprint = await readFile("render.yaml", "utf8");
+  assert.match(blueprint, /type: web[\s\S]*dockerfilePath: \.\/Dockerfile\.web/);
+  assert.match(blueprint, /type: worker[\s\S]*dockerfilePath: \.\/Dockerfile\.worker/);
+  assert.equal((blueprint.match(/autoDeployTrigger: checksPass/g) ?? []).length, 2);
+  assert.match(blueprint, /healthCheckPath: \/api\/health\/ready/);
+  assert.match(blueprint, /fromDatabase:[\s\S]*property: connectionString/);
+  for (const secret of ["API_FOOTBALL_KEY", "SUPER_ADMIN_1_PASSWORD", "SUPER_ADMIN_2_PASSWORD"]) {
+    assert.match(blueprint, new RegExp(`key: ${secret}\\n\\s+sync: false`));
+  }
 });
 
 test("local web development loads the root server environment before Next starts", async () => {

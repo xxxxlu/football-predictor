@@ -1,0 +1,90 @@
+services:
+  - type: web
+    name: football-predictor-web
+    runtime: docker
+    region: singapore
+    plan: starter
+    branch: main
+    dockerfilePath: ./Dockerfile.web
+    autoDeployTrigger: checksPass
+    healthCheckPath: /api/health/ready
+    preDeployCommand: pnpm db:migrate && pnpm db:seed:super-admins
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: APP_ENV
+        value: "production"
+      - key: APP_VERSION
+        value: "render"
+      - key: LOG_LEVEL
+        value: "info"
+      - key: RULES_VERSION
+        value: "rules-2026-07"
+      - key: SESSION_TTL_DAYS
+        value: "30"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-predictor-db
+          property: connectionString
+      - key: SUPER_ADMIN_1_USERNAME
+        sync: false
+      - key: SUPER_ADMIN_1_PASSWORD
+        sync: false
+      - key: SUPER_ADMIN_2_USERNAME
+        sync: false
+      - key: SUPER_ADMIN_2_PASSWORD
+        sync: false
+
+  - type: worker
+    name: football-predictor-worker
+    runtime: docker
+    region: singapore
+    plan: starter
+    branch: main
+    dockerfilePath: ./Dockerfile.worker
+    autoDeployTrigger: checksPass
+    preDeployCommand: pnpm db:migrate
+    maxShutdownDelaySeconds: 60
+    envVars:
+      - key: APP_ENV
+        value: "production"
+      - key: APP_VERSION
+        value: "render"
+      - key: LOG_LEVEL
+        value: "info"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: football-predictor-db
+          property: connectionString
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: API_FOOTBALL_BASE_URL
+        value: "https://v3.football.api-sports.io"
+      - key: API_FOOTBALL_BOOKMAKER_ID
+        value: "8"
+      - key: SUPPLIER_COMPETITIONS
+        value: "1:2026,2:2026,39:2026,140:2026,135:2026,78:2026,61:2026,253:2026,71:2026,98:2026,292:2026,169:2026"
+      - key: SUPPLIER_WINDOW_PAST_DAYS
+        value: "1"
+      - key: SUPPLIER_WINDOW_FUTURE_DAYS
+        value: "14"
+      - key: SUPPLIER_FIXTURES_INTERVAL_MINUTES
+        value: "720"
+      - key: SUPPLIER_RESULTS_INTERVAL_MINUTES
+        value: "1440"
+      - key: SUPPLIER_ODDS_INTERVAL_MINUTES
+        value: "10"
+      - key: SUPPLIER_SETTLEMENT_INTERVAL_SECONDS
+        value: "60"
+      - key: SUPPLIER_SETTLEMENT_BATCH_SIZE
+        value: "100"
+      - key: SUPPLIER_LIVE_ENABLED
+        value: "false"
+      - key: SUPPLIER_LIVE_INTERVAL_MINUTES
+        value: "5"
+
+databases:
+  - name: football-predictor-db
+    region: singapore
+    plan: basic-256mb
+    databaseName: football_predictor
+    user: football
