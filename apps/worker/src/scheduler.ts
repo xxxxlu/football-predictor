@@ -22,6 +22,8 @@ export interface WorkerSchedulerConfig {
 type FixtureTarget = {
   id: string;
   supplierFixtureId: number;
+  competitionId?: number;
+  season?: number;
   kickoffAt: string;
   status: "SCHEDULED" | "LIVE" | "FINISHED" | "POSTPONED" | "CANCELLED";
   oddsDataAsOf?: string;
@@ -156,6 +158,38 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
       const kickoffDifference = new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime();
       return kickoffDifference || left.id.localeCompare(right.id);
     });
+    if (kind === "PREMATCH_ODDS") {
+      const grouped = new Map<string, { leagueId: number; season: number; date: string; kickoffAt: string }>();
+      const legacy: FixtureTarget[] = [];
+      for (const fixture of targets) {
+        if (fixture.competitionId === undefined || fixture.season === undefined) { legacy.push(fixture); continue; }
+        const date = dateOnly(new Date(fixture.kickoffAt));
+        const key = `${fixture.competitionId}:${fixture.season}:${date}`;
+        const current = grouped.get(key);
+        if (!current || fixture.kickoffAt < current.kickoffAt) grouped.set(key, { leagueId: fixture.competitionId, season: fixture.season, date, kickoffAt: fixture.kickoffAt });
+      }
+      const groups = [...grouped.values()].sort((left, right) => left.kickoffAt.localeCompare(right.kickoffAt) || left.leagueId - right.leagueId);
+      for (const group of groups) {
+        let page = 1;
+        while (true) {
+          const result = await supplierJob(
+            `prematch_odds_batch:${group.leagueId}:${group.season}:${group.date}:${page}`,
+            { type: "PREMATCH_ODDS_BATCH", payload: { leagueId: group.leagueId, season: group.season, date: group.date, bookmakerId: config.bookmakerId, page } },
+          );
+          if (result?.outcome !== "SUCCESS") return;
+          if (result.nextPage === undefined) break;
+          page = result.nextPage;
+        }
+      }
+      for (const fixture of legacy) {
+        const result = await supplierJob(
+          `prematch_odds:${fixture.id}`,
+          { type: "PREMATCH_ODDS", payload: { fixtureId: fixture.supplierFixtureId, matchId: fixture.id, bookmakerId: config.bookmakerId } },
+        );
+        if (result?.outcome !== "SUCCESS") break;
+      }
+      return;
+    }
     for (const fixture of targets) {
       const result = await supplierJob(
         `${kind.toLowerCase()}:${fixture.id}`,

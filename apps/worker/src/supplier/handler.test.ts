@@ -78,6 +78,24 @@ describe("supplier worker job handler", () => {
     expect(states).toEqual(["SYNCING", "FAILED"]);
   });
 
+  it("persists every market from a paged league/date odds request and exposes the next page", async () => {
+    const secondOdds = { fixtureId: "api-football:102", version: "odds-v2" };
+    const { handler, events, saved } = setup({
+      client: {
+        fetchPrematchOddsPage: async () => {
+          events.push("client.odds.batch");
+          return { data: [odds, secondOdds], quota: {}, paging: { current: 1, total: 2 } };
+        },
+      },
+    });
+
+    const result = await handler.run({ type: "PREMATCH_ODDS_BATCH", attempt: 0, payload: { leagueId: 39, season: 2026, date: "2026-07-13", bookmakerId: 8, page: 1 } });
+
+    expect(result).toEqual({ outcome: "SUCCESS", synced: 2, nextPage: 2 });
+    expect(events).toEqual(["budget.consume", "client.odds.batch", "repository.odds", "repository.odds"]);
+    expect(saved.odds).toEqual([odds, secondOdds]);
+  });
+
   it("saves live cache and schedules a five-minute refresh while budget is healthy", async () => {
     const { handler, saved } = setup();
 

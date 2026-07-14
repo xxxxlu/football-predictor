@@ -14,3 +14,4 @@ export * from "./settlement/repository.js";
 export * from "./settlement/connection.js";
 export * from "./operations/repository.js";
 export * from "./operations/moderation-privacy.js";
+export * from "./operations/jobs.js";

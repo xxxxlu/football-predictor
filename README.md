@@ -29,7 +29,7 @@ Required runtime keys are validated by `@football-predictor/config`. Missing or 
 
 ## Prewarm real match data
 
-Run migrations first, then set the server-only supplier variables in `.env`. A single run can warm up to 29 competitions while preserving the daily request protections (status calibration uses one of the 30 static requests):
+Run migrations first, then set the server-only supplier variables in `.env`. A single run can warm up to 30 competitions while preserving the daily request protections; status calibration is non-billable:
 
 ```dotenv
 API_FOOTBALL_KEY=replace-locally
@@ -42,7 +42,7 @@ pnpm db:migrate
 pnpm supplier:prewarm
 ```
 
-`SUPPLIER_COMPETITIONS` uses comma-separated `leagueId:season` pairs. When omitted, prewarm falls back to `SUPPLIER_LEAGUE_ID` and `SUPPLIER_SEASON`. The command performs status calibration, fixture synchronization, and scheduled 1X2 odds warming before exiting. Its JSON result contains only synchronized competition/fixture/odds counts and remaining/protected budget; it never prints the API key. Missing configuration fails immediately with the names of variables that must be set.
+`SUPPLIER_COMPETITIONS` uses comma-separated `leagueId:season` pairs. When omitted, prewarm falls back to `SUPPLIER_LEAGUE_ID` and `SUPPLIER_SEASON`. The command performs status calibration, fixture synchronization, and scheduled 1X2 odds warming before exiting. Odds are fetched by league/date with API-FOOTBALL pagination (10 fixtures per request), rather than spending one request per match. Its JSON result contains only synchronized competition/fixture/odds counts and remaining/protected budget; it never prints the API key. Missing configuration fails immediately with the names of variables that must be set.
 
 Because prematch odds are capped at 50 requests per UTC day and 10 calls remain protected for settlement, a run skips already-fresh odds and may report additional `oddsSkipped` when there are more targets than the safe budget permits. Re-run after the UTC budget reset instead of bypassing the guard.
 

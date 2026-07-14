@@ -5,6 +5,7 @@ import { createWorkerRuntime, type LogEntry } from "./runtime.js";
 import { createWorkerScheduler } from "./scheduler.js";
 import { createPostgresSettlementWorkerComposition } from "./settlement/composition.js";
 import { createSupplierWorkerComposition } from "./supplier/composition.js";
+import { createPersistentSupplierJobRunner } from "./jobs/persistent-supplier.js";
 
 const write = (entry: LogEntry) => process.stdout.write(`${JSON.stringify(entry)}\n`);
 const clock = { now: () => new Date() };
@@ -14,7 +15,7 @@ async function main() {
   const workerConfig = loadSupplierWorkerConfig(process.env);
   const runtime = createWorkerRuntime({ appVersion: serverConfig.appVersion, write });
   const persistence = createSupplierPersistence(workerConfig.databaseUrl, clock);
-  const supplier = createSupplierWorkerComposition({
+  const supplierCore = createSupplierWorkerComposition({
     client: new ApiFootballClient({
       apiKey: workerConfig.apiFootballKey,
       baseUrl: workerConfig.apiFootballBaseUrl,
@@ -23,6 +24,7 @@ async function main() {
     persistence,
     clock,
   });
+  const supplier = createPersistentSupplierJobRunner({ runner: supplierCore, jobs: persistence.jobs, clock });
   const settlement = createPostgresSettlementWorkerComposition({ databaseUrl: workerConfig.databaseUrl, clock });
   const scheduler = createWorkerScheduler({
     config: workerConfig,
