@@ -76,7 +76,7 @@ development_status:
   8-3-view-public-ranking-and-long-term-record: backlog  # 查看公开榜与长期战绩
   8-4-generate-private-safe-share-card: backlog  # 生成隐私安全的战绩分享卡
   epic-8-retrospective: optional
-  epic-9: backlog
-  9-1-extend-rooms-to-post-world-cup-competitions: backlog  # 将房间扩展到世界杯后赛事
+  epic-9: in-progress
+  9-1-extend-rooms-to-post-world-cup-competitions: in-progress  # 多赛事配置、同步与筛选已实现；待真实供应商密钥完成数据预热验收
   9-2-build-cross-competition-history: backlog  # 建立跨赛事历史档案
   epic-9-retrospective: optional

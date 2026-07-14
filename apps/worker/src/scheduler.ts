@@ -6,12 +6,12 @@ export interface SchedulerTimerPort {
 }
 
 export interface WorkerSchedulerConfig {
-  leagueId: number;
-  season: number;
+  competitions: ReadonlyArray<{ leagueId: number; season: number }>;
   bookmakerId: number;
   pastDays: number;
   futureDays: number;
   fixturesIntervalMs: number;
+  resultsIntervalMs: number;
   oddsIntervalMs: number;
   settlementIntervalMs: number;
   liveEnabled: boolean;
@@ -24,6 +24,7 @@ type FixtureTarget = {
   supplierFixtureId: number;
   kickoffAt: string;
   status: "SCHEDULED" | "LIVE" | "FINISHED" | "POSTPONED" | "CANCELLED";
+  oddsDataAsOf?: string;
 };
 
 type SchedulerDependencies = {
@@ -40,6 +41,7 @@ type SchedulerDependencies = {
 };
 
 const DAY_MS = 86_400_000;
+const FRESH_ODDS_MS = 10 * 60_000;
 
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -112,43 +114,55 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
 
   async function refreshFixtures() {
     const window = fixtureWindow();
-    return supplierJob("fixtures", {
-      type: "FIXTURES",
-      payload: { leagueId: config.leagueId, season: config.season, ...window },
-    });
+    const results: Array<SupplierJobResult | undefined> = [];
+    for (const competition of config.competitions) {
+      results.push(await supplierJob(`fixtures:${competition.leagueId}:${competition.season}`, {
+        type: "FIXTURES",
+        payload: { ...competition, ...window },
+      }));
+    }
+    return results;
   }
 
   async function refreshResults() {
     const now = clock.now();
-    return supplierJob("results", {
-      type: "RESULTS",
-      payload: {
-        leagueId: config.leagueId,
-        season: config.season,
-        from: dateOnly(new Date(now.getTime() - config.pastDays * DAY_MS)),
-        to: dateOnly(now),
-      },
-    });
-  }
-
-  async function refreshFixtureAndResultCaches() {
-    await refreshFixtures();
-    await refreshResults();
+    const results: Array<SupplierJobResult | undefined> = [];
+    for (const competition of config.competitions) {
+      results.push(await supplierJob(`results:${competition.leagueId}:${competition.season}`, {
+        type: "RESULTS",
+        payload: {
+          ...competition,
+          from: dateOnly(new Date(now.getTime() - config.pastDays * DAY_MS)),
+          to: dateOnly(now),
+        },
+      }));
+    }
+    return results;
   }
 
   async function refreshTargets(kind: "PREMATCH_ODDS" | "LIVE") {
     const now = clock.now().getTime();
-    const min = now - config.pastDays * DAY_MS;
     const max = now + config.futureDays * DAY_MS;
     const targets = (await fixtures.listFixtures()).filter((fixture) => {
       const kickoff = new Date(fixture.kickoffAt).getTime();
-      return Number.isFinite(kickoff) && kickoff >= min && kickoff <= max &&
-        (kind === "PREMATCH_ODDS" ? fixture.status === "SCHEDULED" : fixture.status === "LIVE");
+      if (!Number.isFinite(kickoff) || kickoff > max) return false;
+      if (kind === "LIVE") return kickoff >= now - config.pastDays * DAY_MS && fixture.status === "LIVE";
+      if (kickoff <= now || fixture.status !== "SCHEDULED") return false;
+      if (fixture.oddsDataAsOf === undefined) return true;
+      const oddsDataAsOf = new Date(fixture.oddsDataAsOf).getTime();
+      const age = now - oddsDataAsOf;
+      return !Number.isFinite(oddsDataAsOf) || age < 0 || age > FRESH_ODDS_MS;
+    }).sort((left, right) => {
+      const kickoffDifference = new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime();
+      return kickoffDifference || left.id.localeCompare(right.id);
     });
-    await Promise.all(targets.map((fixture) => supplierJob(
-      `${kind.toLowerCase()}:${fixture.id}`,
-      { type: kind, payload: { fixtureId: fixture.supplierFixtureId, matchId: fixture.id, bookmakerId: config.bookmakerId } },
-    )));
+    for (const fixture of targets) {
+      const result = await supplierJob(
+        `${kind.toLowerCase()}:${fixture.id}`,
+        { type: kind, payload: { fixtureId: fixture.supplierFixtureId, matchId: fixture.id, bookmakerId: config.bookmakerId } },
+      );
+      if (result?.outcome !== "SUCCESS") break;
+    }
   }
 
   async function scanSettlements() {
@@ -167,13 +181,14 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
       const calibration = await supplierJob("status", { type: "STATUS_CALIBRATE", payload: {} });
       if (calibration?.outcome !== "SUCCESS") throw new Error("Startup job STATUS_CALIBRATE did not succeed");
       const fixtureRefresh = await refreshFixtures();
-      if (fixtureRefresh?.outcome !== "SUCCESS") throw new Error("Startup job FIXTURES did not succeed");
+      if (fixtureRefresh.some((result) => result?.outcome !== "SUCCESS")) throw new Error("Startup job FIXTURES did not succeed");
       if (stopping) return;
       await refreshTargets("PREMATCH_ODDS");
       if (config.liveEnabled) await refreshTargets("LIVE");
       await scanSettlements();
       if (stopping) return;
-      every(config.fixturesIntervalMs, refreshFixtureAndResultCaches);
+      every(config.fixturesIntervalMs, refreshFixtures);
+      every(config.resultsIntervalMs, refreshResults);
       every(config.oddsIntervalMs, () => refreshTargets("PREMATCH_ODDS"));
       every(config.settlementIntervalMs, scanSettlements);
       if (config.liveEnabled) every(config.liveIntervalMs, () => refreshTargets("LIVE"));

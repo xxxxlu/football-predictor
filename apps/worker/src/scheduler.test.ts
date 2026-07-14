@@ -8,10 +8,24 @@ class FakeTimers implements SchedulerTimerPort {
   tickAll() { for (const callback of this.callbacks) callback(); }
 }
 
+const schedulerConfig = (competitions = [{ leagueId: 1, season: 2026 }]) => ({
+  competitions,
+  bookmakerId: 8,
+  pastDays: 1,
+  futureDays: 7,
+  fixturesIntervalMs: 60_000,
+  resultsIntervalMs: 120_000,
+  oddsIntervalMs: 60_000,
+  settlementIntervalMs: 60_000,
+  liveEnabled: false,
+  liveIntervalMs: 300_000,
+  settlementBatchSize: 100,
+});
+
 describe("worker scheduler", () => {
   it("rejects startup when supplier calibration is not successful", async () => {
     const scheduler = createWorkerScheduler({
-      config: { leagueId: 1, season: 2026, bookmakerId: 8, pastDays: 1, futureDays: 7, fixturesIntervalMs: 60_000, oddsIntervalMs: 60_000, settlementIntervalMs: 60_000, liveEnabled: false, liveIntervalMs: 300_000, settlementBatchSize: 100 },
+      config: schedulerConfig(),
       clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
       supplier: { run: async () => ({ outcome: "RETRY", reason: "SUPPLIER_FAILURE", retryAt: "2026-07-13T10:01:00Z", nextAttempt: 1 }), close: async () => undefined },
       settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
@@ -26,11 +40,11 @@ describe("worker scheduler", () => {
     const logs: unknown[] = [];
     const timers = new FakeTimers();
     const scheduler = createWorkerScheduler({
-      config: { leagueId: 1, season: 2026, bookmakerId: 8, pastDays: 1, futureDays: 7, fixturesIntervalMs: 60_000, oddsIntervalMs: 60_000, settlementIntervalMs: 60_000, liveEnabled: false, liveIntervalMs: 300_000, settlementBatchSize: 100 },
+      config: schedulerConfig(),
       clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
       supplier: { run: async (job) => { jobs.push(job.type); return { outcome: "SUCCESS", synced: 1 }; }, close: async () => undefined },
       settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
-      fixtures: { listFixtures: async () => [{ id: "api-football:101", supplierFixtureId: 101, kickoffAt: "2026-07-13T12:00:00Z", status: "SCHEDULED" }] },
+      fixtures: { listFixtures: async () => [{ id: "api-football:101", supplierFixtureId: 101, kickoffAt: "2026-07-14T12:00:00Z", status: "SCHEDULED" }] },
       write: (entry) => logs.push(entry),
     });
     await scheduler.start();
@@ -39,18 +53,82 @@ describe("worker scheduler", () => {
     await scheduler.stop();
   });
 
+  it("refreshes every configured competition sequentially before odds", async () => {
+    const calls: string[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig([{ leagueId: 39, season: 2026 }, { leagueId: 140, season: 2026 }, { leagueId: 2, season: 2026 }]),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => {
+          active += 1;
+          maxActive = Math.max(maxActive, active);
+          if (job.type === "FIXTURES") calls.push(`${job.payload.leagueId}:${job.payload.season}`);
+          await Promise.resolve();
+          active -= 1;
+          return { outcome: "SUCCESS", synced: 0 };
+        },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [] }, write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(calls).toEqual(["39:2026", "140:2026", "2:2026"]);
+    expect(maxActive).toBe(1);
+    await scheduler.stop();
+  });
+
+  it("only refreshes future stale odds in nearest-kickoff order without concurrent supplier calls", async () => {
+    const calls: number[] = [];
+    let active = 0;
+    let maxActive = 0;
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => {
+          if (job.type === "PREMATCH_ODDS") {
+            active += 1;
+            maxActive = Math.max(maxActive, active);
+            calls.push(job.payload.fixtureId);
+            await Promise.resolve();
+            active -= 1;
+          }
+          return { outcome: "SUCCESS", synced: 0 };
+        },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [
+        { id: "past", supplierFixtureId: 1, kickoffAt: "2026-07-13T09:59:59Z", status: "SCHEDULED" },
+        { id: "later", supplierFixtureId: 3, kickoffAt: "2026-07-13T13:00:00Z", status: "SCHEDULED" },
+        { id: "fresh", supplierFixtureId: 4, kickoffAt: "2026-07-13T11:00:00Z", status: "SCHEDULED", oddsDataAsOf: "2026-07-13T09:55:00Z" },
+        { id: "nearest", supplierFixtureId: 2, kickoffAt: "2026-07-13T10:30:00Z", status: "SCHEDULED" },
+      ] },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(calls).toEqual([2, 3]);
+    expect(maxActive).toBe(1);
+    await scheduler.stop();
+  });
+
   it("uses a protected result-refresh job on the periodic fixture cycle", async () => {
     const jobs: string[] = [];
     const timers = new FakeTimers();
     const scheduler = createWorkerScheduler({
-      config: { leagueId: 1, season: 2026, bookmakerId: 8, pastDays: 1, futureDays: 7, fixturesIntervalMs: 60_000, oddsIntervalMs: 60_000, settlementIntervalMs: 60_000, liveEnabled: false, liveIntervalMs: 300_000, settlementBatchSize: 100 },
+      config: schedulerConfig(),
       clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
       supplier: { run: async (job) => { jobs.push(job.type); return { outcome: "SUCCESS", synced: 0 }; }, close: async () => undefined },
       settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
       fixtures: { listFixtures: async () => [] }, write: () => undefined,
     });
     await scheduler.start();
-    timers.callbacks[0]?.();
+    timers.callbacks[1]?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(jobs).toContain("RESULTS");
     await scheduler.stop();
@@ -64,7 +142,7 @@ describe("worker scheduler", () => {
     const blocker = new Promise<void>((resolve) => { release = resolve; });
     const timers = new FakeTimers();
     const scheduler = createWorkerScheduler({
-      config: { leagueId: 1, season: 2026, bookmakerId: 8, pastDays: 1, futureDays: 7, fixturesIntervalMs: 60_000, oddsIntervalMs: 60_000, settlementIntervalMs: 60_000, liveEnabled: false, liveIntervalMs: 300_000, settlementBatchSize: 100 },
+      config: schedulerConfig(),
       clock: { now: () => now }, timers,
       supplier: { run: async (job) => {
         if (job.type === "PREMATCH_ODDS") { oddsCalls += 1; return { outcome: "DEFERRED", reason: "BUDGET_EXHAUSTED", retryAt: "2026-07-14T00:00:00.000Z" }; }
@@ -73,7 +151,7 @@ describe("worker scheduler", () => {
         return { outcome: "SUCCESS", synced: 0 };
       }, close: async () => undefined },
       settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
-      fixtures: { listFixtures: async () => [{ id: "api-football:101", supplierFixtureId: 101, kickoffAt: "2026-07-13T12:00:00Z", status: "SCHEDULED" }] },
+      fixtures: { listFixtures: async () => [{ id: "api-football:101", supplierFixtureId: 101, kickoffAt: "2026-07-14T12:00:00Z", status: "SCHEDULED" }] },
       write: () => undefined,
     });
     let jobsStarted = 0;
@@ -98,7 +176,7 @@ describe("worker scheduler", () => {
     const fixtureStarted = new Promise<void>((resolve) => { markFixtureStarted = resolve; });
     const timers = new FakeTimers();
     const scheduler = createWorkerScheduler({
-      config: { leagueId: 1, season: 2026, bookmakerId: 8, pastDays: 1, futureDays: 7, fixturesIntervalMs: 60_000, oddsIntervalMs: 60_000, settlementIntervalMs: 60_000, liveEnabled: false, liveIntervalMs: 300_000, settlementBatchSize: 100 },
+      config: schedulerConfig(),
       clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
       supplier: { run: async (job) => {
         if (job.type === "FIXTURES") {

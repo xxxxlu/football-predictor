@@ -22,7 +22,7 @@ describe("supplier synchronization", () => {
     let calls = 0;
     const repository = new InMemoryMatchSnapshotRepository();
     const budget = new InMemorySupplierBudget(emptyBudgetState("2026-07-13"));
-    await budget.consume({ category: "PREMATCH_ODDS", count: 10, at: now });
+    await budget.consume({ category: "PREMATCH_ODDS", count: 50, at: now });
     const service = new SupplierSyncService({ repository, budget, gateway: { fetchFixtures: async () => ({ data: [], quota: {} }), fetchPrematchOdds: async () => { calls += 1; return { data: odds, quota: {} }; }, fetchLive: async () => ({ data: null, quota: {} }) }, now: () => now });
 
     await expect(service.syncPrematchOdds({ fixtureId: 101, matchId: fixture.id, bookmakerId: 8 })).rejects.toMatchObject({ code: "SUPPLIER_BUDGET_EXHAUSTED" });

@@ -4,9 +4,9 @@ export const SETTLEMENT_PROTECTED_REQUESTS = 10;
 export type SupplierRequestCategory = "STATIC" | "PREMATCH_ODDS" | "LIVE" | "SETTLEMENT";
 
 export const CATEGORY_BASELINE: Readonly<Record<SupplierRequestCategory, number>> = {
-  STATIC: 5,
-  PREMATCH_ODDS: 10,
-  LIVE: 70,
+  STATIC: 30,
+  PREMATCH_ODDS: 50,
+  LIVE: 5,
   SETTLEMENT: 10,
 };
 

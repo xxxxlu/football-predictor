@@ -5,9 +5,9 @@ describe("supplier daily budget", () => {
   it("reserves the final ten requests from ordinary synchronization", async () => {
     const budget = new InMemorySupplierBudget(emptyBudgetState("2026-07-13"));
 
-    expect((await budget.consume({ category: "LIVE", count: 70, at: new Date("2026-07-13T23:59:00Z") })).allowed).toBe(true);
-    expect((await budget.consume({ category: "PREMATCH_ODDS", count: 10, at: new Date("2026-07-13T23:59:01Z") })).allowed).toBe(true);
-    expect((await budget.consume({ category: "STATIC", count: 5, at: new Date("2026-07-13T23:59:02Z") })).allowed).toBe(true);
+    expect((await budget.consume({ category: "STATIC", count: 30, at: new Date("2026-07-13T23:59:00Z") })).allowed).toBe(true);
+    expect((await budget.consume({ category: "PREMATCH_ODDS", count: 50, at: new Date("2026-07-13T23:59:01Z") })).allowed).toBe(true);
+    expect((await budget.consume({ category: "LIVE", count: 5, at: new Date("2026-07-13T23:59:02Z") })).allowed).toBe(true);
     expect(await budget.consume({ category: "LIVE", count: 1, at: new Date("2026-07-13T23:59:03Z") })).toMatchObject({ allowed: false, reason: "CATEGORY_EXHAUSTED" });
     expect((await budget.consume({ category: "SETTLEMENT", count: 10, at: new Date("2026-07-13T23:59:04Z") })).allowed).toBe(true);
     expect((await budget.snapshot(new Date("2026-07-13T23:59:05Z"))).totalUsed).toBe(95);
@@ -38,10 +38,17 @@ describe("supplier daily budget", () => {
   it("serializes concurrent consumption so the cap cannot be exceeded", async () => {
     const budget = new InMemorySupplierBudget(emptyBudgetState("2026-07-13"));
     const results = await Promise.all(
-      Array.from({ length: 6 }, () => budget.consume({ category: "STATIC", count: 1, at: new Date("2026-07-13T10:00:00Z") })),
+      Array.from({ length: 31 }, () => budget.consume({ category: "STATIC", count: 1, at: new Date("2026-07-13T10:00:00Z") })),
     );
 
-    expect(results.filter((result) => result.allowed)).toHaveLength(5);
-    expect((await budget.snapshot(new Date("2026-07-13T10:00:00Z"))).totalUsed).toBe(5);
+    expect(results.filter((result) => result.allowed)).toHaveLength(30);
+    expect((await budget.snapshot(new Date("2026-07-13T10:00:00Z"))).totalUsed).toBe(30);
+  });
+
+  it("admits the first fixture refresh for seven competitions", async () => {
+    const budget = new InMemorySupplierBudget(emptyBudgetState("2026-07-13"));
+    const results = await Promise.all(Array.from({ length: 7 }, () =>
+      budget.consume({ category: "STATIC", count: 1, at: new Date("2026-07-13T10:00:00Z") })));
+    expect(results.every((result) => result.allowed)).toBe(true);
   });
 });

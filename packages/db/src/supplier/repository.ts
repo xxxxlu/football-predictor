@@ -19,6 +19,7 @@ export interface FixtureSnapshotRecord {
   version: string;
   dataAsOf: string;
   capturedAt: string;
+  oddsDataAsOf?: string;
   result?: { confirmed: boolean; homeScore: number | null; awayScore: number | null; version: string | null };
 }
 
@@ -63,7 +64,7 @@ export function statusForSync(syncState: SyncState, sourceVerified: boolean, dat
 type FixtureRow = {
   id: string; supplier: "API_FOOTBALL"; supplierFixtureId: string; competitionId: string; competitionName: string;
   season: number; kickoffAt: Date | string; status: MatchStatus; homeTeamId: string; homeTeamName: string; awayTeamId: string;
-  awayTeamName: string; currentVersion: string; dataAsOf: Date | string; capturedAt: Date | string;
+  awayTeamName: string; currentVersion: string; dataAsOf: Date | string; capturedAt: Date | string; oddsDataAsOf?: Date | string | null;
 };
 
 type OddsRow = {
@@ -98,6 +99,7 @@ function mapFixture(row: FixtureRow): FixtureSnapshotRecord {
     version: row.currentVersion,
     dataAsOf: isoTimestamp(row.dataAsOf),
     capturedAt: isoTimestamp(row.capturedAt),
+    ...(row.oddsDataAsOf ? { oddsDataAsOf: isoTimestamp(row.oddsDataAsOf) } : {}),
   };
 }
 
@@ -184,8 +186,11 @@ export class PostgresMatchSnapshotRepository {
   async listFixtures(): Promise<FixtureSnapshotRecord[]> {
     const rows = await this.sql<FixtureRow[]>`SELECT id,supplier,supplier_fixture_id AS "supplierFixtureId",competition_id AS "competitionId",
       competition_name AS "competitionName",season,kickoff_at AS "kickoffAt",status,home_team_id AS "homeTeamId",home_team_name AS "homeTeamName",
-      away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt"
-      FROM supplier.fixtures ORDER BY kickoff_at,id`;
+      away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",
+      latest_market."oddsDataAsOf"
+      FROM supplier.fixtures
+      LEFT JOIN LATERAL (SELECT data_as_of AS "oddsDataAsOf" FROM supplier.markets WHERE fixture_id=supplier.fixtures.id ORDER BY data_as_of DESC LIMIT 1) latest_market ON true
+      ORDER BY kickoff_at,id`;
     return rows.map(mapFixture);
   }
 

@@ -26,7 +26,7 @@ export interface SupplierBudgetSnapshot {
 
 const HARD_LIMIT = 95;
 const PROTECTED = 10;
-const CATEGORY_LIMIT: Record<SupplierRequestCategory, number> = { STATIC: 5, PREMATCH_ODDS: 10, LIVE: 70, SETTLEMENT: 10 };
+const CATEGORY_LIMIT: Record<SupplierRequestCategory, number> = { STATIC: 30, PREMATCH_ODDS: 50, LIVE: 5, SETTLEMENT: 10 };
 
 function categoryValue(row: SupplierBudgetRow, category: SupplierRequestCategory): number {
   if (category === "STATIC") return row.staticUsed;

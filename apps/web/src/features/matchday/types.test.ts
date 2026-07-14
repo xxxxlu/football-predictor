@@ -5,6 +5,7 @@ describe("normalizeMatch", () => {
   it("uses the product market id for ticket submission rather than the supplier trace id", () => {
     const match = normalizeMatch({
       id: "api-football:101",
+      competitionName: "Premier League",
       kickoffAt: "2026-07-14T20:00:00.000Z",
       status: "SCHEDULED",
       homeTeam: { name: "Home" },
@@ -23,5 +24,6 @@ describe("normalizeMatch", () => {
     });
 
     expect(match?.market).toMatchObject({ id: "api-football:101:bookmaker:8:market:1", version: "odds-v2" });
+    expect(match?.competitionName).toBe("Premier League");
   });
 });
