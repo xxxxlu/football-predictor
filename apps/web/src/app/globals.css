@@ -169,3 +169,92 @@ button, a { -webkit-tap-highlight-color: transparent; }
   transform: translateX(-100%); animation: skeleton-slide 1.5s ease-in-out infinite;
 }
 @keyframes skeleton-slide { 100% { transform: translateX(100%); } }
+
+/* ============================================================
+   FOOTBALL v2 — bold matchday identity: volt accent, night
+   blocks, kinetic type, marquee, scroll reveals, big motion.
+   Inspired by star-athlete sites (loud type, high contrast,
+   lime pop). Pure CSS + inline SVG; motion is opt-in.
+   ============================================================ */
+:root {
+  --volt: #d6f84a;              /* neon lime pop */
+  --volt-deep: #b9e21f;
+  --volt-ink: #0b1a06;          /* text on volt */
+  --night: #0a1410;             /* stadium-night black-green */
+  --night-2: #0f1e18;
+  --night-line: rgb(214 248 74 / 22%);
+}
+
+html { scroll-behavior: smooth; }
+html.no-scroll, body.no-scroll { overflow: hidden; }
+
+/* --- Sections --- */
+.night { background: var(--night); color: #fff; }
+.night ::selection { background: rgb(214 248 74 / 30%); }
+.section-pad { padding-block: clamp(4rem, 10vw, 9rem); }
+
+/* --- Kinetic display type --- */
+.kinetic {
+  font-family: var(--font-sans);
+  font-weight: 900; letter-spacing: -.035em; line-height: .84;
+  text-transform: uppercase;
+}
+.text-stroke {
+  color: transparent;
+  -webkit-text-stroke: 2px currentColor;
+  text-stroke: 2px currentColor;
+}
+@media (max-width: 640px) { .text-stroke { -webkit-text-stroke-width: 1.4px; } }
+
+/* --- Bold buttons (pill) --- */
+.btn-volt, .btn-solid, .btn-outline {
+  display: inline-flex; align-items: center; justify-content: center; gap: .55em;
+  border-radius: 999px; font-weight: 800; letter-spacing: .01em;
+  padding: 1rem 1.7rem; text-decoration: none; cursor: pointer;
+  transition: transform .16s ease, box-shadow .16s ease, background .16s ease, color .16s ease;
+}
+.btn-volt { background: var(--volt); color: var(--volt-ink); }
+.btn-volt:hover { transform: translateY(-2px); box-shadow: 0 12px 34px rgb(214 248 74 / 38%); background: var(--volt-deep); }
+.btn-solid { background: var(--ink); color: #fff; }
+.btn-solid:hover { transform: translateY(-2px); background: var(--field); }
+.btn-outline { border: 2px solid currentColor; }
+.btn-outline:hover { transform: translateY(-2px); background: currentColor; }
+.btn-outline:hover > * { color: var(--paper); }
+
+/* --- Arrow link (slides on hover) --- */
+.link-arrow { display: inline-flex; align-items: center; gap: .5em; }
+.link-arrow .arrow { transition: transform .2s ease; }
+.link-arrow:hover .arrow { transform: translateX(5px); }
+
+/* --- Marquee ticker --- */
+.marquee { display: flex; overflow: hidden; -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent); }
+.marquee__track { display: inline-flex; flex: none; align-items: center; gap: 2.5rem; padding-right: 2.5rem; animation: marquee 30s linear infinite; will-change: transform; }
+.marquee--reverse .marquee__track { animation-direction: reverse; }
+.marquee:hover .marquee__track { animation-play-state: paused; }
+@keyframes marquee { to { transform: translateX(-100%); } }
+.marquee__sep { color: var(--volt); }
+
+/* --- Scroll reveal (motion opt-in; visible by default when reduced) --- */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal { opacity: 0; transform: translateY(30px); transition: opacity .8s cubic-bezier(.2,.7,.2,1), transform .8s cubic-bezier(.2,.7,.2,1); }
+  .reveal.is-visible { opacity: 1; transform: none; }
+  .rise { opacity: 0; transform: translateY(34px); animation: rise 1s cubic-bezier(.2,.7,.2,1) forwards; }
+  @keyframes rise { to { opacity: 1; transform: none; } }
+}
+
+/* --- Kick-off intro loader --- */
+.kickoff {
+  position: fixed; inset: 0; z-index: 200; display: grid; place-items: center;
+  background: var(--volt); color: var(--volt-ink);
+}
+.kickoff.is-done { animation: kickoff-out .7s cubic-bezier(.6,0,.2,1) forwards; }
+@keyframes kickoff-out { to { opacity: 0; visibility: hidden; clip-path: inset(0 0 100% 0); } }
+.kickoff__ball { animation: kickoff-roll 1.1s cubic-bezier(.4,0,.2,1) infinite; }
+@keyframes kickoff-roll { 0% { transform: translateX(-40px) rotate(-90deg); } 100% { transform: translateX(40px) rotate(90deg); } }
+
+/* --- Fluid line-art backdrop (decorative) --- */
+.line-art {
+  background-image:
+    radial-gradient(60% 40% at 80% 10%, rgb(214 248 74 / 8%), transparent 60%),
+    radial-gradient(50% 50% at 10% 90%, rgb(23 107 77 / 14%), transparent 60%);
+}
