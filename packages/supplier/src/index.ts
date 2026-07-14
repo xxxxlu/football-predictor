@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import {
   createMatchView,
+  localizeCompetitionName,
+  localizeTeamName,
   type BudgetSnapshot,
   type FixtureSnapshot,
   type LiveSnapshot,
@@ -28,6 +30,116 @@ export interface SupplierGateway {
   fetchPrematchOdds(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: OddsSnapshot | null; quota: { supplierLimit?: number; supplierRemaining?: number } }>;
   fetchLive(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: LiveSnapshot | null; quota: { supplierLimit?: number; supplierRemaining?: number } }>;
   fetchStatus?(): Promise<{ supplierCurrent: number; supplierLimit: number }>;
+}
+
+type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+
+type OpenLigaDbMatch = {
+  matchID: number;
+  leagueId: number;
+  leagueName: string;
+  leagueSeason: number;
+  leagueShortcut: string;
+  matchDateTimeUTC: string;
+  lastUpdateDateTime?: string;
+  matchIsFinished: boolean;
+  team1: { teamId: number; teamName: string; shortName?: string };
+  team2: { teamId: number; teamName: string; shortName?: string };
+  matchResults?: Array<{ resultTypeID: number; pointsTeam1: number; pointsTeam2: number }>;
+};
+
+function validDate(value: string | undefined, fallback: Date): string {
+  const parsed = value ? new Date(value) : fallback;
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : fallback.toISOString();
+}
+
+export class OpenLigaDbClient {
+  private readonly fetcher: Fetcher;
+  private readonly now: () => Date;
+  private readonly baseUrl: string;
+
+  constructor(input: { fetcher?: Fetcher; now?: () => Date; baseUrl?: string } = {}) {
+    this.fetcher = input.fetcher ?? fetch;
+    this.now = input.now ?? (() => new Date());
+    this.baseUrl = (input.baseUrl ?? "https://api.openligadb.de").replace(/\/$/, "");
+  }
+
+  async fetchWorldCup2026(): Promise<FixtureSnapshot[]> {
+    const response = await this.fetcher(`${this.baseUrl}/getmatchdata/wm26/2026`, {
+      method: "GET",
+      headers: { accept: "application/json" },
+      signal: AbortSignal.timeout(6_000),
+    });
+    if (!response.ok) throw new Error(`OpenLigaDB request failed: HTTP ${response.status}`);
+    const payload = await response.json();
+    if (!Array.isArray(payload)) throw new Error("OpenLigaDB request failed: invalid payload");
+    const capturedAt = this.now();
+    return (payload as OpenLigaDbMatch[]).flatMap((item) => {
+      if (!Number.isSafeInteger(item.matchID) || !item.team1 || !item.team2) return [];
+      const kickoffAt = validDate(item.matchDateTimeUTC, capturedAt);
+      const dataAsOf = validDate(item.lastUpdateDateTime, capturedAt);
+      const finalResult = item.matchResults?.find((result) => result.resultTypeID === 2);
+      const status = item.matchIsFinished ? "FINISHED" as const : new Date(kickoffAt) <= capturedAt ? "LIVE" as const : "SCHEDULED" as const;
+      const result = {
+        confirmed: item.matchIsFinished && Boolean(finalResult),
+        homeScore: finalResult?.pointsTeam1 ?? null,
+        awayScore: finalResult?.pointsTeam2 ?? null,
+        version: item.matchIsFinished && finalResult ? etagOf({ matchID: item.matchID, finalResult }).slice(1, -1) : null,
+      };
+      const fixtureWithoutVersion: Omit<FixtureSnapshot, "version"> = {
+        id: `openligadb:${item.matchID}`,
+        supplier: "OPENLIGADB",
+        supplierFixtureId: item.matchID,
+        competitionId: item.leagueId,
+        competitionName: localizeCompetitionName(item.leagueName),
+        season: item.leagueSeason,
+        kickoffAt,
+        status,
+        homeTeam: { supplierTeamId: item.team1.teamId, name: localizeTeamName(item.team1.teamName, item.team1.shortName) },
+        awayTeam: { supplierTeamId: item.team2.teamId, name: localizeTeamName(item.team2.teamName, item.team2.shortName) },
+        dataAsOf,
+        capturedAt: capturedAt.toISOString(),
+        result,
+      };
+      return [{ ...fixtureWithoutVersion, version: etagOf(fixtureWithoutVersion).slice(1, -1) }];
+    });
+  }
+}
+
+function platformPredictionMarket(fixture: FixtureSnapshot, now: Date): OddsSnapshot {
+  const outcomes = [
+    { selection: "HOME" as const, supplierLabel: "主胜", decimalOdds: "3.00" },
+    { selection: "DRAW" as const, supplierLabel: "平局", decimalOdds: "3.00" },
+    { selection: "AWAY" as const, supplierLabel: "客胜", decimalOdds: "3.00" },
+  ];
+  return {
+    productMarketId: `${fixture.id}:bookmaker:0:market:1`, fixtureId: fixture.id, supplier: "PLATFORM",
+    supplierFixtureId: fixture.supplierFixtureId, bookmakerId: 0, bookmakerName: "平台固定虚拟积分", marketId: 1,
+    marketName: "胜平负固定积分倍率", version: etagOf({ fixtureId: fixture.id, outcomes, dataAsOf: now.toISOString() }).slice(1, -1),
+    dataAsOf: now.toISOString(), capturedAt: now.toISOString(), outcomes,
+  };
+}
+
+export class OpenLigaDbWorldCupSync {
+  private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds">;
+  private readonly client: OpenLigaDbClient;
+  private readonly now: () => Date;
+
+  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds">; client?: OpenLigaDbClient; now?: () => Date }) {
+    this.repository = input.repository;
+    this.client = input.client ?? new OpenLigaDbClient();
+    this.now = input.now ?? (() => new Date());
+  }
+
+  async run(): Promise<{ fixturesSynced: number; marketsSynced: number }> {
+    const now = this.now();
+    const recentCutoff = now.getTime() - 24 * 60 * 60_000;
+    const fixtures = (await this.client.fetchWorldCup2026()).filter((fixture) => new Date(fixture.kickoffAt).getTime() >= recentCutoff);
+    await this.repository.saveFixtures(fixtures);
+    const upcoming = fixtures.filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now);
+    for (const fixture of upcoming) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+    return { fixturesSynced: fixtures.length, marketsSynced: upcoming.length };
+  }
 }
 
 export class SupplierSyncError extends Error {

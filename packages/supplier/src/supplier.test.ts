@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryMatchSnapshotRepository, MatchCacheReader, SupplierSyncService, planNextLiveSync } from "./index.js";
+import { InMemoryMatchSnapshotRepository, MatchCacheReader, OpenLigaDbClient, OpenLigaDbWorldCupSync, SupplierSyncService, planNextLiveSync } from "./index.js";
 import { InMemorySupplierBudget, emptyBudgetState } from "@football-predictor/domain";
 
 const now = new Date("2026-07-13T10:05:00Z");
@@ -7,6 +7,30 @@ const fixture = { id: "api-football:101", supplier: "API_FOOTBALL" as const, sup
 const odds = { productMarketId: `${fixture.id}:bookmaker:8:market:1`, fixtureId: fixture.id, supplier: "API_FOOTBALL" as const, supplierFixtureId: 101, bookmakerId: 8, bookmakerName: "Bookmaker", marketId: 1, marketName: "Match Winner", version: "o1", dataAsOf: "2026-07-13T10:00:00.000Z", capturedAt: "2026-07-13T10:00:01.000Z", outcomes: [{ selection: "HOME" as const, supplierLabel: "Home", decimalOdds: "2.1" }, { selection: "DRAW" as const, supplierLabel: "Draw", decimalOdds: "3.2" }, { selection: "AWAY" as const, supplierLabel: "Away", decimalOdds: "3.4" }] };
 
 describe("supplier synchronization", () => {
+  it("maps current OpenLigaDB World Cup fixtures to Chinese names and platform scoring markets", async () => {
+    const source = [{ matchID: 7001, leagueId: 501, leagueName: "WM 2026", leagueSeason: 2026, leagueShortcut: "wm26", matchDateTimeUTC: "2026-07-14T19:00:00Z", lastUpdateDateTime: "2026-07-14T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: "Frankreich", shortName: "FRA" }, team2: { teamId: 20, teamName: "Spanien", shortName: "ESP" }, matchResults: [] }];
+    const repository = new InMemoryMatchSnapshotRepository();
+    const client = new OpenLigaDbClient({ fetcher: async () => Response.json(source), now: () => new Date("2026-07-14T10:00:00Z") });
+    const sync = new OpenLigaDbWorldCupSync({ repository, client, now: () => new Date("2026-07-14T10:00:00Z") });
+
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1 });
+    expect(await repository.getFixture("openligadb:7001")).toMatchObject({ supplier: "OPENLIGADB", competitionName: "世界杯", homeTeam: { name: "法国" }, awayTeam: { name: "西班牙" } });
+    const market = await repository.getOdds("openligadb:7001");
+    expect(market).toMatchObject({ supplier: "PLATFORM", bookmakerName: "平台固定虚拟积分", marketName: "胜平负固定积分倍率" });
+    expect(market?.outcomes.map((outcome) => outcome.decimalOdds)).toEqual(["3.00", "3.00", "3.00"]);
+  });
+
+  it("does not import expired OpenLigaDB history but keeps a recent result for settlement", async () => {
+    const match = (matchID: number, kickoffAt: string, finished: boolean) => ({ matchID, leagueId: 501, leagueName: "WM 2026", leagueSeason: 2026, leagueShortcut: "wm26", matchDateTimeUTC: kickoffAt, lastUpdateDateTime: "2026-07-14T10:00:00Z", matchIsFinished: finished, team1: { teamId: 10, teamName: "England", shortName: "ENG" }, team2: { teamId: 20, teamName: "Argentina", shortName: "ARG" }, matchResults: finished ? [{ resultTypeID: 2, pointsTeam1: 1, pointsTeam2: 2 }] : [] });
+    const repository = new InMemoryMatchSnapshotRepository();
+    const client = new OpenLigaDbClient({ fetcher: async () => Response.json([match(1, "2024-07-14T19:00:00Z", true), match(2, "2026-07-14T08:00:00Z", true), match(3, "2026-07-15T19:00:00Z", false)]), now: () => new Date("2026-07-14T10:00:00Z") });
+    const sync = new OpenLigaDbWorldCupSync({ repository, client, now: () => new Date("2026-07-14T10:00:00Z") });
+
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 2, marketsSynced: 1 });
+    expect(await repository.getFixture("openligadb:1")).toBeNull();
+    expect(await repository.getFixture("openligadb:2")).toMatchObject({ status: "FINISHED", result: { confirmed: true, homeScore: 1, awayScore: 2 } });
+  });
+
   it("charges the budget before fetching and version-saves fixture snapshots", async () => {
     const events: string[] = [];
     const repository = new InMemoryMatchSnapshotRepository();

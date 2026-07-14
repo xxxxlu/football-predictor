@@ -23,6 +23,8 @@ test("workspace contains every architecture boundary", async () => {
 test("free-tier deployment builds the web workspace and bounds supplier synchronization", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8"));
   assert.equal(manifest.devDependencies.next, "16.2.10");
+  const webManifest = JSON.parse(await readFile("apps/web/package.json", "utf8"));
+  assert.equal(webManifest.scripts["build:packages"], "pnpm --dir ../.. build:packages");
   const vercel = JSON.parse(await readFile("vercel.json", "utf8"));
   assert.equal(vercel.framework, "nextjs");
   assert.match(vercel.buildCommand, /build:packages/);
@@ -33,7 +35,7 @@ test("free-tier deployment builds the web workspace and bounds supplier synchron
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /cron: "17 1,13 \* \* \*"/);
   assert.match(workflow, /SUPPLIER_CURRENT_SEASON_ENABLED/);
-  assert.match(workflow, /253:2024/);
+  assert.doesNotMatch(workflow, /default:.*2024/);
   assert.match(workflow, /SUPPLIER_REFERENCE_DATE/);
   assert.match(workflow, /pnpm db:migrate/);
   assert.match(workflow, /pnpm supplier:prewarm/);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assessMarketData, createMatchView } from "./index.js";
+import { assessMarketData, createMatchView, localizeCompetitionName, localizeTeamName } from "./index.js";
 
 const odds = {
   productMarketId: "fixture-1:bookmaker:8:market:1",
@@ -19,6 +19,19 @@ const odds = {
     { selection: "AWAY" as const, supplierLabel: "Away", decimalOdds: "3.40" },
   ],
 };
+
+describe("Chinese football names", () => {
+  it("localizes supported competitions and World Cup national teams", () => {
+    expect(localizeCompetitionName("FIFA World Cup")).toBe("世界杯");
+    expect(localizeCompetitionName("UEFA Champions League")).toBe("欧冠");
+    expect(localizeCompetitionName("Premier League")).toBe("英超");
+    expect(localizeCompetitionName("La Liga")).toBe("西甲");
+    expect(localizeTeamName("France", "FRA")).toBe("法国");
+    expect(localizeTeamName("Spain", "ESP")).toBe("西班牙");
+    expect(localizeTeamName("England", "ENG")).toBe("英格兰");
+    expect(localizeTeamName("Argentina", "ARG")).toBe("阿根廷");
+  });
+});
 
 describe("market data assessment", () => {
   it("keeps a verified odds snapshot open through exactly ten minutes", () => {

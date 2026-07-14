@@ -6,11 +6,9 @@ on:
       competitions:
         description: "Comma-separated league:season pairs available to the configured API plan"
         required: true
-        default: "2:2024,39:2024,140:2024,135:2024,78:2024,61:2024,253:2024,71:2024,98:2024,292:2024,169:2024"
       reference_date:
-        description: "Optional UTC date (YYYY-MM-DD) for a bounded historical backfill"
+        description: "Optional UTC date (YYYY-MM-DD); leave blank for current paid-plan synchronization"
         required: false
-        default: "2024-10-14"
   schedule:
     # Offset from the top of the hour to reduce scheduled-run congestion.
     # Two bounded runs per day leave room inside API-FOOTBALL's 95-call budget.
