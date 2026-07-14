@@ -3,7 +3,11 @@ FROM node:24-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH \
     NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && corepack prepare pnpm@10.4.0 --activate
+# Install pnpm as a plain global binary at build time. Corepack provisions pnpm
+# lazily on first use, which for the non-root runtime user meant a slow, network-
+# dependent download at container start (and intermittent hangs) — unacceptable for
+# a service whose health check must pass promptly after deploy.
+RUN npm install -g pnpm@10.4.0
 WORKDIR /app
 
 FROM base AS build

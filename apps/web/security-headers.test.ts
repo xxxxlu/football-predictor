@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { securityHeaders } from "./security-headers";
+import { securityHeaders } from "./next.config";
 
 describe("production security headers", () => {
   it("denies framing and sensitive browser capabilities", () => {
