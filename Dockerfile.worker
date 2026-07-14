@@ -2,7 +2,9 @@
 FROM node:24-bookworm-slim AS base
 ENV PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-RUN corepack enable && corepack prepare pnpm@10.4.0 --activate
+# Install pnpm as a plain global binary at build time so the runtime (and the
+# pre-deploy migration command) never triggers a lazy corepack download.
+RUN npm install -g pnpm@10.4.0
 WORKDIR /app
 
 FROM base AS build
