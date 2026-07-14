@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { RefreshingCurrentMatchCache, visibleCurrentMatches } from "./runtime.js";
+import { configuredOddsApiKey, RefreshingCurrentMatchCache, visibleCurrentMatches } from "./runtime.js";
 
 describe("current match runtime", () => {
+  it("enables real odds only for a non-empty configured key", () => {
+    expect(configuredOddsApiKey({})).toBeUndefined();
+    expect(configuredOddsApiKey({ THE_ODDS_API_KEY: "  " })).toBeUndefined();
+    expect(configuredOddsApiKey({ THE_ODDS_API_KEY: " configured " })).toBe("configured");
+  });
   it("hides expired historical fixtures while keeping future and live matches", () => {
     const views = [
       { id: "old", status: "FINISHED", kickoffAt: "2024-10-01T12:00:00Z" },

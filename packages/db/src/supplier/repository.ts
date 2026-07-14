@@ -25,7 +25,7 @@ export interface FixtureSnapshotRecord {
 
 export interface OddsSnapshotRecord {
   fixtureId: string;
-  supplier: "API_FOOTBALL" | "PLATFORM";
+  supplier: "API_FOOTBALL" | "THE_ODDS_API" | "PLATFORM";
   supplierFixtureId: number;
   bookmakerId: number;
   bookmakerName: string;
@@ -56,9 +56,10 @@ export function cacheEtag(value: unknown): string {
   return `"${createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`;
 }
 
-export function statusForSync(syncState: SyncState, sourceVerified: boolean, dataAsOf: Date, now: Date): "OPEN" | "DATA_UNAVAILABLE" {
+export function statusForSync(syncState: SyncState, sourceVerified: boolean, dataAsOf: Date, now: Date, supplier?: OddsSnapshotRecord["supplier"]): "OPEN" | "DATA_UNAVAILABLE" {
   const age = now.getTime() - dataAsOf.getTime();
-  return syncState === "IDLE" && sourceVerified && Number.isFinite(age) && age >= 0 && age <= 10 * 60_000 ? "OPEN" : "DATA_UNAVAILABLE";
+  const maxAgeMs = supplier === "THE_ODDS_API" ? 13 * 60 * 60_000 : 10 * 60_000;
+  return syncState === "IDLE" && sourceVerified && Number.isFinite(age) && age >= 0 && age <= maxAgeMs ? "OPEN" : "DATA_UNAVAILABLE";
 }
 
 type FixtureRow = {
@@ -68,7 +69,7 @@ type FixtureRow = {
 };
 
 type OddsRow = {
-  productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL" | "PLATFORM"; supplierFixtureId: string; bookmakerId: string;
+  productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL" | "THE_ODDS_API" | "PLATFORM"; supplierFixtureId: string; bookmakerId: string;
   bookmakerName: string; supplierMarketId: string; marketName: string; currentVersion: string; dataAsOf: Date | string;
   capturedAt: Date | string; outcomes: unknown;
 };
@@ -163,7 +164,7 @@ export class PostgresMatchSnapshotRepository {
     const productMarketId = marketCacheId(odds.fixtureId, odds.bookmakerId, odds.marketId);
     const etag = cacheEtag({ productMarketId, ...odds });
     const now = this.clock.now();
-    const status = statusForSync("IDLE", true, new Date(odds.dataAsOf), now);
+    const status = statusForSync("IDLE", true, new Date(odds.dataAsOf), now, odds.supplier);
     await this.sql.begin(async (tx) => {
       await tx`INSERT INTO supplier.markets
         (id,fixture_id,status,sync_state,supplier,supplier_fixture_id,bookmaker_id,bookmaker_name,supplier_market_id,market_name,current_version,data_as_of,captured_at,outcomes,source_verified,etag,updated_at)
@@ -236,6 +237,16 @@ export class PostgresMatchSnapshotRepository {
     const [row] = await this.sql<Array<{ syncState: SyncState }>>`SELECT sync_state AS "syncState" FROM supplier.markets
       WHERE fixture_id=${matchId} ORDER BY updated_at DESC LIMIT 1`;
     return row?.syncState ?? "IDLE";
+  }
+
+  async claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean> {
+    const cutoff = new Date(at.getTime() - minimumIntervalMs);
+    const rows = await this.sql<Array<{ claimed: boolean }>>`INSERT INTO supplier.external_sync_claims (sync_key,last_attempt_at,updated_at)
+      VALUES (${key},${at},${at})
+      ON CONFLICT (sync_key) DO UPDATE SET last_attempt_at=EXCLUDED.last_attempt_at,updated_at=EXCLUDED.updated_at
+      WHERE supplier.external_sync_claims.last_attempt_at <= ${cutoff}
+      RETURNING true AS claimed`;
+    return rows.length === 1 && rows[0]?.claimed === true;
   }
 
   async getCacheMetadata(matchId: string): Promise<{ fixtureEtag: string; marketEtag: string | null; liveEtag: string | null } | null> {

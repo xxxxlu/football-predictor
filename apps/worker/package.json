@@ -8,6 +8,7 @@
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
     "prewarm": "node --env-file-if-exists=../../.env dist/prewarm.js",
+    "current-world-cup": "node --env-file-if-exists=../../.env.local dist/current-world-cup-main.js",
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false"
   },
@@ -15,6 +16,7 @@
     "@football-predictor/api-football": "workspace:*",
     "@football-predictor/config": "workspace:*",
     "@football-predictor/db": "workspace:*",
-    "@football-predictor/domain": "workspace:*"
+    "@football-predictor/domain": "workspace:*",
+    "@football-predictor/supplier": "workspace:*"
   }
 }

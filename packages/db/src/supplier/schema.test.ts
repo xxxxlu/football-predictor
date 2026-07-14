@@ -22,3 +22,12 @@ describe("0010 multi-source fixture identity migration", () => {
     expect(migration).toContain('UNIQUE ("supplier", "supplier_fixture_id")');
   });
 });
+
+describe("0011 external supplier throttle migration", () => {
+  it("persists a unique cross-instance claim before a paid-credit request", async () => {
+    const migration = await readFile(new URL("../../migrations/0011_external_sync_throttle.sql", import.meta.url), "utf8");
+    expect(migration).toContain('"supplier"."external_sync_claims"');
+    expect(migration).toContain('"sync_key" text PRIMARY KEY');
+    expect(migration).toContain('"last_attempt_at" timestamptz');
+  });
+});

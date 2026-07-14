@@ -96,6 +96,9 @@ importers:
       '@football-predictor/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@football-predictor/supplier':
+        specifier: workspace:*
+        version: link:../../packages/supplier
 
   packages/api-football:
     dependencies:
