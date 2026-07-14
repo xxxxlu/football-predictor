@@ -9,3 +9,6 @@ coverage/
 .vercel
 .agents/
 skills-lock.json
+# Tencent Cloud EdgeOne
+.edgeone/
+.tef_dist/
