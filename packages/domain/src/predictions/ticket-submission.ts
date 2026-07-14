@@ -1,6 +1,6 @@
 export const MAX_TICKET_STAKE_POINTS = 20_000;
 export const MAX_PREMATCH_ODDS_AGE_MS = 10 * 60_000;
-export const THE_ODDS_API_SUBMISSION_MAX_AGE_MS = 13 * 60 * 60_000;
+export const THE_ODDS_API_SUBMISSION_MAX_AGE_MS = 3 * 60 * 60_000;
 
 export type TicketSubmissionErrorCode =
   | "MARKET_CLOSED"

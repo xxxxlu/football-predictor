@@ -58,7 +58,7 @@ export function cacheEtag(value: unknown): string {
 
 export function statusForSync(syncState: SyncState, sourceVerified: boolean, dataAsOf: Date, now: Date, supplier?: OddsSnapshotRecord["supplier"]): "OPEN" | "DATA_UNAVAILABLE" {
   const age = now.getTime() - dataAsOf.getTime();
-  const maxAgeMs = supplier === "THE_ODDS_API" ? 13 * 60 * 60_000 : 10 * 60_000;
+  const maxAgeMs = supplier === "THE_ODDS_API" ? 3 * 60 * 60_000 : 10 * 60_000;
   return syncState === "IDLE" && sourceVerified && Number.isFinite(age) && age >= 0 && age <= maxAgeMs ? "OPEN" : "DATA_UNAVAILABLE";
 }
 

@@ -1,5 +1,5 @@
 export const PREMATCH_ODDS_MAX_AGE_MS = 10 * 60 * 1_000;
-export const THE_ODDS_API_MAX_AGE_MS = 13 * 60 * 60 * 1_000;
+export const THE_ODDS_API_MAX_AGE_MS = 3 * 60 * 60 * 1_000;
 
 export type FixtureSupplier = "API_FOOTBALL" | "OPENLIGADB";
 export type MarketSupplier = "API_FOOTBALL" | "THE_ODDS_API" | "PLATFORM";

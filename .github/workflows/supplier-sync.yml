@@ -5,7 +5,7 @@ on:
   schedule:
     # Offset from the top of the hour to reduce scheduled-run congestion.
     # The database lease allows at most one World Cup odds credit per run window.
-    - cron: "17 1,13 * * *"
+    - cron: "17 */2 * * *"
 
 permissions:
   contents: read
