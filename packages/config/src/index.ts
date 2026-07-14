@@ -60,29 +60,51 @@ const supplierWorkerConfigSchema = z.object({
   DATABASE_URL: z.string().url().refine((value) => value.startsWith("postgres://") || value.startsWith("postgresql://")),
   API_FOOTBALL_KEY: z.string().trim().min(1),
   API_FOOTBALL_BASE_URL: z.string().url().default("https://v3.football.api-sports.io"),
-  SUPPLIER_LEAGUE_ID: z.coerce.number().int().positive(),
-  SUPPLIER_SEASON: z.coerce.number().int().min(2000).max(2100),
+  SUPPLIER_COMPETITIONS: z.string().trim().min(1).optional(),
+  SUPPLIER_LEAGUE_ID: z.coerce.number().int().positive().optional(),
+  SUPPLIER_SEASON: z.coerce.number().int().min(2000).max(2100).optional(),
   API_FOOTBALL_BOOKMAKER_ID: z.coerce.number().int().positive(),
   SUPPLIER_WINDOW_PAST_DAYS: z.coerce.number().int().min(0).max(30).default(1),
   SUPPLIER_WINDOW_FUTURE_DAYS: z.coerce.number().int().min(1).max(90).default(7),
-  SUPPLIER_FIXTURES_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(60),
+  SUPPLIER_FIXTURES_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(720),
+  SUPPLIER_RESULTS_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(1440),
   SUPPLIER_ODDS_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(10),
   SUPPLIER_SETTLEMENT_INTERVAL_SECONDS: z.coerce.number().positive().max(3600).default(60),
   SUPPLIER_LIVE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   SUPPLIER_LIVE_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(5),
   SUPPLIER_SETTLEMENT_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
+}).superRefine((value, context) => {
+  if (value.SUPPLIER_COMPETITIONS === undefined && (value.SUPPLIER_LEAGUE_ID === undefined || value.SUPPLIER_SEASON === undefined)) {
+    context.addIssue({ code: "custom", path: ["SUPPLIER_COMPETITIONS"], message: "Configure competitions or the legacy league and season pair" });
+  }
 });
+
+export type SupplierCompetitionConfig = { leagueId: number; season: number };
+
+function parseCompetitions(value: string): SupplierCompetitionConfig[] | null {
+  const competitions: SupplierCompetitionConfig[] = [];
+  const seen = new Set<string>();
+  for (const item of value.split(",")) {
+    const match = /^\s*([1-9]\d*)\s*:\s*(20\d{2}|2100)\s*$/.exec(item);
+    if (!match) return null;
+    const key = `${match[1]}:${match[2]}`;
+    if (seen.has(key)) return null;
+    seen.add(key);
+    competitions.push({ leagueId: Number(match[1]), season: Number(match[2]) });
+  }
+  return competitions.length > 0 ? competitions : null;
+}
 
 export type SupplierWorkerConfig = {
   databaseUrl: string;
   apiFootballKey: string;
   apiFootballBaseUrl: string;
-  leagueId: number;
-  season: number;
+  competitions: SupplierCompetitionConfig[];
   bookmakerId: number;
   pastDays: number;
   futureDays: number;
   fixturesIntervalMs: number;
+  resultsIntervalMs: number;
   oddsIntervalMs: number;
   settlementIntervalMs: number;
   liveEnabled: boolean;
@@ -93,19 +115,25 @@ export type SupplierWorkerConfig = {
 export function loadSupplierWorkerConfig(environment: Record<string, string | undefined>): SupplierWorkerConfig {
   const result = supplierWorkerConfigSchema.safeParse(environment);
   if (!result.success) {
-    const invalidKeys = [...new Set(result.error.issues.map((issue) => String(issue.path[0] ?? "environment")))].sort();
+    const invalid = new Set(result.error.issues.map((issue) => String(issue.path[0] ?? "environment")));
+    if (!environment.SUPPLIER_COMPETITIONS && (!environment.SUPPLIER_LEAGUE_ID || !environment.SUPPLIER_SEASON)) invalid.add("SUPPLIER_COMPETITIONS");
+    const invalidKeys = [...invalid].sort();
     throw new ConfigError(invalidKeys);
   }
+  const competitions = result.data.SUPPLIER_COMPETITIONS === undefined
+    ? [{ leagueId: result.data.SUPPLIER_LEAGUE_ID!, season: result.data.SUPPLIER_SEASON! }]
+    : parseCompetitions(result.data.SUPPLIER_COMPETITIONS);
+  if (competitions === null) throw new ConfigError(["SUPPLIER_COMPETITIONS"]);
   return {
     databaseUrl: result.data.DATABASE_URL,
     apiFootballKey: result.data.API_FOOTBALL_KEY,
     apiFootballBaseUrl: result.data.API_FOOTBALL_BASE_URL,
-    leagueId: result.data.SUPPLIER_LEAGUE_ID,
-    season: result.data.SUPPLIER_SEASON,
+    competitions,
     bookmakerId: result.data.API_FOOTBALL_BOOKMAKER_ID,
     pastDays: result.data.SUPPLIER_WINDOW_PAST_DAYS,
     futureDays: result.data.SUPPLIER_WINDOW_FUTURE_DAYS,
     fixturesIntervalMs: result.data.SUPPLIER_FIXTURES_INTERVAL_MINUTES * 60_000,
+    resultsIntervalMs: result.data.SUPPLIER_RESULTS_INTERVAL_MINUTES * 60_000,
     oddsIntervalMs: result.data.SUPPLIER_ODDS_INTERVAL_MINUTES * 60_000,
     settlementIntervalMs: result.data.SUPPLIER_SETTLEMENT_INTERVAL_SECONDS * 1000,
     liveEnabled: result.data.SUPPLIER_LIVE_ENABLED,

@@ -14,8 +14,13 @@ const row = (overrides: Partial<SupplierBudgetRow> = {}): SupplierBudgetRow => (
 
 describe("PostgreSQL supplier budget decisions", () => {
   it("keeps ten calls protected from ordinary synchronization", () => {
-    expect(decideBudgetConsumption(row({ totalUsed: 85, liveUsed: 70 }), "LIVE", 1)).toMatchObject({ allowed: false, reason: "CATEGORY_EXHAUSTED" });
+    expect(decideBudgetConsumption(row({ totalUsed: 85, liveUsed: 5 }), "LIVE", 1)).toMatchObject({ allowed: false, reason: "CATEGORY_EXHAUSTED" });
     expect(decideBudgetConsumption(row({ totalUsed: 85, settlementUsed: 0 }), "SETTLEMENT", 10)).toMatchObject({ allowed: true, row: { totalUsed: 95, settlementUsed: 10 } });
+  });
+
+  it("allows seven competition fixture requests while capping static work at thirty", () => {
+    expect(decideBudgetConsumption(row({ totalUsed: 6, staticUsed: 6 }), "STATIC", 1)).toMatchObject({ allowed: true, row: { totalUsed: 7, staticUsed: 7 } });
+    expect(decideBudgetConsumption(row({ totalUsed: 30, staticUsed: 30 }), "STATIC", 1)).toMatchObject({ allowed: false, reason: "CATEGORY_EXHAUSTED" });
   });
 
   it("never lets ordinary categories cross the protected reserve", () => {

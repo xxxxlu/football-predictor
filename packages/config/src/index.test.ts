@@ -24,6 +24,43 @@ describe("loadServerConfig", () => {
 });
 
 describe("loadSupplierWorkerConfig", () => {
+  it("parses multiple configured competitions", () => {
+    const config = loadSupplierWorkerConfig({
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      SUPPLIER_COMPETITIONS: "39:2026, 140:2026,2:2026",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    });
+
+    expect(config.competitions).toEqual([
+      { leagueId: 39, season: 2026 },
+      { leagueId: 140, season: 2026 },
+      { leagueId: 2, season: 2026 },
+    ]);
+  });
+
+  it("keeps the legacy league and season variables compatible", () => {
+    const config = loadSupplierWorkerConfig({
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      SUPPLIER_LEAGUE_ID: "39",
+      SUPPLIER_SEASON: "2026",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    });
+
+    expect(config.competitions).toEqual([{ leagueId: 39, season: 2026 }]);
+  });
+
+  it("rejects malformed or duplicate configured competitions", () => {
+    const base = {
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    };
+    expect(() => loadSupplierWorkerConfig({ ...base, SUPPLIER_COMPETITIONS: "39:2026,broken" })).toThrow(ConfigError);
+    expect(() => loadSupplierWorkerConfig({ ...base, SUPPLIER_COMPETITIONS: "39:2026,39:2026" })).toThrow(ConfigError);
+  });
+
   it("maps required supplier settings and executable scheduling defaults", () => {
     expect(loadSupplierWorkerConfig({
       DATABASE_URL: "postgres://app:secret@localhost/app",
@@ -35,12 +72,12 @@ describe("loadSupplierWorkerConfig", () => {
       databaseUrl: "postgres://app:secret@localhost/app",
       apiFootballKey: "supplier-secret",
       apiFootballBaseUrl: "https://v3.football.api-sports.io",
-      leagueId: 39,
-      season: 2026,
+      competitions: [{ leagueId: 39, season: 2026 }],
       bookmakerId: 8,
       pastDays: 1,
       futureDays: 7,
-      fixturesIntervalMs: 3_600_000,
+      fixturesIntervalMs: 43_200_000,
+      resultsIntervalMs: 86_400_000,
       oddsIntervalMs: 600_000,
       settlementIntervalMs: 60_000,
       liveEnabled: false,
@@ -58,7 +95,7 @@ describe("loadSupplierWorkerConfig", () => {
       expect(error).toBeInstanceOf(ConfigError);
       expect(String(error)).not.toContain(secret);
       expect(String(error)).toContain("DATABASE_URL");
-      expect(String(error)).toContain("SUPPLIER_LEAGUE_ID");
+      expect(String(error)).toContain("SUPPLIER_COMPETITIONS");
     }
   });
 });

@@ -8,6 +8,7 @@ describe("supplier cache persistence helpers", () => {
       season: 2026, kickoffAt: "2026-07-14T20:00:00.000Z", status: "SCHEDULED", homeTeamId: "10", homeTeamName: "Home",
       awayTeamId: "20", awayTeamName: "Away", currentVersion: "fixture-v1", dataAsOf: "2026-07-14T10:00:00.000Z",
       capturedAt: "2026-07-14T10:00:01.000Z",
+      oddsDataAsOf: "2026-07-14T09:58:00.000Z",
     }]) as unknown as import("postgres").Sql;
     const repository = new PostgresMatchSnapshotRepository(sql);
 
@@ -15,6 +16,7 @@ describe("supplier cache persistence helpers", () => {
       kickoffAt: "2026-07-14T20:00:00.000Z",
       dataAsOf: "2026-07-14T10:00:00.000Z",
       capturedAt: "2026-07-14T10:00:01.000Z",
+      oddsDataAsOf: "2026-07-14T09:58:00.000Z",
     }]);
   });
 
