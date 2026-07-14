@@ -1,0 +1,35 @@
+name: smoke
+
+# Post-deploy smoke test against a running environment. Render triggers deploys
+# on its own (autoDeployTrigger: checksPass), so this is invoked manually after a
+# deploy completes, or chained from another workflow via workflow_call. It runs
+# only anonymous GETs and never mutates state.
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: "Base URL of the deployed web service (e.g. https://football-predictor-web.onrender.com)"
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      base_url:
+        description: "Base URL of the deployed web service"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Smoke test the deployed service
+        run: node scripts/smoke-test.mjs "${{ inputs.base_url }}"
