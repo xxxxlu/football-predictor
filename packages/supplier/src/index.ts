@@ -34,6 +34,7 @@ export interface SupplierGateway {
 }
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export const REAL_ODDS_SYNC_INTERVAL_MS = 2 * 60 * 60_000;
 
 type OpenLigaDbMatch = {
   matchID: number;
@@ -248,7 +249,7 @@ export class OpenLigaDbWorldCupSync {
     for (const fixture of upcoming) {
       if (!(await this.repository.getOdds(fixture.id))) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
     }
-    if (upcoming.length === 0 || !(await this.repository.claimExternalSync("the-odds-api:world-cup:h2h:eu", now, 12 * 60 * 60_000))) {
+    if (upcoming.length === 0 || !(await this.repository.claimExternalSync("the-odds-api:world-cup:h2h:eu", now, REAL_ODDS_SYNC_INTERVAL_MS))) {
       return { fixturesSynced: fixtures.length, marketsSynced: 0, oddsRequestMade: false };
     }
     const quotes = await this.oddsClient.fetchWorldCupOdds();

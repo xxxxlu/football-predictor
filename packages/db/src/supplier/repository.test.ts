@@ -48,7 +48,7 @@ describe("supplier cache persistence helpers", () => {
     expect(statusForSync("IDLE", true, new Date("2026-07-13T09:49:59.999Z"), now)).toBe("DATA_UNAVAILABLE");
     expect(statusForSync("SYNCING", true, new Date("2026-07-13T10:00:00Z"), now)).toBe("DATA_UNAVAILABLE");
     expect(statusForSync("IDLE", false, new Date("2026-07-13T10:00:00Z"), now)).toBe("DATA_UNAVAILABLE");
-    expect(statusForSync("IDLE", true, new Date("2026-07-12T21:00:00Z"), now, "THE_ODDS_API")).toBe("OPEN");
-    expect(statusForSync("IDLE", true, new Date("2026-07-12T20:59:59.999Z"), now, "THE_ODDS_API")).toBe("DATA_UNAVAILABLE");
+    expect(statusForSync("IDLE", true, new Date("2026-07-13T07:00:00Z"), now, "THE_ODDS_API")).toBe("OPEN");
+    expect(statusForSync("IDLE", true, new Date("2026-07-13T06:59:59.999Z"), now, "THE_ODDS_API")).toBe("DATA_UNAVAILABLE");
   });
 });

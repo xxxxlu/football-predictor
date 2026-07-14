@@ -25,7 +25,7 @@ describe("supplier synchronization", () => {
     });
   });
 
-  it("reuses persisted real odds for twelve hours instead of spending credits on page reads", async () => {
+  it("reuses persisted real odds for two hours instead of spending credits on page reads", async () => {
     const source = [{ matchID: 7001, leagueId: 501, leagueName: "WM 2026", leagueSeason: 2026, leagueShortcut: "wm26", matchDateTimeUTC: "2026-07-15T19:00:00Z", lastUpdateDateTime: "2026-07-14T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: "France", shortName: "FRA" }, team2: { teamId: 20, teamName: "Spain", shortName: "ESP" }, matchResults: [] }];
     const repository = new InMemoryMatchSnapshotRepository();
     let oddsCalls = 0;
@@ -37,9 +37,13 @@ describe("supplier synchronization", () => {
     }, now: () => firstNow });
     await new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => firstNow }).run();
 
-    const second = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T21:59:59Z") });
+    const second = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T11:59:59Z") });
     await expect(second.run()).resolves.toMatchObject({ oddsRequestMade: false, marketsSynced: 0 });
     expect(oddsCalls).toBe(1);
+
+    const third = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T12:00:00Z") });
+    await expect(third.run()).resolves.toMatchObject({ oddsRequestMade: true });
+    expect(oddsCalls).toBe(2);
   });
 
   it("maps current OpenLigaDB World Cup fixtures to Chinese names and platform scoring markets", async () => {

@@ -139,15 +139,15 @@ describe("TicketSubmissionService validation", () => {
     await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING", stakePoints: 1_000 });
   });
 
-  it("accepts The Odds API snapshots within the bounded free-sync freshness window", async () => {
+  it("accepts The Odds API snapshots within the three-hour free-sync freshness window", async () => {
     const current = setup();
     current.fake.market!.snapshot.supplier = "THE_ODDS_API";
-    current.fake.market!.snapshot.dataAsOf = "2026-07-12T21:00:00.000Z";
+    current.fake.market!.snapshot.dataAsOf = "2026-07-13T07:00:00.000Z";
     await expect(current.service.submit(current.command)).resolves.toMatchObject({ status: "PENDING" });
 
     const expired = setup();
     expired.fake.market!.snapshot.supplier = "THE_ODDS_API";
-    expired.fake.market!.snapshot.dataAsOf = "2026-07-12T20:59:59.999Z";
+    expired.fake.market!.snapshot.dataAsOf = "2026-07-13T06:59:59.999Z";
     await expectCode(expired.service.submit(expired.command), "DATA_UNAVAILABLE");
   });
 

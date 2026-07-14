@@ -4,7 +4,7 @@
 
 **Goal:** Add budget-aware real World Cup 1X2 odds from The Odds API while keeping OpenLigaDB as the schedule/result source.
 
-**Architecture:** Extend the supplier package with a small The Odds API client and compose it into the existing World Cup sync. Persist a single complete bookmaker snapshot per fixture, use PostgreSQL-backed 12-hour throttling, and retain the existing platform market only when no odds key is configured.
+**Architecture:** Extend the supplier package with a small The Odds API client and compose it into the existing World Cup sync. Persist a single complete bookmaker snapshot per fixture, use PostgreSQL-backed two-hour throttling, and retain the existing platform market only when no odds key is configured.
 
 **Tech Stack:** TypeScript, Vitest, Next.js route runtime, PostgreSQL supplier cache.
 
@@ -16,7 +16,7 @@
 - Modify: `packages/supplier/src/supplier.test.ts`
 - Modify: `packages/supplier/src/index.ts`
 
-1. Write failing tests for complete bookmaker mapping, fixture matching, and a second run inside 12 hours making zero provider calls.
+1. Write failing tests for complete bookmaker mapping, fixture matching, and a second run inside two hours making zero provider calls.
 2. Run the focused supplier tests and confirm the expected failures.
 3. Implement the client, deterministic identifiers, matching, and persisted-cache throttle.
 4. Re-run the focused supplier tests.
