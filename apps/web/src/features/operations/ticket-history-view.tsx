@@ -53,12 +53,12 @@ export function TicketHistoryView() {
       <Metric label="未命中" value={String(archive.summary.losses)}/>
       <Metric label="走盘 / 取消" value={String(archive.summary.voids)}/>
     </section>
-    <p className="mt-4 border-l-4 border-[var(--field)] bg-white/45 p-4 text-sm text-[var(--muted)]">
+    <p className="mt-4 rounded-xl border-l-4 border-[var(--field)] bg-white/45 p-4 text-sm text-[var(--muted)]">
       长期档案跨房间汇总的只有已结算判断次数。每个房间的可用、冻结和更正债务始终独立核算，不会在这里合并成余额。
     </p>
     <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
       <label className="text-sm font-bold">赛事与赛季
-        <select value={filter} onChange={(event) => setFilter(event.target.value)} className="mt-2 block min-w-64 border border-[var(--ink)] bg-[var(--paper-raised)] px-3 py-2 font-normal">
+        <select value={filter} onChange={(event) => setFilter(event.target.value)} className="mt-2 block min-w-64 rounded-lg border border-[var(--ink)] bg-[var(--paper-raised)] px-3 py-2 font-normal">
           <option value="">全部赛事</option>
           {options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
         </select>
@@ -77,7 +77,7 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
         <h2 className="display mt-1 text-xl font-bold">{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</h2>
         <p className="mt-1 text-xs text-[var(--muted)]">房间：{record.room.name} · 结算于 <time dateTime={record.settlement.settledAt}>{new Date(record.settlement.settledAt).toLocaleString("zh-CN")}</time></p>
       </div>
-      <span className="border border-[var(--ink)] px-2 py-1 text-xs font-bold">{outcomeLabel[record.settlement.outcome]}</span>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
     </header>
     <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
       <Fact label="选择" value={selectionLabel[record.selection]}/>
