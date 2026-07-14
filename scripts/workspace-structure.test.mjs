@@ -21,6 +21,8 @@ test("workspace contains every architecture boundary", async () => {
 });
 
 test("free-tier deployment builds the web workspace and bounds supplier synchronization", async () => {
+  const manifest = JSON.parse(await readFile("package.json", "utf8"));
+  assert.equal(manifest.devDependencies.next, "16.2.10");
   const vercel = JSON.parse(await readFile("vercel.json", "utf8"));
   assert.equal(vercel.framework, "nextjs");
   assert.match(vercel.buildCommand, /build:packages/);
