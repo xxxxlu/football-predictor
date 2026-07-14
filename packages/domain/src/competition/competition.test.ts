@@ -58,6 +58,14 @@ describe("market data assessment", () => {
     ).toEqual({ dataState: "STALE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false });
   });
 
+  it("keeps a verified platform-fixed multiplier open because the rule does not expire every ten minutes", () => {
+    expect(assessMarketData({
+      now: new Date("2026-07-14T18:00:00.000Z"),
+      odds: { ...odds, supplier: "PLATFORM", dataAsOf: "2026-07-14T10:00:00.000Z" },
+      syncState: "IDLE", sourceVerified: true, budgetAvailable: true,
+    })).toEqual({ dataState: "FRESH", marketStatus: "OPEN", canSubmit: true });
+  });
+
   it("distinguishes syncing, paused and unverifiable data while rejecting submission", () => {
     expect(assessMarketData({ now: new Date(), odds, syncState: "SYNCING", sourceVerified: true, budgetAvailable: true }).dataState).toBe("SYNCING");
     expect(assessMarketData({ now: new Date(), odds, syncState: "PAUSED", sourceVerified: true, budgetAvailable: false }).dataState).toBe("PAUSED");

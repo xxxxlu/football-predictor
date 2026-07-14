@@ -128,10 +128,12 @@ function assertMarketAvailable(market: MarketForSubmission | null, now: Date): a
   if (!Number.isFinite(kickoffAt)) throw new TicketSubmissionError("DATA_UNAVAILABLE");
   if (now.getTime() >= kickoffAt) throw new TicketSubmissionError("MARKET_CLOSED");
 
-  const dataAsOf = new Date(market.snapshot.dataAsOf).getTime();
-  const age = now.getTime() - dataAsOf;
-  if (!Number.isFinite(age) || age < 0 || age > MAX_PREMATCH_ODDS_AGE_MS) {
-    throw new TicketSubmissionError("DATA_UNAVAILABLE");
+  if (market.snapshot.supplier !== "PLATFORM") {
+    const dataAsOf = new Date(market.snapshot.dataAsOf).getTime();
+    const age = now.getTime() - dataAsOf;
+    if (!Number.isFinite(age) || age < 0 || age > MAX_PREMATCH_ODDS_AGE_MS) {
+      throw new TicketSubmissionError("DATA_UNAVAILABLE");
+    }
   }
 }
 
