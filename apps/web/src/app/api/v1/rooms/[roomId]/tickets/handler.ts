@@ -1,6 +1,7 @@
 import { AuthError, RoomError, TicketSubmissionError, type PredictionSelection } from "@football-predictor/domain";
 import { z } from "zod";
 import { readSessionToken } from "../../../auth/_lib/handlers";
+import { assertSameOrigin } from "../../../_lib/request-origin";
 
 const bodySchema = z.object({
   matchId: z.string().min(1),
@@ -56,4 +57,3 @@ function ticketError(error: TicketSubmissionError) {
   return failure(error.code, messages[error.code], status);
 }
 function failure(code: string, message: string, status: number) { return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } }); }
-function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403, "Reload this page and try again."); }

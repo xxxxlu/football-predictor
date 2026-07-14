@@ -1,5 +1,6 @@
 import { AuthError } from "@football-predictor/domain";
 import { z } from "zod";
+import { assertSameOrigin } from "../../_lib/request-origin";
 import { sourceKey } from "./runtime";
 
 const registerSchema = z.object({
@@ -126,15 +127,3 @@ export function readSessionToken(request: Request) {
 }
 
 export function readReauthProof(request: Request) { return readCookie(request.headers.get("cookie"), "fp_reauth"); }
-
-function assertSameOrigin(request: Request) {
-  const origin = request.headers.get("origin");
-  if (!origin) return;
-  const requestUrl = new URL(request.url);
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost || request.headers.get("host");
-  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const protocol = forwardedProtocol || requestUrl.protocol.slice(0, -1);
-  const expectedOrigin = host ? `${protocol}://${host}` : requestUrl.origin;
-  if (origin !== expectedOrigin) throw new AuthError("INVALID_ORIGIN", 403, "Reload this page and try again.");
-}

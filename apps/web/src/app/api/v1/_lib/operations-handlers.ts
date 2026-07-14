@@ -2,6 +2,7 @@ import { OperationError } from "@football-predictor/db";
 import { AuthError } from "@football-predictor/domain";
 import { z } from "zod";
 import { readSessionToken } from "../auth/_lib/handlers";
+import { assertSameOrigin } from "./request-origin";
 
 const nicknameSchema = z.object({ nickname: z.string().trim().min(2).max(32) }).strict();
 interface Identity { authenticate(token: string): Promise<{ id: string } | null> }
@@ -29,4 +30,3 @@ export function createOperationsHandlers(identity: Identity, operations: Operati
 async function execute(operation: () => Promise<Response>) { try { return await operation(); } catch (error) { if (error instanceof AuthError || error instanceof OperationError) return failure(error.code, error.status); if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422); return failure("INTERNAL_ERROR", 500); } }
 function json(body: unknown) { return Response.json(body, { headers: { "cache-control": "no-store" } }); }
 function failure(code: string, status: number) { const message = code === "FORBIDDEN" ? "You do not have permission for this operation." : code === "ROOM_NOT_FOUND" ? "The requested room was not found." : code === "UNAUTHENTICATED" ? "Log in to continue." : code === "INVALID_REQUEST" ? "Check the submitted fields and try again." : "The request could not be completed."; return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } }); }
-function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403); }

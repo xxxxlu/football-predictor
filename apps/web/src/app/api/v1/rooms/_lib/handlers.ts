@@ -1,6 +1,7 @@
 import { AuthError, RoomError } from "@football-predictor/domain";
 import { z } from "zod";
 import { readSessionToken } from "../../auth/_lib/handlers";
+import { assertSameOrigin } from "../../_lib/request-origin";
 
 const createSchema = z.object({ name: z.string(), rulesAccepted: z.literal(true) });
 const joinSchema = z.object({ rulesAccepted: z.literal(true) });
@@ -53,4 +54,3 @@ async function execute(operation: () => Promise<Response>) {
   }
 }
 function json(body: unknown, status = 200) { return Response.json(body, { status, headers: { "cache-control": "no-store" } }); }
-function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403, "Reload this page and try again."); }

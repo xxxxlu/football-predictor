@@ -2,6 +2,7 @@ import { OperationError, type RoomModerationAction } from "@football-predictor/d
 import { AuthError } from "@football-predictor/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../auth/_lib/handlers";
+import { assertSameOrigin } from "./request-origin";
 
 const reportSchema = z.object({ reason: z.string().trim().min(10).max(500) }).strict();
 const moderationSchema = z.object({ action: z.enum(["RESTRICT", "CLOSE", "RESTORE"]), reason: z.string().trim().min(5).max(500) }).strict();
@@ -61,4 +62,3 @@ function failure(code: string, status: number) {
   const message = code === "FORBIDDEN" ? "You do not have permission for this operation." : code === "ROOM_NOT_FOUND" ? "The requested room was not found." : code === "UNAUTHENTICATED" ? "Log in to continue." : code === "INVALID_REQUEST" ? "Check the submitted fields and try again." : "The request could not be completed.";
   return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
 }
-function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403); }

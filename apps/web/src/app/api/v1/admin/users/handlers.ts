@@ -1,6 +1,7 @@
 import { AuthError } from "@football-predictor/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
+import { assertSameOrigin } from "../../_lib/request-origin";
 
 const statusSchema = z.object({ status: z.enum(["ACTIVE", "DISABLED"]) }).strict();
 interface AdminIdentity {
@@ -35,4 +36,3 @@ async function execute(operation: () => Promise<Response>) {
     return Response.json({ error: { code: "INTERNAL_ERROR", message: "The request could not be completed." } }, { status: 500, headers: noStore });
   }
 }
-function assertSameOrigin(request: Request) { const origin = request.headers.get("origin"); if (origin && origin !== new URL(request.url).origin) throw new AuthError("INVALID_ORIGIN", 403, "Reload this page and try again."); }
