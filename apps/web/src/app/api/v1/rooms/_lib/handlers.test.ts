@@ -28,6 +28,33 @@ describe("room HTTP handlers", () => {
     expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", rulesAccepted: true });
   });
 
+  it("accepts a same-origin write validated against the browser Host header, not Next's request URL", async () => {
+    // Regression: Next reports request.url on localhost even when the browser used 127.0.0.1,
+    // which previously rejected every room create/join/invite reset with INVALID_ORIGIN.
+    const { handlers, rooms } = setup();
+    const request = new Request("http://localhost:3001/api/v1/rooms", {
+      method: "POST",
+      headers: { host: "127.0.0.1:3001", origin: "http://127.0.0.1:3001", "content-type": "application/json", cookie: "fp_session=session-token" },
+      body: JSON.stringify({ name: "决赛之夜", rulesAccepted: true }),
+    });
+    const response = await handlers.create(request);
+    expect(response.status).toBe(201);
+    expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", rulesAccepted: true });
+  });
+
+  it("rejects a genuinely cross-origin write with INVALID_ORIGIN", async () => {
+    const { handlers, rooms } = setup();
+    const request = new Request("https://app.example.com/api/v1/rooms", {
+      method: "POST",
+      headers: { host: "app.example.com", origin: "https://evil.example.com", "content-type": "application/json", cookie: "fp_session=session-token" },
+      body: JSON.stringify({ name: "决赛之夜", rulesAccepted: true }),
+    });
+    const response = await handlers.create(request);
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "INVALID_ORIGIN" } });
+    expect(rooms.create).not.toHaveBeenCalled();
+  });
+
   it("lists only the authenticated user's rooms and isolated balance", async () => {
     const { handlers, rooms } = setup();
     await expect((await handlers.list(get("/api/v1/rooms"))).json()).resolves.toMatchObject({ data: [{ id: "room-1", role: "room_owner" }] });
