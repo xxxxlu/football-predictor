@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { resolve } from "node:path";
 
 // Security headers are defined inline here so that `next start` in the production
 // image can load this config without resolving a sibling module. Next transpiles
@@ -38,6 +39,10 @@ export function securityHeaders(production: boolean): Header[] {
 }
 
 const nextConfig: NextConfig = {
+  outputFileTracingRoot: resolve(__dirname, "../.."),
+  outputFileTracingIncludes: {
+    "/api/health/ready": ["../../packages/db/migrations/*.sql"],
+  },
   async headers() {
     const privateHeaders = [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }];
     return [
