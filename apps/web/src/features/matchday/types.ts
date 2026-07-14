@@ -13,13 +13,23 @@ export type ApiFailure = { error?: { code?: string; message?: string; correlatio
 type ProductMatch = {
   id?: string; competitionName?: string; kickoffAt?: string; status?: string; dataAsOf?: string;
   homeTeam?: string | { name?: string }; awayTeam?: string | { name?: string };
-  market?: { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: Array<{ selection?: string; decimalOdds?: string }>; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
+  market?: { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: unknown; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
 };
+
+function normalizedOdds(value: unknown): Array<{ selection?: string; decimalOdds?: string }> {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try { candidate = JSON.parse(candidate); }
+    catch { return []; }
+  }
+  return Array.isArray(candidate) ? candidate.filter((item): item is { selection?: string; decimalOdds?: string } => Boolean(item) && typeof item === "object") : [];
+}
 
 export function normalizeMatch(value: ProductMatch): MatchView | null {
   if (!value.id || !value.kickoffAt) return null;
   const team = (input: ProductMatch["homeTeam"]) => typeof input === "string" ? input : input?.name || "待定";
-  const outcome = (selection: OddsSelection) => value.market?.odds?.find(item => item.selection === selection)?.decimalOdds;
+  const odds = normalizedOdds(value.market?.odds);
+  const outcome = (selection: OddsSelection) => odds.find(item => item.selection === selection)?.decimalOdds;
   const status = value.status;
   const dataState = value.market?.dataState;
   const state: MatchState = status === "FINISHED" ? "FINISHED" : ["CANCELLED", "POSTPONED", "LIVE"].includes(status || "") ? "CLOSED" : value.market?.marketStatus === "OPEN" ? "OPEN" : dataState === "PAUSED" || dataState === "SYNCING" ? "PAUSED" : "DATA_UNAVAILABLE";
