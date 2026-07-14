@@ -61,8 +61,12 @@ const supplierWorkerConfigSchema = z.object({
   API_FOOTBALL_KEY: z.string().trim().min(1),
   API_FOOTBALL_BASE_URL: z.string().url().default("https://v3.football.api-sports.io"),
   SUPPLIER_COMPETITIONS: z.string().trim().min(1).optional(),
-  SUPPLIER_LEAGUE_ID: z.coerce.number().int().positive().optional(),
-  SUPPLIER_SEASON: z.coerce.number().int().min(2000).max(2100).optional(),
+  SUPPLIER_REFERENCE_DATE: z.string().regex(/^20\d{2}-\d{2}-\d{2}$/).refine((value) => {
+    const date = new Date(`${value}T00:00:00Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }).optional(),
+  SUPPLIER_LEAGUE_ID: z.preprocess((value) => typeof value === "string" && value.trim() === "" ? undefined : value, z.coerce.number().int().positive().optional()),
+  SUPPLIER_SEASON: z.preprocess((value) => typeof value === "string" && value.trim() === "" ? undefined : value, z.coerce.number().int().min(2000).max(2100).optional()),
   API_FOOTBALL_BOOKMAKER_ID: z.coerce.number().int().positive(),
   SUPPLIER_WINDOW_PAST_DAYS: z.coerce.number().int().min(0).max(30).default(1),
   SUPPLIER_WINDOW_FUTURE_DAYS: z.coerce.number().int().min(1).max(90).default(7),
@@ -100,6 +104,7 @@ export type SupplierWorkerConfig = {
   apiFootballKey: string;
   apiFootballBaseUrl: string;
   competitions: SupplierCompetitionConfig[];
+  referenceDate?: string;
   bookmakerId: number;
   pastDays: number;
   futureDays: number;
@@ -129,6 +134,7 @@ export function loadSupplierWorkerConfig(environment: Record<string, string | un
     apiFootballKey: result.data.API_FOOTBALL_KEY,
     apiFootballBaseUrl: result.data.API_FOOTBALL_BASE_URL,
     competitions,
+    ...(result.data.SUPPLIER_REFERENCE_DATE ? { referenceDate: result.data.SUPPLIER_REFERENCE_DATE } : {}),
     bookmakerId: result.data.API_FOOTBALL_BOOKMAKER_ID,
     pastDays: result.data.SUPPLIER_WINDOW_PAST_DAYS,
     futureDays: result.data.SUPPLIER_WINDOW_FUTURE_DAYS,

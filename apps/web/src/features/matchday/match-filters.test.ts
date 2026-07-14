@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filterMatches, groupMatches, matchAvailability, matchDateKey, paginateMatches, summarizeMatches } from "./match-filters.js";
+import { datasetNotice, filterMatches, groupMatches, matchAvailability, matchDateKey, paginateMatches, summarizeMatches } from "./match-filters.js";
 import type { MatchView } from "./types.js";
 
 const match = (id: string, competitionName: string, kickoffAt: string, state: MatchView["state"], stale = false): MatchView => ({
@@ -35,6 +35,14 @@ describe("multi-match filters", () => {
     expect(matchAvailability(matches[1]!)).toMatchObject({ label: "已结束", predictable: false });
     expect(matchAvailability(matches[2]!)).toMatchObject({ label: "赔率已过期", predictable: false });
     expect(matchAvailability(match("4", "Serie A", "2026-07-16T18:00:00.000Z", "DATA_UNAVAILABLE"))).toMatchObject({ label: "数据不可用", predictable: false });
+  });
+
+  it("labels an archive-only feed as historical results rather than upcoming predictions", () => {
+    expect(datasetNotice([matches[1]!])).toEqual({
+      tone: "historical",
+      title: "历史赛果",
+      detail: "当前展示的是已完赛真实历史数据，仅用于浏览和功能验收，不能提交预测。",
+    });
   });
 
   it("groups a large matchday by date and competition in kickoff order", () => {

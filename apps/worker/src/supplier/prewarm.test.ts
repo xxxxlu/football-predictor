@@ -47,4 +47,20 @@ describe("supplier cache prewarm", () => {
     })).rejects.toThrow("STATUS_CALIBRATE");
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it("uses a historical reference date for fixture windows without moving the real budget clock", async () => {
+    const jobs: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const budgetDates: string[] = [];
+    await runSupplierPrewarm({
+      competitions: [{ leagueId: 253, season: 2024 }], bookmakerId: 8, pastDays: 13, futureDays: 1,
+      referenceDate: new Date("2024-10-14T00:00:00Z"),
+      clock: { now: () => new Date("2026-07-14T10:00:00Z") },
+      supplier: { run: async (job) => { jobs.push(job); return { outcome: "SUCCESS" as const, synced: 0 }; }, close: async () => undefined },
+      fixtures: { listFixtures: async () => [] },
+      budget: { snapshot: async (at) => { budgetDates.push(at.toISOString()); return { remaining: 80, protectedRemaining: 10 }; } },
+    });
+
+    expect(jobs.find((job) => job.type === "FIXTURES")?.payload).toMatchObject({ from: "2024-10-01", to: "2024-10-15" });
+    expect(budgetDates).toEqual(["2026-07-14T10:00:00.000Z"]);
+  });
 });
