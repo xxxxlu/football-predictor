@@ -131,6 +131,14 @@ describe("TicketSubmissionService validation", () => {
     }
   });
 
+  it("accepts an older verified platform-fixed multiplier before kickoff", async () => {
+    const { service, command, fake } = setup();
+    fake.market!.snapshot.supplier = "PLATFORM";
+    fake.market!.snapshot.dataAsOf = "2026-07-01T00:00:00.000Z";
+
+    await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING", stakePoints: 1_000 });
+  });
+
   it("requires the accepted version and decimal odds string to match current odds", async () => {
     const first = setup();
     await expectCode(first.service.submit({ ...first.command, acceptedOddsVersion: "odds-v1" }), "ODDS_CHANGED");

@@ -131,6 +131,9 @@ export function assessMarketData(input: {
   if (input.syncState === "SYNCING") {
     return { dataState: "SYNCING", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
   }
+  if (input.odds.supplier === "PLATFORM") {
+    return { dataState: "FRESH", marketStatus: "OPEN", canSubmit: true };
+  }
   const age = input.now.getTime() - new Date(input.odds.dataAsOf).getTime();
   if (!Number.isFinite(age) || age < 0 || age > (input.maxAgeMs ?? PREMATCH_ODDS_MAX_AGE_MS)) {
     return { dataState: "STALE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
