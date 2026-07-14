@@ -7,7 +7,7 @@ export type Selection = "HOME" | "DRAW" | "AWAY";
 
 export interface FixtureSnapshotRecord {
   id: string;
-  supplier: "API_FOOTBALL";
+  supplier: "API_FOOTBALL" | "OPENLIGADB";
   supplierFixtureId: number;
   competitionId: number;
   competitionName: string;
@@ -25,7 +25,7 @@ export interface FixtureSnapshotRecord {
 
 export interface OddsSnapshotRecord {
   fixtureId: string;
-  supplier: "API_FOOTBALL";
+  supplier: "API_FOOTBALL" | "PLATFORM";
   supplierFixtureId: number;
   bookmakerId: number;
   bookmakerName: string;
@@ -62,13 +62,13 @@ export function statusForSync(syncState: SyncState, sourceVerified: boolean, dat
 }
 
 type FixtureRow = {
-  id: string; supplier: "API_FOOTBALL"; supplierFixtureId: string; competitionId: string; competitionName: string;
+  id: string; supplier: "API_FOOTBALL" | "OPENLIGADB"; supplierFixtureId: string; competitionId: string; competitionName: string;
   season: number; kickoffAt: Date | string; status: MatchStatus; homeTeamId: string; homeTeamName: string; awayTeamId: string;
   awayTeamName: string; currentVersion: string; dataAsOf: Date | string; capturedAt: Date | string; oddsDataAsOf?: Date | string | null;
 };
 
 type OddsRow = {
-  productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL"; supplierFixtureId: string; bookmakerId: string;
+  productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL" | "PLATFORM"; supplierFixtureId: string; bookmakerId: string;
   bookmakerName: string; supplierMarketId: string; marketName: string; currentVersion: string; dataAsOf: Date | string;
   capturedAt: Date | string; outcomes: OddsSnapshotRecord["outcomes"];
 };

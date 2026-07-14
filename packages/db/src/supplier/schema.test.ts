@@ -14,3 +14,11 @@ describe("0004 supplier migration", () => {
     expect(migration).toContain('"source_verified" boolean');
   });
 });
+
+describe("0010 multi-source fixture identity migration", () => {
+  it("allows different suppliers to use the same numeric fixture id", async () => {
+    const migration = await readFile(new URL("../../migrations/0010_multi_source_fixture_identity.sql", import.meta.url), "utf8");
+    expect(migration).toContain('DROP CONSTRAINT IF EXISTS "fixtures_supplier_fixture_id_key"');
+    expect(migration).toContain('UNIQUE ("supplier", "supplier_fixture_id")');
+  });
+});

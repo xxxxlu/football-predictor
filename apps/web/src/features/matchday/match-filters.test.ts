@@ -33,7 +33,7 @@ describe("multi-match filters", () => {
 
   it("makes finished, stale, and unavailable fixtures explicitly non-predictable", () => {
     expect(matchAvailability(matches[1]!)).toMatchObject({ label: "已结束", predictable: false });
-    expect(matchAvailability(matches[2]!)).toMatchObject({ label: "赔率已过期", predictable: false });
+    expect(matchAvailability(matches[2]!)).toMatchObject({ label: "倍率数据已过期", predictable: false });
     expect(matchAvailability(match("4", "Serie A", "2026-07-16T18:00:00.000Z", "DATA_UNAVAILABLE"))).toMatchObject({ label: "数据不可用", predictable: false });
   });
 

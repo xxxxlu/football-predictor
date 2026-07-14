@@ -29,27 +29,19 @@ Required runtime keys are validated by `@football-predictor/config`. Missing or 
 
 The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of truth. First-login rotation updates only the database hash, clears `must_change_password`, revokes prior sessions, and issues a new browser session. Local `.env` files are intentionally not rewritten, and a later seed run does not reset an existing administrator password.
 
-## Prewarm real match data
+## Current real match data
 
-Run migrations first, then set the server-only supplier variables in `.env`. A single run can warm up to 30 competitions while preserving the daily request protections; status calibration is non-billable:
+The production match list synchronizes the active **2026 World Cup** window from OpenLigaDB before cache reads (at most once every five minutes per warm server instance). OpenLigaDB needs no API key. The product stores only the upcoming window plus the previous 24 hours required for settlement, and the public match list returns only live or future fixtures. Competition and World Cup team names are localized to Chinese.
 
-```dotenv
-API_FOOTBALL_KEY=replace-locally
-API_FOOTBALL_BOOKMAKER_ID=8
-SUPPLIER_COMPETITIONS=2:2024,39:2024,140:2024,135:2024,78:2024,61:2024
-SUPPLIER_REFERENCE_DATE=2024-10-14
-```
+OpenLigaDB does not provide bookmaker odds. To keep the non-cash prediction flow testable without fabricating betting data, upcoming matches receive a clearly labeled platform rule: fixed virtual-points multiplier `3.00` for home/draw/away. Kickoff times and results remain supplier data and are never invented. If the community source is temporarily unavailable, reads degrade to the latest database cache.
+
+API-FOOTBALL remains an optional supplier for licensed bookmaker odds. Its free plan does not expose the 2026 season, so `SUPPLIER_COMPETITIONS` and `SUPPLIER_REFERENCE_DATE` are blank by default. Configure a paid/current-season plan before enabling `SUPPLIER_CURRENT_SEASON_ENABLED`; the manual/scheduled workflow refuses to pretend the free plan can sync 2026.
 
 ```bash
 pnpm db:migrate
-pnpm supplier:prewarm
 ```
 
-`SUPPLIER_COMPETITIONS` uses comma-separated `leagueId:season` pairs. Blank legacy `SUPPLIER_LEAGUE_ID` / `SUPPLIER_SEASON` values are ignored when the multi-competition value is present. `SUPPLIER_REFERENCE_DATE` anchors a one-shot historical window without moving the real clock used by the daily request budget. The command performs status calibration, fixture synchronization, and scheduled 1X2 odds warming before exiting. Odds are fetched by league/date with API-FOOTBALL pagination (10 fixtures per request), rather than spending one request per match. Its JSON result contains only synchronized competition/fixture/odds counts and remaining/protected budget; it never prints the API key. Missing configuration fails immediately with the names of variables that must be set.
-
-API-FOOTBALL Free does not expose the 2026 season. The checked-in GitHub schedule is therefore gated by `SUPPLIER_CURRENT_SEASON_ENABLED`; manual dispatch defaults to a bounded October 2024 historical backfill. Do not enable scheduled synchronization until `SUPPLIER_COMPETITIONS` points to seasons supported by the configured plan/source. Historical completed matches are display-only and cannot accept prediction submissions.
-
-Because prematch odds are capped at 50 requests per UTC day and 10 calls remain protected for settlement, a run skips already-fresh odds and may report additional `oddsSkipped` when there are more targets than the safe budget permits. Re-run after the UTC budget reset instead of bypassing the guard.
+The legacy `pnpm supplier:prewarm` command is still available when a compatible API-FOOTBALL plan and explicit competitions are configured. It preserves the persisted 95-call daily guard and never prints the API key.
 
 ## Verification
 

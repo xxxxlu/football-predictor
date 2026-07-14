@@ -90,6 +90,10 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   };
 
   return <div>
+    <section className="mb-6 border-l-4 border-[var(--field)] bg-[#edf7f1] p-4" aria-label="当前比赛数据说明">
+      <strong>当前赛程：2026 世界杯</strong>
+      <p className="mt-1 text-sm leading-6 text-[var(--muted)]">仅展示正在进行和未来比赛；球队、赛事名称使用中文。开球时间与赛果来自 OpenLigaDB，显示的 3.00 为平台固定虚拟积分倍率，不是博彩公司赔率。</p>
+    </section>
     {notice && <section className="mb-6 border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
       <strong>{notice.title}</strong>
       <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>

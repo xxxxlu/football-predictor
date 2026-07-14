@@ -47,9 +47,9 @@ export function paginateMatches(matches: MatchView[], requestedCount: number) {
 
 export function matchAvailability(match: MatchView) {
   if (match.state === "FINISHED") return { label: "已结束", predictable: false };
-  if (match.stale) return { label: "赔率已过期", predictable: false };
+  if (match.stale) return { label: "倍率数据已过期", predictable: false };
   if (match.state === "OPEN" && match.market) return { label: "开放预测", predictable: true };
-  const labels: Record<MatchView["state"], string> = { OPEN: "等待赔率", PAUSED: "数据同步暂停", CLOSED: "已封盘", DATA_UNAVAILABLE: "数据不可用", FINISHED: "已结束" };
+  const labels: Record<MatchView["state"], string> = { OPEN: "等待积分倍率", PAUSED: "数据同步暂停", CLOSED: "已封盘", DATA_UNAVAILABLE: "数据不可用", FINISHED: "已结束" };
   return { label: labels[match.state], predictable: false };
 }
 

@@ -1,7 +1,8 @@
 import type postgres from "postgres";
+import { createHash } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
 import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
-import { MatchCacheReader } from "@football-predictor/supplier";
+import { MatchCacheReader, OpenLigaDbWorldCupSync } from "@football-predictor/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
 export interface MatchReadAccess {
@@ -18,6 +19,50 @@ export interface MatchApiRuntime {
   close(): Promise<void>;
 }
 
+type CurrentMatchView = { id?: string; status?: string; kickoffAt?: string };
+
+export function visibleCurrentMatches<T extends CurrentMatchView>(views: T[], now: Date): T[] {
+  const nowMs = now.getTime();
+  return views.filter((view) => {
+    if (view.status === "LIVE") return true;
+    const kickoff = view.kickoffAt ? new Date(view.kickoffAt).getTime() : Number.NaN;
+    return view.status === "SCHEDULED" && Number.isFinite(kickoff) && kickoff > nowMs;
+  });
+}
+
+function etagOf(value: unknown): string { return `"${createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`; }
+
+export class RefreshingCurrentMatchCache {
+  private lastAttempt = 0;
+  private pending: Promise<void> | undefined;
+  private readonly reader: { list(): Promise<{ views: CurrentMatchView[]; etag: string }>; get(matchId: string): Promise<{ view: unknown; etag: string }> };
+  private readonly sync: { run(): Promise<unknown> };
+  private readonly now: () => Date;
+
+  constructor(input: { reader: RefreshingCurrentMatchCache["reader"]; sync: RefreshingCurrentMatchCache["sync"]; now?: () => Date }) {
+    this.reader = input.reader; this.sync = input.sync; this.now = input.now ?? (() => new Date());
+  }
+
+  private async refresh(): Promise<void> {
+    const now = this.now().getTime();
+    if (now - this.lastAttempt < 5 * 60_000) return;
+    if (!this.pending) {
+      this.lastAttempt = now;
+      this.pending = this.sync.run().then(() => undefined).catch(() => undefined).finally(() => { this.pending = undefined; });
+    }
+    await this.pending;
+  }
+
+  async list(): Promise<{ views: CurrentMatchView[]; etag: string }> {
+    await this.refresh();
+    const result = await this.reader.list();
+    const views = visibleCurrentMatches(result.views, this.now());
+    return { views, etag: etagOf(views) };
+  }
+
+  async get(matchId: string): Promise<{ view: unknown; etag: string }> { await this.refresh(); return this.reader.get(matchId); }
+}
+
 declare global {
   var __footballPredictorMatchApiRuntime: MatchApiRuntime | undefined;
 }
@@ -29,8 +74,10 @@ export function createMatchApiRuntime(input: {
 }): MatchApiRuntime {
   const identity = input.identity ?? getIdentityService();
   const repository = new PostgresMatchSnapshotRepository(input.sql);
+  const reader = new MatchCacheReader({ repository });
+  const currentSync = new OpenLigaDbWorldCupSync({ repository });
   return {
-    cache: new MatchCacheReader({ repository }),
+    cache: new RefreshingCurrentMatchCache({ reader, sync: currentSync }),
     access: {
       authenticate: (token) => identity.authenticate(token),
       assertRoomMember: async (roomId, userId) => {
