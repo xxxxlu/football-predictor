@@ -74,6 +74,17 @@ describe("auth HTTP handlers", () => {
     expect(login.headers.get("set-cookie")).not.toContain("Secure");
   });
 
+  it("validates same-origin against the browser Host header instead of Next's canonical request URL", async () => {
+    const { handlers } = setup();
+    const response = await handlers.login(new Request("http://localhost:3001/api/v1/auth/login", {
+      method: "POST",
+      headers: { host: "127.0.0.1:3001", origin: "http://127.0.0.1:3001", "content-type": "application/json" },
+      body: JSON.stringify({ username: "alice", password: "correct-horse-123" }),
+    }));
+
+    expect(response.status).toBe(200);
+  });
+
   it("returns a stable error envelope without sensitive details", async () => {
     const { handlers, service } = setup();
     service.login.mockRejectedValueOnce(new AuthError("INVALID_CREDENTIALS", 401, "Check the username and password, then try again."));
