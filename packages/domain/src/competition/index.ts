@@ -1,7 +1,8 @@
 export const PREMATCH_ODDS_MAX_AGE_MS = 10 * 60 * 1_000;
+export const THE_ODDS_API_MAX_AGE_MS = 13 * 60 * 60 * 1_000;
 
 export type FixtureSupplier = "API_FOOTBALL" | "OPENLIGADB";
-export type MarketSupplier = "API_FOOTBALL" | "PLATFORM";
+export type MarketSupplier = "API_FOOTBALL" | "THE_ODDS_API" | "PLATFORM";
 export type MatchStatus = "SCHEDULED" | "LIVE" | "FINISHED" | "POSTPONED" | "CANCELLED";
 export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";
 export type DataState = "FRESH" | "SYNCING" | "STALE" | "PAUSED" | "UNAVAILABLE";
@@ -135,7 +136,8 @@ export function assessMarketData(input: {
     return { dataState: "FRESH", marketStatus: "OPEN", canSubmit: true };
   }
   const age = input.now.getTime() - new Date(input.odds.dataAsOf).getTime();
-  if (!Number.isFinite(age) || age < 0 || age > (input.maxAgeMs ?? PREMATCH_ODDS_MAX_AGE_MS)) {
+  const providerMaxAgeMs = input.odds.supplier === "THE_ODDS_API" ? THE_ODDS_API_MAX_AGE_MS : PREMATCH_ODDS_MAX_AGE_MS;
+  if (!Number.isFinite(age) || age < 0 || age > (input.maxAgeMs ?? providerMaxAgeMs)) {
     return { dataState: "STALE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
   }
   return { dataState: "FRESH", marketStatus: "OPEN", canSubmit: true };

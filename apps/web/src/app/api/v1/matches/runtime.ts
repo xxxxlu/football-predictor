@@ -2,7 +2,7 @@ import type postgres from "postgres";
 import { createHash } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
 import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
-import { MatchCacheReader, OpenLigaDbWorldCupSync } from "@football-predictor/supplier";
+import { MatchCacheReader, OpenLigaDbWorldCupSync, TheOddsApiClient } from "@football-predictor/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
 export interface MatchReadAccess {
@@ -31,6 +31,11 @@ export function visibleCurrentMatches<T extends CurrentMatchView>(views: T[], no
 }
 
 function etagOf(value: unknown): string { return `"${createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`; }
+
+export function configuredOddsApiKey(environment: Record<string, string | undefined>): string | undefined {
+  const value = environment.THE_ODDS_API_KEY?.trim();
+  return value || undefined;
+}
 
 export class RefreshingCurrentMatchCache {
   private lastAttempt = 0;
@@ -71,11 +76,13 @@ export function createMatchApiRuntime(input: {
   sql: postgres.Sql;
   close(): Promise<void>;
   identity?: { authenticate(token: string): Promise<{ id: string } | null> };
+  environment?: Record<string, string | undefined>;
 }): MatchApiRuntime {
   const identity = input.identity ?? getIdentityService();
   const repository = new PostgresMatchSnapshotRepository(input.sql);
   const reader = new MatchCacheReader({ repository });
-  const currentSync = new OpenLigaDbWorldCupSync({ repository });
+  const oddsApiKey = configuredOddsApiKey(input.environment ?? process.env);
+  const currentSync = new OpenLigaDbWorldCupSync({ repository, ...(oddsApiKey ? { oddsClient: new TheOddsApiClient({ apiKey: oddsApiKey }) } : {}) });
   return {
     cache: new RefreshingCurrentMatchCache({ reader, sync: currentSync }),
     access: {

@@ -9,6 +9,7 @@
     "dev:web": "pnpm --filter @football-predictor/config build && node scripts/dev-web.mjs",
     "dev:worker": "pnpm --filter @football-predictor/worker dev",
     "supplier:prewarm": "pnpm build:packages && pnpm --filter @football-predictor/worker build && pnpm --filter @football-predictor/worker prewarm",
+    "supplier:current-world-cup": "pnpm build:packages && pnpm --filter @football-predictor/worker build && pnpm --filter @football-predictor/worker current-world-cup",
     "db:migrate": "pnpm --filter @football-predictor/db migrate",
     "db:seed:super-admins": "pnpm --filter @football-predictor/db seed:super-admins",
     "lint": "pnpm --filter @football-predictor/web lint",

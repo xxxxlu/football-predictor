@@ -2,16 +2,9 @@ name: supplier-sync
 
 on:
   workflow_dispatch:
-    inputs:
-      competitions:
-        description: "Comma-separated league:season pairs available to the configured API plan"
-        required: true
-      reference_date:
-        description: "Optional UTC date (YYYY-MM-DD); leave blank for current paid-plan synchronization"
-        required: false
   schedule:
     # Offset from the top of the hour to reduce scheduled-run congestion.
-    # Two bounded runs per day leave room inside API-FOOTBALL's 95-call budget.
+    # The database lease allows at most one World Cup odds credit per run window.
     - cron: "17 1,13 * * *"
 
 permissions:
@@ -23,27 +16,11 @@ concurrency:
 
 jobs:
   sync:
-    # API-FOOTBALL Free cannot access the 2026 season. Scheduled work stays
-    # disabled until a paid/current-season source and targets are explicitly enabled.
-    if: github.event_name == 'workflow_dispatch' || vars.SUPPLIER_CURRENT_SEASON_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
-      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
-      API_FOOTBALL_BASE_URL: https://v3.football.api-sports.io
-      API_FOOTBALL_BOOKMAKER_ID: "8"
-      SUPPLIER_COMPETITIONS: ${{ inputs.competitions || vars.SUPPLIER_COMPETITIONS }}
-      SUPPLIER_REFERENCE_DATE: ${{ inputs.reference_date || '' }}
-      SUPPLIER_WINDOW_PAST_DAYS: ${{ inputs.reference_date && '13' || '1' }}
-      SUPPLIER_WINDOW_FUTURE_DAYS: ${{ inputs.reference_date && '1' || '14' }}
-      SUPPLIER_FIXTURES_INTERVAL_MINUTES: "720"
-      SUPPLIER_RESULTS_INTERVAL_MINUTES: "1440"
-      SUPPLIER_ODDS_INTERVAL_MINUTES: "10"
-      SUPPLIER_SETTLEMENT_INTERVAL_SECONDS: "60"
-      SUPPLIER_SETTLEMENT_BATCH_SIZE: "100"
-      SUPPLIER_LIVE_ENABLED: "false"
-      SUPPLIER_LIVE_INTERVAL_MINUTES: "5"
+      THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -56,5 +33,5 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Apply idempotent database migrations
         run: pnpm db:migrate
-      - name: Refresh fixtures, results, and pre-match odds within the persisted budget
-        run: pnpm supplier:prewarm
+      - name: Refresh current World Cup fixtures, results, and real 1X2 odds
+        run: pnpm supplier:current-world-cup

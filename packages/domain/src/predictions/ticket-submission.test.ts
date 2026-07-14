@@ -139,6 +139,18 @@ describe("TicketSubmissionService validation", () => {
     await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING", stakePoints: 1_000 });
   });
 
+  it("accepts The Odds API snapshots within the bounded free-sync freshness window", async () => {
+    const current = setup();
+    current.fake.market!.snapshot.supplier = "THE_ODDS_API";
+    current.fake.market!.snapshot.dataAsOf = "2026-07-12T21:00:00.000Z";
+    await expect(current.service.submit(current.command)).resolves.toMatchObject({ status: "PENDING" });
+
+    const expired = setup();
+    expired.fake.market!.snapshot.supplier = "THE_ODDS_API";
+    expired.fake.market!.snapshot.dataAsOf = "2026-07-12T20:59:59.999Z";
+    await expectCode(expired.service.submit(expired.command), "DATA_UNAVAILABLE");
+  });
+
   it("requires the accepted version and decimal odds string to match current odds", async () => {
     const first = setup();
     await expectCode(first.service.submit({ ...first.command, acceptedOddsVersion: "odds-v1" }), "ODDS_CHANGED");

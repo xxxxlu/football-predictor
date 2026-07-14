@@ -23,6 +23,7 @@ export interface MatchSnapshotRepository {
   getLive(matchId: string): Promise<LiveSnapshot | null>;
   setSyncState(matchId: string, state: SyncState): Promise<void>;
   getSyncState(matchId: string): Promise<SyncState>;
+  claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
 }
 
 export interface SupplierGateway {
@@ -47,6 +48,29 @@ type OpenLigaDbMatch = {
   team2: { teamId: number; teamName: string; shortName?: string };
   matchResults?: Array<{ resultTypeID: number; pointsTeam1: number; pointsTeam2: number }>;
 };
+
+type TheOddsApiEvent = {
+  id?: unknown;
+  commence_time?: unknown;
+  home_team?: unknown;
+  away_team?: unknown;
+  bookmakers?: unknown;
+};
+
+export interface RealOddsQuote {
+  eventId: string;
+  commenceTime: string;
+  homeTeam: string;
+  awayTeam: string;
+  bookmakerId: number;
+  bookmakerName: string;
+  dataAsOf: string;
+  outcomes: OddsSnapshot["outcomes"];
+}
+
+export interface RealOddsClient {
+  fetchWorldCupOdds(): Promise<RealOddsQuote[]>;
+}
 
 function validDate(value: string | undefined, fallback: Date): string {
   const parsed = value ? new Date(value) : fallback;
@@ -106,6 +130,84 @@ export class OpenLigaDbClient {
   }
 }
 
+function stablePositiveInteger(value: string): number {
+  return (Number.parseInt(createHash("sha256").update(value).digest("hex").slice(0, 8), 16) % 2_147_483_646) + 1;
+}
+
+function decimalPrice(value: unknown): string | null {
+  return typeof value === "number" && Number.isFinite(value) && value > 1 ? value.toFixed(2) : null;
+}
+
+function quoteFromEvent(event: TheOddsApiEvent, capturedAt: Date): RealOddsQuote | null {
+  if (typeof event.id !== "string" || typeof event.commence_time !== "string" || typeof event.home_team !== "string" || typeof event.away_team !== "string" || !Array.isArray(event.bookmakers)) return null;
+  const commenceTime = validDate(event.commence_time, capturedAt);
+  for (const rawBookmaker of event.bookmakers) {
+    if (!rawBookmaker || typeof rawBookmaker !== "object") continue;
+    const bookmaker = rawBookmaker as { key?: unknown; title?: unknown; last_update?: unknown; markets?: unknown };
+    if (typeof bookmaker.key !== "string" || typeof bookmaker.title !== "string" || !Array.isArray(bookmaker.markets)) continue;
+    const market = bookmaker.markets.find((candidate) => candidate && typeof candidate === "object" && (candidate as { key?: unknown }).key === "h2h") as { outcomes?: unknown } | undefined;
+    if (!market || !Array.isArray(market.outcomes)) continue;
+    const priceByName = new Map<string, string>();
+    for (const rawOutcome of market.outcomes) {
+      if (!rawOutcome || typeof rawOutcome !== "object") continue;
+      const outcome = rawOutcome as { name?: unknown; price?: unknown };
+      const price = decimalPrice(outcome.price);
+      if (typeof outcome.name === "string" && price) priceByName.set(outcome.name, price);
+    }
+    const home = priceByName.get(event.home_team);
+    const draw = priceByName.get("Draw");
+    const away = priceByName.get(event.away_team);
+    if (!home || !draw || !away) continue;
+    return {
+      eventId: event.id,
+      commenceTime,
+      homeTeam: localizeTeamName(event.home_team),
+      awayTeam: localizeTeamName(event.away_team),
+      bookmakerId: stablePositiveInteger(bookmaker.key),
+      bookmakerName: bookmaker.title,
+      dataAsOf: validDate(typeof bookmaker.last_update === "string" ? bookmaker.last_update : undefined, capturedAt),
+      outcomes: [
+        { selection: "HOME", supplierLabel: event.home_team, decimalOdds: home },
+        { selection: "DRAW", supplierLabel: "Draw", decimalOdds: draw },
+        { selection: "AWAY", supplierLabel: event.away_team, decimalOdds: away },
+      ],
+    };
+  }
+  return null;
+}
+
+export class TheOddsApiClient implements RealOddsClient {
+  private readonly apiKey: string;
+  private readonly fetcher: Fetcher;
+  private readonly now: () => Date;
+  private readonly baseUrl: string;
+
+  constructor(input: { apiKey: string; fetcher?: Fetcher; now?: () => Date; baseUrl?: string }) {
+    this.apiKey = input.apiKey;
+    this.fetcher = input.fetcher ?? fetch;
+    this.now = input.now ?? (() => new Date());
+    this.baseUrl = (input.baseUrl ?? "https://api.the-odds-api.com/v4").replace(/\/$/, "");
+  }
+
+  async fetchWorldCupOdds(): Promise<RealOddsQuote[]> {
+    const url = new URL(`${this.baseUrl}/sports/soccer_fifa_world_cup/odds`);
+    url.searchParams.set("apiKey", this.apiKey);
+    url.searchParams.set("regions", "eu");
+    url.searchParams.set("markets", "h2h");
+    url.searchParams.set("oddsFormat", "decimal");
+    url.searchParams.set("dateFormat", "iso");
+    const response = await this.fetcher(url, { method: "GET", headers: { accept: "application/json" }, signal: AbortSignal.timeout(6_000) });
+    if (!response.ok) throw new Error(`The Odds API request failed: HTTP ${response.status}`);
+    const payload = await response.json();
+    if (!Array.isArray(payload)) throw new Error("The Odds API request failed: invalid payload");
+    const capturedAt = this.now();
+    return (payload as TheOddsApiEvent[]).flatMap((event) => {
+      const quote = quoteFromEvent(event, capturedAt);
+      return quote ? [quote] : [];
+    });
+  }
+}
+
 function platformPredictionMarket(fixture: FixtureSnapshot, now: Date): OddsSnapshot {
   const outcomes = [
     { selection: "HOME" as const, supplierLabel: "主胜", decimalOdds: "3.00" },
@@ -121,24 +223,49 @@ function platformPredictionMarket(fixture: FixtureSnapshot, now: Date): OddsSnap
 }
 
 export class OpenLigaDbWorldCupSync {
-  private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds">;
+  private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "claimExternalSync">;
   private readonly client: OpenLigaDbClient;
+  private readonly oddsClient: RealOddsClient | undefined;
   private readonly now: () => Date;
 
-  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds">; client?: OpenLigaDbClient; now?: () => Date }) {
+  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; now?: () => Date }) {
     this.repository = input.repository;
     this.client = input.client ?? new OpenLigaDbClient();
+    this.oddsClient = input.oddsClient;
     this.now = input.now ?? (() => new Date());
   }
 
-  async run(): Promise<{ fixturesSynced: number; marketsSynced: number }> {
+  async run(): Promise<{ fixturesSynced: number; marketsSynced: number; oddsRequestMade: boolean }> {
     const now = this.now();
     const recentCutoff = now.getTime() - 24 * 60 * 60_000;
     const fixtures = (await this.client.fetchWorldCup2026()).filter((fixture) => new Date(fixture.kickoffAt).getTime() >= recentCutoff);
     await this.repository.saveFixtures(fixtures);
     const upcoming = fixtures.filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now);
-    for (const fixture of upcoming) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
-    return { fixturesSynced: fixtures.length, marketsSynced: upcoming.length };
+    if (!this.oddsClient) {
+      for (const fixture of upcoming) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+      return { fixturesSynced: fixtures.length, marketsSynced: upcoming.length, oddsRequestMade: false };
+    }
+    for (const fixture of upcoming) {
+      if (!(await this.repository.getOdds(fixture.id))) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+    }
+    if (upcoming.length === 0 || !(await this.repository.claimExternalSync("the-odds-api:world-cup:h2h:eu", now, 12 * 60 * 60_000))) {
+      return { fixturesSynced: fixtures.length, marketsSynced: 0, oddsRequestMade: false };
+    }
+    const quotes = await this.oddsClient.fetchWorldCupOdds();
+    let marketsSynced = 0;
+    for (const fixture of upcoming) {
+      const quote = quotes.find((candidate) => candidate.homeTeam === fixture.homeTeam.name && candidate.awayTeam === fixture.awayTeam.name && Math.abs(new Date(candidate.commenceTime).getTime() - new Date(fixture.kickoffAt).getTime()) <= 3 * 60 * 60_000);
+      if (!quote) continue;
+      const capturedAt = now.toISOString();
+      const marketWithoutVersion = {
+        productMarketId: `${fixture.id}:bookmaker:${quote.bookmakerId}:market:1`, fixtureId: fixture.id, supplier: "THE_ODDS_API" as const,
+        supplierFixtureId: fixture.supplierFixtureId, bookmakerId: quote.bookmakerId, bookmakerName: quote.bookmakerName, marketId: 1,
+        marketName: "胜平负真实赔率", dataAsOf: quote.dataAsOf, capturedAt, outcomes: quote.outcomes,
+      };
+      await this.repository.saveOdds({ ...marketWithoutVersion, version: etagOf(marketWithoutVersion).slice(1, -1) });
+      marketsSynced += 1;
+    }
+    return { fixturesSynced: fixtures.length, marketsSynced, oddsRequestMade: true };
   }
 }
 
@@ -154,6 +281,7 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   private odds = new Map<string, OddsSnapshot>();
   private live = new Map<string, LiveSnapshot>();
   private syncStates = new Map<string, SyncState>();
+  private externalSyncs = new Map<string, number>();
 
   async saveFixtures(fixtures: FixtureSnapshot[]): Promise<void> { for (const fixture of fixtures) this.fixtures.set(fixture.id, structuredClone(fixture)); }
   async saveOdds(odds: OddsSnapshot): Promise<void> { this.odds.set(odds.fixtureId, structuredClone(odds)); }
@@ -164,6 +292,12 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   async getLive(matchId: string): Promise<LiveSnapshot | null> { return structuredClone(this.live.get(matchId) ?? null); }
   async setSyncState(matchId: string, state: SyncState): Promise<void> { this.syncStates.set(matchId, state); }
   async getSyncState(matchId: string): Promise<SyncState> { return this.syncStates.get(matchId) ?? "IDLE"; }
+  async claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean> {
+    const previous = this.externalSyncs.get(key);
+    if (previous !== undefined && at.getTime() - previous < minimumIntervalMs) return false;
+    this.externalSyncs.set(key, at.getTime());
+    return true;
+  }
 }
 
 async function reconcileQuota(budget: SupplierBudgetPort, at: Date, quota: { supplierLimit?: number; supplierRemaining?: number }): Promise<void> {

@@ -66,6 +66,12 @@ describe("market data assessment", () => {
     })).toEqual({ dataState: "FRESH", marketStatus: "OPEN", canSubmit: true });
   });
 
+  it("keeps budgeted The Odds API snapshots usable for thirteen hours only", () => {
+    const realOdds = { ...odds, supplier: "THE_ODDS_API" as const, dataAsOf: "2026-07-14T00:00:00.000Z" };
+    expect(assessMarketData({ now: new Date("2026-07-14T13:00:00.000Z"), odds: realOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toMatchObject({ dataState: "FRESH", canSubmit: true });
+    expect(assessMarketData({ now: new Date("2026-07-14T13:00:00.001Z"), odds: realOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toMatchObject({ dataState: "STALE", canSubmit: false });
+  });
+
   it("distinguishes syncing, paused and unverifiable data while rejecting submission", () => {
     expect(assessMarketData({ now: new Date(), odds, syncState: "SYNCING", sourceVerified: true, budgetAvailable: true }).dataState).toBe("SYNCING");
     expect(assessMarketData({ now: new Date(), odds, syncState: "PAUSED", sourceVerified: true, budgetAvailable: false }).dataState).toBe("PAUSED");
