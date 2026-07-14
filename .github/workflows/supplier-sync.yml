@@ -1,0 +1,49 @@
+name: supplier-sync
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Offset from the top of the hour to reduce scheduled-run congestion.
+    # Two bounded runs per day leave room inside API-FOOTBALL's 95-call budget.
+    - cron: "17 1,13 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supplier-sync-production
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
+      API_FOOTBALL_BASE_URL: https://v3.football.api-sports.io
+      API_FOOTBALL_BOOKMAKER_ID: "8"
+      SUPPLIER_COMPETITIONS: "1:2026,2:2026,39:2026,140:2026,135:2026,78:2026,61:2026,253:2026,71:2026,98:2026,292:2026,169:2026"
+      SUPPLIER_WINDOW_PAST_DAYS: "1"
+      SUPPLIER_WINDOW_FUTURE_DAYS: "14"
+      SUPPLIER_FIXTURES_INTERVAL_MINUTES: "720"
+      SUPPLIER_RESULTS_INTERVAL_MINUTES: "1440"
+      SUPPLIER_ODDS_INTERVAL_MINUTES: "10"
+      SUPPLIER_SETTLEMENT_INTERVAL_SECONDS: "60"
+      SUPPLIER_SETTLEMENT_BATCH_SIZE: "100"
+      SUPPLIER_LIVE_ENABLED: "false"
+      SUPPLIER_LIVE_INTERVAL_MINUTES: "5"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply idempotent database migrations
+        run: pnpm db:migrate
+      - name: Refresh fixtures, results, and pre-match odds within the persisted budget
+        run: pnpm supplier:prewarm

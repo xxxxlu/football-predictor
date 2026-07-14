@@ -11,11 +11,30 @@ const required = [
   "packages/contracts/package.json",
   "packages/testkit/package.json",
   "render.yaml",
+  "vercel.json",
+  ".github/workflows/supplier-sync.yml",
 ];
 
 test("workspace contains every architecture boundary", async () => {
   await Promise.all(required.map((path) => access(path)));
-  assert.equal(required.length, 8);
+  assert.equal(required.length, 10);
+});
+
+test("free-tier deployment builds the web workspace and bounds supplier synchronization", async () => {
+  const vercel = JSON.parse(await readFile("vercel.json", "utf8"));
+  assert.equal(vercel.framework, "nextjs");
+  assert.match(vercel.buildCommand, /build:packages/);
+  assert.match(vercel.buildCommand, /@football-predictor\/web build/);
+  assert.equal(vercel.outputDirectory, "apps/web/.next");
+
+  const workflow = await readFile(".github/workflows/supplier-sync.yml", "utf8");
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /cron: "17 1,13 \* \* \*"/);
+  assert.match(workflow, /pnpm db:migrate/);
+  assert.match(workflow, /pnpm supplier:prewarm/);
+  for (const secret of ["DATABASE_URL", "API_FOOTBALL_KEY"]) {
+    assert.ok(workflow.includes(secret + ": ${{ secrets." + secret + " }}"));
+  }
 });
 
 test("production blueprint gates web and worker deploys on passing CI", async () => {
