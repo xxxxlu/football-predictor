@@ -2,6 +2,19 @@ import { describe, expect, it } from "vitest";
 import { cacheEtag, marketCacheId, PostgresMatchSnapshotRepository, statusForSync } from "./repository.js";
 
 describe("supplier cache persistence helpers", () => {
+  it("parses JSON-encoded market outcomes at the PostgreSQL boundary", async () => {
+    const sql = (async () => [{
+      productMarketId: "fixed-market", fixtureId: "openligadb:7001", supplier: "PLATFORM", supplierFixtureId: "7001",
+      bookmakerId: "0", bookmakerName: "平台固定虚拟积分", supplierMarketId: "1", marketName: "胜平负固定积分倍率",
+      currentVersion: "fixed-v1", dataAsOf: "2026-07-14T10:00:00.000Z", capturedAt: "2026-07-14T10:00:01.000Z",
+      outcomes: JSON.stringify([{ selection: "HOME", supplierLabel: "主胜", decimalOdds: "3.00" }]),
+    }]) as unknown as import("postgres").Sql;
+
+    await expect(new PostgresMatchSnapshotRepository(sql).getOdds("openligadb:7001")).resolves.toMatchObject({
+      outcomes: [{ selection: "HOME", decimalOdds: "3.00" }],
+    });
+  });
+
   it("normalizes PostgreSQL timestamp strings at the repository boundary", async () => {
     const sql = (async () => [{
       id: "api-football:101", supplier: "API_FOOTBALL", supplierFixtureId: "101", competitionId: "1", competitionName: "League",

@@ -70,7 +70,7 @@ type FixtureRow = {
 type OddsRow = {
   productMarketId: string; fixtureId: string; supplier: "API_FOOTBALL" | "PLATFORM"; supplierFixtureId: string; bookmakerId: string;
   bookmakerName: string; supplierMarketId: string; marketName: string; currentVersion: string; dataAsOf: Date | string;
-  capturedAt: Date | string; outcomes: OddsSnapshotRecord["outcomes"];
+  capturedAt: Date | string; outcomes: unknown;
 };
 
 type LiveRow = {
@@ -116,8 +116,23 @@ function mapOdds(row: OddsRow): OddsSnapshotRecord & { productMarketId: string }
     version: row.currentVersion,
     dataAsOf: isoTimestamp(row.dataAsOf),
     capturedAt: isoTimestamp(row.capturedAt),
-    outcomes: row.outcomes,
+    outcomes: parseOutcomes(row.outcomes),
   };
+}
+
+function parseOutcomes(value: unknown): OddsSnapshotRecord["outcomes"] {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try { candidate = JSON.parse(candidate); }
+    catch { return []; }
+  }
+  if (!Array.isArray(candidate)) return [];
+  return candidate.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const outcome = item as { selection?: unknown; supplierLabel?: unknown; decimalOdds?: unknown };
+    if (!["HOME", "DRAW", "AWAY"].includes(String(outcome.selection)) || typeof outcome.decimalOdds !== "string") return [];
+    return [{ selection: outcome.selection as Selection, supplierLabel: typeof outcome.supplierLabel === "string" ? outcome.supplierLabel : String(outcome.selection), decimalOdds: outcome.decimalOdds }];
+  });
 }
 
 export class PostgresMatchSnapshotRepository {
