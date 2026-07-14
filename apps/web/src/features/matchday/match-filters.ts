@@ -14,6 +14,37 @@ export function filterMatches(matches: MatchView[], filter: MatchFilter) {
   return matches.filter((match) => (!filter.competition || match.competitionName === filter.competition) && (!filter.date || matchDateKey(match, filter.timeZone) === filter.date));
 }
 
+export type CompetitionMatchGroup = { name: string; matches: MatchView[] };
+export type DateMatchGroup = { date: string; competitions: CompetitionMatchGroup[] };
+
+export function groupMatches(matches: MatchView[], timeZone?: string): DateMatchGroup[] {
+  const sorted = [...matches].sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime());
+  const dates = new Map<string, Map<string, MatchView[]>>();
+  for (const match of sorted) {
+    const date = matchDateKey(match, timeZone) || "unknown";
+    const competitions = dates.get(date) ?? new Map<string, MatchView[]>();
+    const competitionMatches = competitions.get(match.competitionName) ?? [];
+    competitionMatches.push(match);
+    competitions.set(match.competitionName, competitionMatches);
+    dates.set(date, competitions);
+  }
+  return [...dates].map(([date, competitions]) => ({
+    date,
+    competitions: [...competitions].map(([name, competitionMatches]) => ({ name, matches: competitionMatches })),
+  }));
+}
+
+export function paginateMatches(matches: MatchView[], requestedCount: number) {
+  const shown = Math.min(matches.length, Math.max(0, requestedCount));
+  return {
+    items: matches.slice(0, shown),
+    shown,
+    total: matches.length,
+    remaining: matches.length - shown,
+    hasMore: shown < matches.length,
+  };
+}
+
 export function matchAvailability(match: MatchView) {
   if (match.state === "FINISHED") return { label: "已结束", predictable: false };
   if (match.stale) return { label: "赔率已过期", predictable: false };
@@ -23,5 +54,5 @@ export function matchAvailability(match: MatchView) {
 }
 
 export function summarizeMatches(matches: MatchView[]) {
-  return { total: matches.length, open: matches.filter((match) => match.state === "OPEN" && !match.stale).length, finished: matches.filter((match) => match.state === "FINISHED").length, stale: matches.filter((match) => match.stale).length };
+  return { total: matches.length, open: matches.filter((match) => matchAvailability(match).predictable).length, finished: matches.filter((match) => match.state === "FINISHED").length, stale: matches.filter((match) => match.stale).length };
 }

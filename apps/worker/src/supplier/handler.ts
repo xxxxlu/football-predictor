@@ -23,6 +23,7 @@ export interface SupplierQuota {
 export interface SupplierClientPort<Fixture = unknown, Odds = unknown, Live = unknown> {
   fetchFixtures(input: { leagueId: number; season: number; from: string; to: string }): Promise<{ data: Fixture[]; quota: SupplierQuota }>;
   fetchPrematchOdds(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: Odds | null; quota: SupplierQuota }>;
+  fetchPrematchOddsPage?(input: { leagueId: number; season: number; date: string; bookmakerId: number; page: number }): Promise<{ data: Odds[]; quota: SupplierQuota; paging: { current: number; total: number } }>;
   fetchLive(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: Live | null; quota: SupplierQuota }>;
   fetchStatus(): Promise<{ supplierCurrent: number; supplierLimit: number }>;
 }
@@ -40,11 +41,12 @@ export type SupplierJob =
   | { type: "FIXTURES"; attempt: number; payload: { leagueId: number; season: number; from: string; to: string } }
   | { type: "RESULTS"; attempt: number; payload: { leagueId: number; season: number; from: string; to: string } }
   | { type: "PREMATCH_ODDS"; attempt: number; payload: { fixtureId: number; matchId: string; bookmakerId: number } }
+  | { type: "PREMATCH_ODDS_BATCH"; attempt: number; payload: { leagueId: number; season: number; date: string; bookmakerId: number; page: number } }
   | { type: "LIVE"; attempt: number; payload: { fixtureId: number; matchId: string; bookmakerId: number } }
   | { type: "STATUS_CALIBRATE"; attempt: number; payload: Record<string, never> };
 
 export type SupplierJobResult =
-  | { outcome: "SUCCESS"; synced: number; nextRunAt?: string }
+  | { outcome: "SUCCESS"; synced: number; nextRunAt?: string; nextPage?: number }
   | { outcome: "DEFERRED"; reason: "BUDGET_EXHAUSTED" | "PROTECTED_RESERVE"; retryAt: string }
   | { outcome: "RETRY"; reason: "SUPPLIER_FAILURE"; retryAt: string; nextAttempt: number };
 
@@ -129,6 +131,20 @@ export function createSupplierJobHandler<Fixture, Odds, Live>(dependencies: Hand
           await dependencies.repository.saveOdds(response.data);
           await dependencies.repository.setSyncState(job.payload.matchId, "IDLE");
           return { outcome: "SUCCESS", synced: 1 };
+        }
+
+        if (job.type === "PREMATCH_ODDS_BATCH") {
+          const budget = await charge(dependencies, "PREMATCH_ODDS", now);
+          if (!budget.allowed) return budget.result;
+          if (!dependencies.client.fetchPrematchOddsPage) throw new Error("Paged prematch odds are not configured");
+          const response = await dependencies.client.fetchPrematchOddsPage(job.payload);
+          await reconcileQuota(dependencies, now, response.quota, budget.snapshot);
+          for (const odds of response.data) await dependencies.repository.saveOdds(odds);
+          return {
+            outcome: "SUCCESS",
+            synced: response.data.length,
+            ...(response.paging.current < response.paging.total ? { nextPage: response.paging.current + 1 } : {}),
+          };
         }
 
         const budget = await charge(dependencies, "LIVE", now);

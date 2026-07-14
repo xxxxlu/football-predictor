@@ -51,6 +51,28 @@ describe("API-FOOTBALL adapter", () => {
     expect(result.data?.outcomes.map((outcome) => outcome.selection)).toEqual(["HOME", "DRAW", "AWAY"]);
   });
 
+  it("fetches a paged league/date odds batch so one request can warm multiple fixtures", async () => {
+    let url = "";
+    const fetcher: typeof fetch = async (input) => {
+      url = String(input);
+      return Response.json({
+        errors: [],
+        paging: { current: 1, total: 2 },
+        response: [
+          { fixture: { id: 101 }, update: "2026-07-13T10:00:00+00:00", bookmakers: [{ id: 8, name: "Bookmaker", bets: [{ id: 1, name: "Match Winner", values: [{ value: "Home", odd: "2.10" }, { value: "Draw", odd: "3.20" }, { value: "Away", odd: "3.40" }] }] }] },
+          { fixture: { id: 102 }, update: "2026-07-13T10:01:00+00:00", bookmakers: [{ id: 8, name: "Bookmaker", bets: [{ id: 1, name: "Match Winner", values: [{ value: "Home", odd: "1.90" }, { value: "Draw", odd: "3.10" }, { value: "Away", odd: "4.20" }] }] }] },
+        ],
+      });
+    };
+    const client = new ApiFootballClient({ apiKey: "secret", fetcher, now: () => new Date("2026-07-13T10:02:00Z") });
+
+    const result = await client.fetchPrematchOddsPage({ leagueId: 39, season: 2026, date: "2026-07-13", bookmakerId: 8, page: 1 });
+
+    expect(url).toBe("https://v3.football.api-sports.io/odds?league=39&season=2026&date=2026-07-13&timezone=UTC&bookmaker=8&bet=1&page=1");
+    expect(result.paging).toEqual({ current: 1, total: 2 });
+    expect(result.data.map((item) => item.fixtureId)).toEqual(["api-football:101", "api-football:102"]);
+  });
+
   it("uses the non-billable status endpoint for quota calibration", async () => {
     let url = "";
     const fetcher: typeof fetch = async (input) => {

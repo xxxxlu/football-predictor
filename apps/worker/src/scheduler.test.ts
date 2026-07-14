@@ -117,6 +117,35 @@ describe("worker scheduler", () => {
     await scheduler.stop();
   });
 
+  it("warms many matches through one paged league/date odds group instead of one request per fixture", async () => {
+    const jobs: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig([{ leagueId: 39, season: 2026 }]),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => {
+          jobs.push(job);
+          if (job.type === "PREMATCH_ODDS_BATCH" && job.payload.page === 1) return { outcome: "SUCCESS", synced: 10, nextPage: 2 };
+          return { outcome: "SUCCESS", synced: 2 };
+        },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => Array.from({ length: 12 }, (_, index) => ({ id: `api-football:${100 + index}`, supplierFixtureId: 100 + index, competitionId: 39, season: 2026, kickoffAt: `2026-07-14T${String(10 + index).padStart(2, "0")}:00:00Z`, status: "SCHEDULED" as const })) },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+
+    const oddsJobs = jobs.filter((job) => job.type === "PREMATCH_ODDS_BATCH");
+    expect(oddsJobs.map((job) => job.payload)).toEqual([
+      { leagueId: 39, season: 2026, date: "2026-07-14", bookmakerId: 8, page: 1 },
+      { leagueId: 39, season: 2026, date: "2026-07-14", bookmakerId: 8, page: 2 },
+    ]);
+    expect(jobs.some((job) => job.type === "PREMATCH_ODDS")).toBe(false);
+    await scheduler.stop();
+  });
+
   it("uses a protected result-refresh job on the periodic fixture cycle", async () => {
     const jobs: string[] = [];
     const timers = new FakeTimers();

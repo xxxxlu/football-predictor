@@ -11,7 +11,7 @@
 # Retrospective: optional <-> done
 
 generated: 2026-07-13
-last_updated: 2026-07-13
+last_updated: 2026-07-14
 project: football-predictor
 project_key: NOKEY
 tracking_system: file-system
@@ -57,7 +57,7 @@ development_status:
   6-1-view-restricted-operations-data: done  # 查看受限的运营对象信息
   6-2-disable-and-restore-user: done  # 禁用和恢复普通账户
   6-3-moderate-reported-room: done  # 处理举报与房间状态
-  6-4-monitor-supplier-budget-and-jobs: in-progress  # 预算可监控；任务持久状态仍待补齐
+  6-4-monitor-supplier-budget-and-jobs: done  # 预算、持久任务状态、失败原因、租约恢复和安全重试已完成
   6-5-reauthenticate-and-retry-job: backlog  # 重新认证并安全重试任务
   6-6-retain-operations-audit: done  # 保留完整运营与规则审计
   6-7-anonymize-deleted-account: done  # 删除账户时匿名化公开身份
@@ -78,5 +78,5 @@ development_status:
   epic-8-retrospective: optional
   epic-9: in-progress
   9-1-extend-rooms-to-post-world-cup-competitions: in-progress  # 多赛事配置、同步与筛选已实现；待真实供应商密钥完成数据预热验收
-  9-2-build-cross-competition-history: backlog  # 建立跨赛事历史档案
+  9-2-build-cross-competition-history: done  # 跨赛事长期档案已完成，房间余额仍严格独立
   epic-9-retrospective: optional

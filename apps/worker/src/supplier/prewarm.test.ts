@@ -4,7 +4,8 @@ import { runSupplierPrewarm, validatePrewarmCompetitions, validatePrewarmEnviron
 describe("supplier cache prewarm", () => {
   it("rejects an unsafe number of fixture synchronization requests", () => {
     expect(() => validatePrewarmCompetitions([{ leagueId: 1, season: 2026 }])).not.toThrow();
-    expect(() => validatePrewarmCompetitions(Array.from({ length: 30 }, (_, index) => ({ leagueId: index + 1, season: 2026 })))).toThrow("at most 29");
+    expect(() => validatePrewarmCompetitions(Array.from({ length: 30 }, (_, index) => ({ leagueId: index + 1, season: 2026 })))).not.toThrow();
+    expect(() => validatePrewarmCompetitions(Array.from({ length: 31 }, (_, index) => ({ leagueId: index + 1, season: 2026 })))).toThrow("at most 30");
   });
 
   it("fails fast with actionable variable names without echoing secret values", () => {
@@ -21,7 +22,7 @@ describe("supplier cache prewarm", () => {
       competitions: [{ leagueId: 39, season: 2026 }, { leagueId: 140, season: 2026 }],
       bookmakerId: 8, pastDays: 1, futureDays: 7,
       clock: { now: () => new Date("2026-07-14T10:00:00Z") },
-      supplier: { run: async (job) => { jobs.push(job); return { outcome: "SUCCESS" as const, synced: job.type === "FIXTURES" ? 2 : job.type === "PREMATCH_ODDS" ? 1 : 0 }; }, close },
+      supplier: { run: async (job) => { jobs.push(job); return { outcome: "SUCCESS" as const, synced: job.type === "FIXTURES" ? 2 : job.type === "PREMATCH_ODDS_BATCH" ? 1 : 0 }; }, close },
       fixtures: { listFixtures: async () => [
         { id: "api-football:2", supplierFixtureId: 2, competitionId: 140, season: 2026, kickoffAt: "2026-07-16T12:00:00Z", status: "SCHEDULED" as const, oddsDataAsOf: "2026-07-14T09:55:00Z" },
         { id: "api-football:1", supplierFixtureId: 1, competitionId: 39, season: 2026, kickoffAt: "2026-07-15T12:00:00Z", status: "SCHEDULED" as const },
@@ -29,8 +30,8 @@ describe("supplier cache prewarm", () => {
       ] },
       budget: { snapshot: async () => ({ remaining: 81, protectedRemaining: 10 }) },
     });
-    expect(jobs.map((job) => job.type)).toEqual(["STATUS_CALIBRATE", "FIXTURES", "FIXTURES", "PREMATCH_ODDS"]);
-    expect((jobs.at(-1)?.payload as { fixtureId?: number }).fixtureId).toBe(1);
+    expect(jobs.map((job) => job.type)).toEqual(["STATUS_CALIBRATE", "FIXTURES", "FIXTURES", "PREMATCH_ODDS_BATCH"]);
+    expect(jobs.at(-1)?.payload).toMatchObject({ leagueId: 39, season: 2026, date: "2026-07-15", bookmakerId: 8, page: 1 });
     expect(output).toEqual({ competitionsSynced: 2, fixturesSynced: 4, oddsSynced: 1, oddsSkipped: 1, budgetRemaining: 81, settlementProtected: 10 });
     expect(close).toHaveBeenCalledOnce();
     expect(JSON.stringify(output)).not.toContain("secret");

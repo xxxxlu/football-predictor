@@ -7,6 +7,56 @@ export class OperationError extends Error {
 type DbTimestamp = Date | string;
 export type TicketHistoryRow = { ticketId: string; matchId: string; homeTeam: string; awayTeam: string; kickoffAt: DbTimestamp; matchStatus?: string; submittedAt: DbTimestamp; ownerUserId: string; displayName: string; selection: string; stakePoints: string; confirmedOdds: string; ticketStatus: string; outcome?: string | null; grossReturnPoints?: string | null; settlementVersion?: string | null };
 
+export type CrossCompetitionHistoryRow = {
+  ticketId: string; roomId: string; roomName: string; fixtureId: string;
+  competitionId: string; competitionName: string; season: number;
+  homeTeam: string; awayTeam: string; kickoffAt: DbTimestamp; selection: string;
+  stakePoints: string; outcome: "WIN" | "LOSS" | "PUSH" | "CANCEL";
+  grossReturnPoints: string; settlementVersion: string; settledAt: DbTimestamp;
+  ledgerId: string; auditId: string;
+};
+
+type CompetitionArchive = {
+  competitionId: string; competitionName: string; season: number;
+  settledTickets: number; wins: number; losses: number; voids: number;
+};
+
+export function projectCrossCompetitionHistory(rows: CrossCompetitionHistoryRow[]) {
+  const competitions = new Map<string, CompetitionArchive>();
+  const summary = { settledTickets: 0, wins: 0, losses: 0, voids: 0 };
+  const records = rows.map((row) => {
+    const key = `${row.competitionId}:${row.season}`;
+    const competition = competitions.get(key) ?? {
+      competitionId: String(row.competitionId), competitionName: row.competitionName, season: row.season,
+      settledTickets: 0, wins: 0, losses: 0, voids: 0,
+    };
+    competition.settledTickets += 1;
+    summary.settledTickets += 1;
+    const counter = row.outcome === "WIN" ? "wins" : row.outcome === "LOSS" ? "losses" : "voids";
+    competition[counter] += 1;
+    summary[counter] += 1;
+    competitions.set(key, competition);
+    return {
+      ticketId: row.ticketId,
+      room: { id: row.roomId, name: row.roomName },
+      competition: { id: String(row.competitionId), name: row.competitionName, season: row.season },
+      fixture: { id: row.fixtureId, homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoffAt: timestampIso(row.kickoffAt) },
+      selection: row.selection,
+      stakePoints: row.stakePoints,
+      settlement: {
+        outcome: row.outcome, grossReturnPoints: row.grossReturnPoints, version: row.settlementVersion,
+        settledAt: timestampIso(row.settledAt), ledgerId: row.ledgerId, auditId: row.auditId,
+      },
+    };
+  });
+  return {
+    scope: { performance: "USER_CROSS_COMPETITION" as const, balances: "PER_ROOM" as const },
+    summary,
+    competitions: [...competitions.values()],
+    records,
+  };
+}
+
 export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now: Date) {
   const isCurrentUser = row.ownerUserId === viewerId;
   const reveal = isCurrentUser || now >= timestampDate(row.kickoffAt) || (row.matchStatus !== undefined && row.matchStatus !== "SCHEDULED");
@@ -78,6 +128,24 @@ export class PostgresOperationsRepository {
     const [row] = await this.sql<Array<{ id: string }>>`UPDATE identity.users SET nickname=${nickname},updated_at=${this.clock.now()} WHERE id=${userId} AND status='ACTIVE' RETURNING id`;
     if (!row) throw new OperationError("UNAUTHENTICATED", 401);
     return this.getProfile(userId);
+  }
+
+  async accountHistory(userId: string) {
+    const rows = await this.sql<CrossCompetitionHistoryRow[]>`
+      SELECT t.id AS "ticketId",t.room_id AS "roomId",r.name AS "roomName",t.fixture_id AS "fixtureId",
+        f.competition_id::text AS "competitionId",f.competition_name AS "competitionName",f.season,
+        f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",
+        l.selection,t.stake_points::text AS "stakePoints",s.outcome,s.gross_return_points::text AS "grossReturnPoints",
+        s.settlement_version AS "settlementVersion",s.settled_at AS "settledAt",e.id AS "ledgerId",e.audit_id AS "auditId"
+      FROM prediction.tickets t
+      JOIN prediction.settlements s ON s.id=t.active_settlement_id AND s.status='ACTIVE'
+      JOIN ledger.entries e ON e.id=s.ledger_id AND e.ticket_id=t.id AND e.settlement_version=s.settlement_version
+      JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
+      JOIN supplier.fixtures f ON f.id=t.fixture_id
+      JOIN room.rooms r ON r.id=t.room_id
+      WHERE t.user_id=${userId}
+      ORDER BY s.settled_at DESC,t.id DESC LIMIT 500`;
+    return projectCrossCompetitionHistory(rows);
   }
 
   private async assertMember(roomId: string, userId: string, ownerOnly = false) {

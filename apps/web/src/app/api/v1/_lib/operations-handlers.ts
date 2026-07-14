@@ -7,6 +7,7 @@ const nicknameSchema = z.object({ nickname: z.string().trim().min(2).max(32) }).
 interface Identity { authenticate(token: string): Promise<{ id: string } | null> }
 interface Operations {
   getProfile(userId: string): Promise<unknown>; updateNickname(userId: string, nickname: string): Promise<unknown>;
+  accountHistory(userId: string): Promise<unknown>;
   submissionStatus(roomId: string, userId: string): Promise<unknown>; ticketHistory(roomId: string, userId: string): Promise<unknown>;
   ledger(roomId: string, userId: string): Promise<unknown>; leaderboard(roomId: string, userId: string): Promise<unknown>; adminStatus(userId: string): Promise<unknown>;
 }
@@ -16,6 +17,7 @@ export function createOperationsHandlers(identity: Identity, operations: Operati
   const roomRead = (operation: (roomId: string, userId: string) => Promise<unknown>) => (request: Request, roomId: string) => execute(async () => json({ data: await operation(roomId, await user(request)) }));
   return {
     profileGet: read((id) => operations.getProfile(id)),
+    accountHistory: read((id) => operations.accountHistory(id)),
     profilePatch: (request: Request) => execute(async () => { assertSameOrigin(request); const id = await user(request); const input = nicknameSchema.parse(await request.json()); return json({ data: await operations.updateNickname(id, input.nickname) }); }),
     submissionStatus: roomRead((roomId, id) => operations.submissionStatus(roomId, id)),
     ticketHistory: roomRead((roomId, id) => operations.ticketHistory(roomId, id)),

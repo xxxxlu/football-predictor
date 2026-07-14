@@ -6,7 +6,7 @@ const get = (path: string) => new Request(`https://example.test${path}`, { heade
 const patch = (body: unknown) => new Request("https://example.test/api/v1/account/profile", { method: "PATCH", headers: { cookie: "fp_session=token", "content-type": "application/json" }, body: JSON.stringify(body) });
 function setup() {
   const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }) };
-  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]), adminStatus: vi.fn() };
+  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), accountHistory: vi.fn().mockResolvedValue({ records: [] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]), adminStatus: vi.fn() };
   return { operations, handlers: createOperationsHandlers(identity, operations) };
 }
 describe("operations API permissions", () => {
@@ -17,5 +17,12 @@ describe("operations API permissions", () => {
   it("does not weaken owner or super-admin denials", async () => {
     const owner = setup(); owner.operations.submissionStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await owner.handlers.submissionStatus(get("/x"), "room-1")).status).toBe(403);
     const admin = setup(); admin.operations.adminStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await admin.handlers.adminStatus(get("/x"))).status).toBe(403);
+  });
+  it("returns only the authenticated user's cross-competition history", async () => {
+    const subject = setup();
+    const response = await subject.handlers.accountHistory(get("/api/v1/account/history"));
+
+    expect(response.status).toBe(200);
+    expect(subject.operations.accountHistory).toHaveBeenCalledWith("user-1");
   });
 });

@@ -3,6 +3,7 @@ import type { FixtureSnapshot, LiveSnapshot, MatchStatus, OddsSnapshot, Selectio
 
 export interface QuotaHeaders { supplierLimit?: number; supplierRemaining?: number }
 export interface SupplierResult<T> { data: T; quota: QuotaHeaders }
+export interface SupplierPageResult<T> extends SupplierResult<T> { paging: { current: number; total: number } }
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
@@ -52,7 +53,7 @@ export class ApiFootballClient {
     this.now = options.now ?? (() => new Date());
   }
 
-  private async get<T>(path: string, parameters?: Record<string, string | number>): Promise<SupplierResult<T>> {
+  private async get<T>(path: string, parameters?: Record<string, string | number>): Promise<SupplierResult<T> & { paging?: { current: number; total: number } }> {
     const url = new URL(`${this.baseUrl}/${path}`);
     for (const [key, value] of Object.entries(parameters ?? {})) url.searchParams.set(key, String(value));
     let response: Response;
@@ -66,10 +67,13 @@ export class ApiFootballClient {
     const supplierRemaining = asNumber(response.headers.get("x-ratelimit-requests-remaining"));
     if (supplierLimit !== undefined) quota.supplierLimit = supplierLimit;
     if (supplierRemaining !== undefined) quota.supplierRemaining = supplierRemaining;
-    const payload = await response.json() as { errors?: unknown; response?: T };
+    const payload = await response.json() as { errors?: unknown; response?: T; paging?: { current?: number; total?: number } };
     const hasErrors = Array.isArray(payload.errors) ? payload.errors.length > 0 : Boolean(payload.errors && Object.keys(payload.errors as object).length);
     if (!response.ok || hasErrors || payload.response === undefined) throw new Error(`API-FOOTBALL request failed: HTTP ${response.status}`);
-    return { data: payload.response, quota };
+    const paging = payload.paging && Number.isSafeInteger(payload.paging.current) && Number.isSafeInteger(payload.paging.total)
+      ? { current: payload.paging.current!, total: payload.paging.total! }
+      : undefined;
+    return { data: payload.response, quota, ...(paging ? { paging } : {}) };
   }
 
   async fetchFixtures(input: { leagueId: number; season: number; from: string; to: string }): Promise<SupplierResult<FixtureSnapshot[]>> {
@@ -107,27 +111,40 @@ export class ApiFootballClient {
   async fetchPrematchOdds(input: { fixtureId: number; bookmakerId: number }): Promise<SupplierResult<OddsSnapshot | null>> {
     const result = await this.get<Array<any>>("odds", { fixture: input.fixtureId, bookmaker: input.bookmakerId, bet: 1 });
     const item = result.data[0];
-    const bookmaker = item?.bookmakers?.find((candidate: any) => candidate.id === input.bookmakerId);
+    return { data: item ? this.mapPrematchOdds(item, input.bookmakerId) : null, quota: result.quota };
+  }
+
+  async fetchPrematchOddsPage(input: { leagueId: number; season: number; date: string; bookmakerId: number; page: number }): Promise<SupplierPageResult<OddsSnapshot[]>> {
+    const result = await this.get<Array<any>>("odds", { league: input.leagueId, season: input.season, date: input.date, timezone: "UTC", bookmaker: input.bookmakerId, bet: 1, page: input.page });
+    return {
+      data: result.data.flatMap((item) => { const snapshot = this.mapPrematchOdds(item, input.bookmakerId); return snapshot ? [snapshot] : []; }),
+      quota: result.quota,
+      paging: result.paging ?? { current: input.page, total: input.page },
+    };
+  }
+
+  private mapPrematchOdds(item: any, bookmakerId: number): OddsSnapshot | null {
+    const fixtureId = item?.fixture?.id;
+    const bookmaker = item?.bookmakers?.find((candidate: any) => candidate.id === bookmakerId);
     const market = bookmaker?.bets?.find((candidate: any) => candidate.id === 1);
-    if (!item || !bookmaker || !market) return { data: null, quota: result.quota };
-    const capturedAt = this.now().toISOString();
+    if (!Number.isSafeInteger(fixtureId) || !bookmaker || !market) return null;
     const snapshotWithoutVersion: Omit<OddsSnapshot, "version"> = {
-      productMarketId: `api-football:${input.fixtureId}:bookmaker:${bookmaker.id}:market:${market.id}`,
-      fixtureId: `api-football:${input.fixtureId}`,
+      productMarketId: `api-football:${fixtureId}:bookmaker:${bookmaker.id}:market:${market.id}`,
+      fixtureId: `api-football:${fixtureId}`,
       supplier: "API_FOOTBALL",
-      supplierFixtureId: input.fixtureId,
+      supplierFixtureId: fixtureId,
       bookmakerId: bookmaker.id,
       bookmakerName: bookmaker.name,
       marketId: market.id,
       marketName: market.name,
       dataAsOf: new Date(item.update).toISOString(),
-      capturedAt,
+      capturedAt: this.now().toISOString(),
       outcomes: market.values.flatMap((value: any) => {
         const selection = selectionFrom(value.value);
         return selection ? [{ selection, supplierLabel: value.value, decimalOdds: String(value.odd) }] : [];
       }),
     };
-    return { data: { ...snapshotWithoutVersion, version: versionOf(snapshotWithoutVersion) }, quota: result.quota };
+    return { ...snapshotWithoutVersion, version: versionOf(snapshotWithoutVersion) };
   }
 
   async fetchLive(input: { fixtureId: number; bookmakerId: number }): Promise<SupplierResult<LiveSnapshot | null>> {

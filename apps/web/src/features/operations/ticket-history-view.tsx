@@ -1,22 +1,93 @@
 "use client";
-import { useEffect, useState } from "react";
-import { DataStatePanel } from "@/components/data-state-panel";
-import { RoomFilter } from "@/components/room-filter";
-import type { ApiEnvelope, ApiFailure, OddsSelection } from "@/features/matchday/types";
-import { useRoomData } from "./use-room-data";
-import { historySettlementFacts } from "./ledger-presentation";
 
-type TicketHistory = { ticketId: string; matchId: string; homeTeam: string; awayTeam: string; kickoffAt: string; submittedAt: string; owner: { userId: string; displayName: string; isCurrentUser: boolean }; visibility: "PRIVATE" | "REVEALED"; selection?: OddsSelection; stakePoints?: string; confirmedOdds?: string; status: "ACCEPTED" | "FROZEN" | "WON" | "LOST" | "VOID" | "REVERSED"; outcome?: string | null; returnPoints?: string | null; netPoints?: string | null; settlementVersion?: string | null };
+import { useEffect, useMemo, useState } from "react";
+import { DataStatePanel } from "@/components/data-state-panel";
+import type { ApiEnvelope, ApiFailure, OddsSelection } from "@/features/matchday/types";
+import { competitionFilterOptions, filterHistoryRecords, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
+
+type HistoryArchive = {
+  scope: { performance: "USER_CROSS_COMPETITION"; balances: "PER_ROOM" };
+  summary: { settledTickets: number; wins: number; losses: number; voids: number };
+  competitions: Array<{ competitionId: string; competitionName: string; season: number; settledTickets: number; wins: number; losses: number; voids: number }>;
+  records: CrossCompetitionRecord[];
+};
+
 const selectionLabel: Record<OddsSelection, string> = { HOME: "主胜", DRAW: "平局", AWAY: "客胜" };
+const outcomeLabel: Record<SettlementOutcome, string> = { WIN: "命中", LOSS: "未命中", PUSH: "走盘", CANCEL: "取消退款" };
 
 export function TicketHistoryView() {
-  const room = useRoomData(); const [tickets, setTickets] = useState<TicketHistory[]>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
-  useEffect(() => { if (!room.roomId) return; const controller = new AbortController(); void (async () => { setLoading(true); setError(""); try { const response = await fetch(`/api/v1/rooms/${encodeURIComponent(room.roomId)}/tickets/history`, { credentials: "same-origin", signal: controller.signal }); const result = await response.json().catch(() => ({})) as ApiEnvelope<TicketHistory[]> & ApiFailure; if (!response.ok) throw new Error(result.error?.message || "无法加载判断历史"); setTickets(Array.isArray(result.data) ? result.data : []); } catch (reason) { if ((reason as Error).name !== "AbortError") setError((reason as Error).message || "无法加载判断历史"); } finally { setLoading(false); } })(); return () => controller.abort(); }, [room.roomId]);
-  if (room.loading) return <DataStatePanel state="loading" title="正在加载房间" description=""/>;
-  if (room.error) return <DataStatePanel state="error" title="房间加载失败" description={room.error} action={<button onClick={room.retry} className="border border-[var(--ink)] px-4 py-2 font-bold">重试</button>}/>;
-  if (!room.rooms.length) return <DataStatePanel state="empty" title="还没有判断历史" description="加入私人房间并提交判断后，记录会出现在这里。"/>;
-  return <div><RoomFilter rooms={room.rooms} value={room.roomId} onChange={room.setRoomId}/><p className="mt-4 text-xs text-[var(--muted)]">你的选择始终对你可见；其他成员的选择只在服务端标记为封盘后公开时展示。</p><div className="mt-6">{loading ? <DataStatePanel state="loading" title="正在加载历史" description=""/> : error ? <DataStatePanel state="error" title="判断历史暂不可用" description={error}/> : !tickets.length ? <DataStatePanel state="empty" title="当前房间还没有判断" description="提交成功后，不可变票号和状态会显示在这里。"/> : <HistoryList tickets={tickets}/>}</div></div>;
+  const [archive, setArchive] = useState<HistoryArchive | null>(null);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const options = useMemo(() => competitionFilterOptions(archive?.records ?? []), [archive]);
+  const records = useMemo(() => filterHistoryRecords(archive?.records ?? [], filter), [archive, filter]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void (async () => {
+      setLoading(true);
+      setError("");
+      try {
+        const response = await fetch("/api/v1/account/history", { credentials: "same-origin", signal: controller.signal });
+        const result = await response.json().catch(() => ({})) as ApiEnvelope<HistoryArchive> & ApiFailure;
+        if (!response.ok || !result.data) throw new Error(result.error?.message || "无法加载长期档案");
+        setArchive(result.data);
+      } catch (reason) {
+        if ((reason as Error).name !== "AbortError") setError((reason as Error).message || "无法加载长期档案");
+      } finally {
+        setLoading(false);
+      }
+    })();
+    return () => controller.abort();
+  }, []);
+
+  if (loading) return <DataStatePanel state="loading" title="正在加载长期档案" description="正在汇总已结算判断。"/>;
+  if (error) return <DataStatePanel state="error" title="长期档案暂不可用" description={error}/>;
+  if (!archive?.records.length) return <DataStatePanel state="empty" title="还没有已结算记录" description="参加任意房间并完成比赛结算后，跨赛事记录会出现在这里。"/>;
+
+  return <div>
+    <section aria-label="长期表现摘要" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <Metric label="已结算" value={String(archive.summary.settledTickets)}/>
+      <Metric label="命中" value={String(archive.summary.wins)}/>
+      <Metric label="未命中" value={String(archive.summary.losses)}/>
+      <Metric label="走盘 / 取消" value={String(archive.summary.voids)}/>
+    </section>
+    <p className="mt-4 border-l-4 border-[var(--field)] bg-white/45 p-4 text-sm text-[var(--muted)]">
+      长期档案跨房间汇总的只有已结算判断次数。每个房间的可用、冻结和更正债务始终独立核算，不会在这里合并成余额。
+    </p>
+    <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
+      <label className="text-sm font-bold">赛事与赛季
+        <select value={filter} onChange={(event) => setFilter(event.target.value)} className="mt-2 block min-w-64 border border-[var(--ink)] bg-[var(--paper-raised)] px-3 py-2 font-normal">
+          <option value="">全部赛事</option>
+          {options.map((option) => <option key={option.key} value={option.key}>{option.label}</option>)}
+        </select>
+      </label>
+      <p className="text-xs text-[var(--muted)]">显示 {records.length} / {archive.records.length} 条</p>
+    </div>
+    <ol className="mt-6 space-y-4">{records.map((record) => <HistoryRecord key={record.ticketId} record={record}/>)}</ol>
+  </div>;
 }
-function HistoryList({ tickets }: { tickets: TicketHistory[] }) { return <ol className="space-y-4">{tickets.map(ticket => { const canReveal = ticket.owner.isCurrentUser || ticket.visibility === "REVEALED"; const settlementFacts = historySettlementFacts(ticket); return <li key={ticket.ticketId} className="surface p-4 sm:p-5"><header className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="display text-xl font-bold">{ticket.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {ticket.awayTeam}</h2><p className="mt-1 text-xs text-[var(--muted)]">{ticket.owner.displayName} · <time dateTime={ticket.submittedAt}>{new Date(ticket.submittedAt).toLocaleString("zh-CN")}</time></p></div><span className="text-xs font-bold">{statusLabel(ticket.status)}</span></header>{canReveal ? <><dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-3"><Fact label="选择" value={ticket.selection ? selectionLabel[ticket.selection] : "—"}/><Fact label="投入" value={ticket.stakePoints || "—"}/><Fact label="确认赔率" value={ticket.confirmedOdds || "—"}/></dl>{settlementFacts.length > 0 && <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">{settlementFacts.map(fact => <Fact key={fact.label} label={fact.label} value={fact.value}/>)}</dl>}</> : <div className="mt-4 border-l-4 border-[var(--line)] bg-white/45 p-4 text-sm"><strong>选择已隐藏</strong><p className="mt-1 text-[var(--muted)]">服务端确认封盘后才会公开该成员的选择和投入。</p></div>}<p className="tabular mt-4 break-all text-[10px] text-[var(--muted)]">票号 {ticket.ticketId}</p></li>; })}</ol>; }
+
+function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
+  return <li className="surface p-4 sm:p-5">
+    <header className="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <p className="text-xs font-bold text-[var(--field)]">{record.competition.name} · {record.competition.season}</p>
+        <h2 className="display mt-1 text-xl font-bold">{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</h2>
+        <p className="mt-1 text-xs text-[var(--muted)]">房间：{record.room.name} · 结算于 <time dateTime={record.settlement.settledAt}>{new Date(record.settlement.settledAt).toLocaleString("zh-CN")}</time></p>
+      </div>
+      <span className="border border-[var(--ink)] px-2 py-1 text-xs font-bold">{outcomeLabel[record.settlement.outcome]}</span>
+    </header>
+    <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
+      <Fact label="选择" value={selectionLabel[record.selection]}/>
+      <Fact label="投入" value={record.stakePoints}/>
+      <Fact label="最终返还" value={record.settlement.grossReturnPoints}/>
+      <Fact label="结算版本" value={record.settlement.version}/>
+    </dl>
+    <details className="mt-4 text-xs text-[var(--muted)]"><summary className="cursor-pointer font-bold">审计追溯</summary><p className="tabular mt-2 break-all">票号 {record.ticketId}</p><p className="tabular mt-1 break-all">账本 {record.settlement.ledgerId}</p><p className="tabular mt-1 break-all">审计 {record.settlement.auditId}</p></details>
+  </li>;
+}
+
+function Metric({ label, value }: { label: string; value: string }) { return <div className="surface p-4"><p className="text-xs text-[var(--muted)]">{label}</p><p className="tabular mt-1 text-2xl font-bold">{value}</p></div>; }
 function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 font-bold">{value}</dd></div>; }
-function statusLabel(status: TicketHistory["status"]) { return ({ ACCEPTED: "已接受", FROZEN: "已冻结", WON: "已结算 · 命中", LOST: "已结算 · 未命中", VOID: "已作废", REVERSED: "已冲正" })[status]; }
