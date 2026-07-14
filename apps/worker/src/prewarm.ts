@@ -15,7 +15,7 @@ async function main() {
     client: new ApiFootballClient({ apiKey: config.apiFootballKey, baseUrl: config.apiFootballBaseUrl, now: clock.now }),
     persistence, clock,
   });
-  const result = await runSupplierPrewarm({ competitions: config.competitions, bookmakerId: config.bookmakerId, pastDays: config.pastDays, futureDays: config.futureDays, clock, supplier, fixtures: persistence.repository, budget: persistence.budget });
+  const result = await runSupplierPrewarm({ competitions: config.competitions, bookmakerId: config.bookmakerId, pastDays: config.pastDays, futureDays: config.futureDays, ...(config.referenceDate ? { referenceDate: new Date(`${config.referenceDate}T00:00:00Z`) } : {}), clock, supplier, fixtures: persistence.repository, budget: persistence.budget });
   write(process.stdout, { event: "supplier.prewarm.completed", outcome: "success", ...result });
 }
 

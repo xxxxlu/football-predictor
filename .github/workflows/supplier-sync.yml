@@ -2,6 +2,15 @@ name: supplier-sync
 
 on:
   workflow_dispatch:
+    inputs:
+      competitions:
+        description: "Comma-separated league:season pairs available to the configured API plan"
+        required: true
+        default: "2:2024,39:2024,140:2024,135:2024,78:2024,61:2024,253:2024,71:2024,98:2024,292:2024,169:2024"
+      reference_date:
+        description: "Optional UTC date (YYYY-MM-DD) for a bounded historical backfill"
+        required: false
+        default: "2024-10-14"
   schedule:
     # Offset from the top of the hour to reduce scheduled-run congestion.
     # Two bounded runs per day leave room inside API-FOOTBALL's 95-call budget.
@@ -16,6 +25,9 @@ concurrency:
 
 jobs:
   sync:
+    # API-FOOTBALL Free cannot access the 2026 season. Scheduled work stays
+    # disabled until a paid/current-season source and targets are explicitly enabled.
+    if: github.event_name == 'workflow_dispatch' || vars.SUPPLIER_CURRENT_SEASON_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -23,9 +35,10 @@ jobs:
       API_FOOTBALL_KEY: ${{ secrets.API_FOOTBALL_KEY }}
       API_FOOTBALL_BASE_URL: https://v3.football.api-sports.io
       API_FOOTBALL_BOOKMAKER_ID: "8"
-      SUPPLIER_COMPETITIONS: "1:2026,2:2026,39:2026,140:2026,135:2026,78:2026,61:2026,253:2026,71:2026,98:2026,292:2026,169:2026"
-      SUPPLIER_WINDOW_PAST_DAYS: "1"
-      SUPPLIER_WINDOW_FUTURE_DAYS: "14"
+      SUPPLIER_COMPETITIONS: ${{ inputs.competitions || vars.SUPPLIER_COMPETITIONS }}
+      SUPPLIER_REFERENCE_DATE: ${{ inputs.reference_date || '' }}
+      SUPPLIER_WINDOW_PAST_DAYS: ${{ inputs.reference_date && '13' || '1' }}
+      SUPPLIER_WINDOW_FUTURE_DAYS: ${{ inputs.reference_date && '1' || '14' }}
       SUPPLIER_FIXTURES_INTERVAL_MINUTES: "720"
       SUPPLIER_RESULTS_INTERVAL_MINUTES: "1440"
       SUPPLIER_ODDS_INTERVAL_MINUTES: "10"

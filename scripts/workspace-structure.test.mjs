@@ -32,6 +32,9 @@ test("free-tier deployment builds the web workspace and bounds supplier synchron
   const workflow = await readFile(".github/workflows/supplier-sync.yml", "utf8");
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /cron: "17 1,13 \* \* \*"/);
+  assert.match(workflow, /SUPPLIER_CURRENT_SEASON_ENABLED/);
+  assert.match(workflow, /253:2024/);
+  assert.match(workflow, /SUPPLIER_REFERENCE_DATE/);
   assert.match(workflow, /pnpm db:migrate/);
   assert.match(workflow, /pnpm supplier:prewarm/);
   for (const secret of ["DATABASE_URL", "API_FOOTBALL_KEY"]) {

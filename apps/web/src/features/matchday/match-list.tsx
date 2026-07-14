@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { MatchCard } from "@/components/match-card";
 import { PredictionSlip } from "./prediction-slip";
 import {
+  datasetNotice,
   filterMatches,
   groupMatches,
   matchAvailability,
@@ -74,6 +75,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   const page = paginateMatches(filtered, visibleCount);
   const groups = groupMatches(page.items);
   const summary = summarizeMatches(filtered);
+  const notice = datasetNotice(matches);
   const newestDataAsOf = matches
     .map((match) => match.dataAsOf)
     .filter((value): value is string => Boolean(value))
@@ -88,6 +90,10 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   };
 
   return <div>
+    {notice && <section className="mb-6 border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
+      <strong>{notice.title}</strong>
+      <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>
+    </section>}
     <section className="surface mb-6 p-4" aria-label="比赛筛选和数据状态">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
         <label className="text-xs font-bold">联赛

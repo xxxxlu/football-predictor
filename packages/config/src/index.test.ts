@@ -51,6 +51,44 @@ describe("loadSupplierWorkerConfig", () => {
     expect(config.competitions).toEqual([{ leagueId: 39, season: 2026 }]);
   });
 
+  it("ignores blank legacy variables when multi-competition config is present", () => {
+    const config = loadSupplierWorkerConfig({
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      SUPPLIER_COMPETITIONS: "39:2024,140:2024",
+      SUPPLIER_LEAGUE_ID: "",
+      SUPPLIER_SEASON: "",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    });
+
+    expect(config.competitions).toEqual([
+      { leagueId: 39, season: 2024 },
+      { leagueId: 140, season: 2024 },
+    ]);
+  });
+
+  it("accepts an optional historical reference date for bounded backfills", () => {
+    const config = loadSupplierWorkerConfig({
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      SUPPLIER_COMPETITIONS: "253:2024",
+      SUPPLIER_REFERENCE_DATE: "2024-10-14",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    });
+
+    expect(config.referenceDate).toBe("2024-10-14");
+  });
+
+  it("rejects a non-calendar historical reference date before supplier work starts", () => {
+    expect(() => loadSupplierWorkerConfig({
+      DATABASE_URL: "postgres://app:secret@localhost/app",
+      API_FOOTBALL_KEY: "supplier-secret",
+      SUPPLIER_COMPETITIONS: "253:2024",
+      SUPPLIER_REFERENCE_DATE: "2024-99-99",
+      API_FOOTBALL_BOOKMAKER_ID: "8",
+    })).toThrow(ConfigError);
+  });
+
   it("rejects malformed or duplicate configured competitions", () => {
     const base = {
       DATABASE_URL: "postgres://app:secret@localhost/app",

@@ -56,3 +56,14 @@ export function matchAvailability(match: MatchView) {
 export function summarizeMatches(matches: MatchView[]) {
   return { total: matches.length, open: matches.filter((match) => matchAvailability(match).predictable).length, finished: matches.filter((match) => match.state === "FINISHED").length, stale: matches.filter((match) => match.stale).length };
 }
+
+export function datasetNotice(matches: MatchView[]) {
+  if (matches.length > 0 && matches.every((match) => match.state === "FINISHED")) {
+    return {
+      tone: "historical" as const,
+      title: "历史赛果",
+      detail: "当前展示的是已完赛真实历史数据，仅用于浏览和功能验收，不能提交预测。",
+    };
+  }
+  return null;
+}

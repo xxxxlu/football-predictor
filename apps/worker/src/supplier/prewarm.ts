@@ -19,6 +19,7 @@ export function validatePrewarmCompetitions(targets: CompetitionTarget[]) {
 type FixtureTarget = { id: string; supplierFixtureId: number; competitionId: number; season: number; kickoffAt: string; status: "SCHEDULED" | "LIVE" | "FINISHED" | "POSTPONED" | "CANCELLED"; oddsDataAsOf?: string };
 type Dependencies = {
   competitions: CompetitionTarget[]; bookmakerId: number; pastDays: number; futureDays: number;
+  referenceDate?: Date;
   clock: { now(): Date };
   supplier: { run(job: SupplierJob): Promise<SupplierJobResult>; close(): Promise<void> };
   fixtures: { listFixtures(): Promise<FixtureTarget[]> };
@@ -30,7 +31,7 @@ const dateOnly = (date: Date) => date.toISOString().slice(0, 10);
 
 export async function runSupplierPrewarm(dependencies: Dependencies) {
   validatePrewarmCompetitions(dependencies.competitions);
-  const now = dependencies.clock.now(); const from = dateOnly(new Date(now.getTime() - dependencies.pastDays * DAY_MS)); const to = dateOnly(new Date(now.getTime() + dependencies.futureDays * DAY_MS));
+  const now = dependencies.clock.now(); const windowReference = dependencies.referenceDate ?? now; const from = dateOnly(new Date(windowReference.getTime() - dependencies.pastDays * DAY_MS)); const to = dateOnly(new Date(windowReference.getTime() + dependencies.futureDays * DAY_MS));
   let fixturesSynced = 0; let oddsSynced = 0; let oddsSkipped = 0;
   try {
     const calibration = await dependencies.supplier.run({ type: "STATUS_CALIBRATE", attempt: 0, payload: {} });
