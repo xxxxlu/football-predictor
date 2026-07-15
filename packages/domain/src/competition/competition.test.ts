@@ -116,4 +116,20 @@ describe("match view", () => {
     expect(view.market.id).toBe("fixture-1:bookmaker:8:market:1");
     expect(view.capabilities).toEqual({ prematchPrediction: true, livePrediction: false });
   });
+
+  it("exposes the confirmed fixture result to match readers", () => {
+    const result = { confirmed: true, homeScore: 2, awayScore: 1, version: "result-v1" };
+    const view = createMatchView({
+      now: new Date("2026-07-13T14:00:00.000Z"),
+      fixture: {
+        id: "fixture-1", supplier: "API_FOOTBALL", supplierFixtureId: 101, competitionId: 1, competitionName: "World Cup",
+        season: 2026, kickoffAt: "2026-07-13T12:00:00.000Z", status: "FINISHED",
+        homeTeam: { supplierTeamId: 1, name: "England" }, awayTeam: { supplierTeamId: 2, name: "Argentina" },
+        version: "fixture-v2", dataAsOf: "2026-07-13T14:00:00.000Z", capturedAt: "2026-07-13T14:00:01.000Z", result,
+      },
+      odds: null, syncState: "IDLE", sourceVerified: true, budgetAvailable: true,
+    });
+
+    expect(view.result).toEqual(result);
+  });
 });

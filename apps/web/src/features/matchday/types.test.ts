@@ -45,4 +45,29 @@ describe("normalizeMatch", () => {
     expect(match?.market).toMatchObject({ id: "api-football:101:bookmaker:8:market:1", version: "odds-v2" });
     expect(match?.competitionName).toBe("Premier League");
   });
+
+  it("keeps a confirmed final score for a finished match", () => {
+    const match = normalizeMatch({
+      id: "openligadb:7001",
+      competitionName: "世界杯",
+      kickoffAt: "2026-07-14T20:00:00.000Z",
+      status: "FINISHED",
+      homeTeam: { name: "英格兰" },
+      awayTeam: { name: "阿根廷" },
+      result: { confirmed: true, homeScore: 2, awayScore: 1, version: "result-v1" },
+    } as unknown as Parameters<typeof normalizeMatch>[0]);
+
+    expect(match?.result).toEqual({ homeScore: 2, awayScore: 1 });
+  });
+
+  it("ignores unconfirmed or invalid final scores", () => {
+    const base = {
+      id: "openligadb:7001", kickoffAt: "2026-07-14T20:00:00.000Z", status: "FINISHED",
+      homeTeam: { name: "英格兰" }, awayTeam: { name: "阿根廷" },
+    };
+
+    expect(normalizeMatch({ ...base, result: { confirmed: false, homeScore: 2, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
+    expect(normalizeMatch({ ...base, result: { confirmed: true, homeScore: -1, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
+    expect(normalizeMatch({ ...base, result: { confirmed: true, homeScore: 1.5, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
+  });
 });

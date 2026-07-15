@@ -33,6 +33,20 @@ describe("supplier cache persistence helpers", () => {
     }]);
   });
 
+  it("returns a confirmed fixture result with the final score", async () => {
+    const sql = (async () => [{
+      id: "openligadb:7001", supplier: "OPENLIGADB", supplierFixtureId: "7001", competitionId: "501", competitionName: "世界杯",
+      season: 2026, kickoffAt: "2026-07-14T20:00:00.000Z", status: "FINISHED", homeTeamId: "10", homeTeamName: "英格兰",
+      awayTeamId: "20", awayTeamName: "阿根廷", currentVersion: "fixture-v2", dataAsOf: "2026-07-14T22:00:00.000Z",
+      capturedAt: "2026-07-14T22:00:01.000Z", resultConfirmed: true, homeScore: 2, awayScore: 1, resultVersion: "result-v1",
+    }]) as unknown as import("postgres").Sql;
+
+    await expect(new PostgresMatchSnapshotRepository(sql).getFixture("openligadb:7001")).resolves.toMatchObject({
+      status: "FINISHED",
+      result: { confirmed: true, homeScore: 2, awayScore: 1, version: "result-v1" },
+    });
+  });
+
   it("builds a stable market identity from supplier trace fields", () => {
     expect(marketCacheId("api-football:101", 8, 1)).toBe("api-football:101:bookmaker:8:market:1");
   });

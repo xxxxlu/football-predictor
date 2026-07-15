@@ -118,13 +118,19 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
           >{label}</button>)}
         </div>
       </fieldset>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
-        <label className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">联赛
-          <select value={competition} onChange={(event) => { setCompetition(event.target.value); resetBatch(); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case text-[var(--ink)]">
-            <option value="">全部联赛（{competitions.length}）</option>
-            {competitions.map((name) => <option key={name} value={name}>{name}</option>)}
-          </select>
-        </label>
+      <fieldset className="mb-4">
+        <legend className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">联赛分类</legend>
+        <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="按联赛筛选比赛">
+          {[{ value: "", label: `全部联赛（${competitions.length}）` }, ...competitions.map((name) => ({ value: name, label: name }))].map((option) => <button
+            key={option.value || "all"}
+            type="button"
+            aria-pressed={competition === option.value}
+            onClick={() => { setCompetition(option.value); resetBatch(); }}
+            className={`min-h-10 shrink-0 rounded-full border-2 px-4 text-sm font-bold transition ${competition === option.value ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}
+          >{option.label}</button>)}
+        </div>
+      </fieldset>
+      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
         <label className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">比赛日期
           <select value={date} onChange={(event) => { setDate(event.target.value); resetBatch(); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case text-[var(--ink)]">
             <option value="">全部日期（{dates.length}）</option>
@@ -145,24 +151,24 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
     {page.total ? <>
       <p className="mb-5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--muted)]" aria-live="polite">当前展示 {page.shown} / {page.total} 场</p>
       <div className="space-y-12">
-        {groups.map((dateGroup) => <section key={dateGroup.date} aria-labelledby={`match-date-${dateGroup.date}`}>
+        {groups.map((competitionGroup, competitionIndex) => <section key={competitionGroup.name} aria-labelledby={`competition-${competitionIndex}`}>
           <header className="relative mb-6 flex items-end justify-between gap-4 border-b-2 border-[var(--ink)] pb-3">
             <div className="min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--field)]">Matchday</span>
-              <h2 id={`match-date-${dateGroup.date}`} className="kinetic mt-1 text-[clamp(1.75rem,5vw,3rem)]">{dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}</h2>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--field)]">Competition</span>
+              <h2 id={`competition-${competitionIndex}`} className="kinetic mt-1 text-[clamp(1.75rem,5vw,3rem)]">{competitionGroup.name}</h2>
             </div>
-            <span className="league-pill shrink-0">{dateGroup.competitions.reduce((total, group) => total + group.matches.length, 0)} 场</span>
+            <span className="league-pill shrink-0">{competitionGroup.dates.reduce((total, group) => total + group.matches.length, 0)} 场</span>
             <span className="absolute -bottom-[2px] left-0 h-[3px] w-24 bg-[var(--volt-deep)]" aria-hidden="true" />
           </header>
           <div className="space-y-8">
-            {dateGroup.competitions.map((competitionGroup) => <section key={competitionGroup.name} aria-label={competitionGroup.name}>
+            {competitionGroup.dates.map((dateGroup) => <section key={dateGroup.date} aria-label={dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}>
               <div className="mb-3 flex items-center gap-3">
-                <span className="league-pill"><SoccerBall className="size-3.5" />{competitionGroup.name}</span>
-                <span className="text-xs text-[var(--muted)]">{competitionGroup.matches.length} 场</span>
+                <span className="league-pill"><SoccerBall className="size-3.5" />{dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}</span>
+                <span className="text-xs text-[var(--muted)]">{dateGroup.matches.length} 场</span>
                 <span className="h-px flex-1 bg-[var(--line)]" aria-hidden="true" />
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                {competitionGroup.matches.map((match) => {
+                {dateGroup.matches.map((match) => {
                   const predictable = matchAvailability(match).predictable;
                   return <MatchCard
                     key={match.id}

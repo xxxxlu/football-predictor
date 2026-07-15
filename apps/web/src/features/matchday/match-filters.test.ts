@@ -62,28 +62,28 @@ describe("multi-match filters", () => {
     });
   });
 
-  it("groups a large matchday by date and competition in kickoff order", () => {
+  it("groups matches by competition before date in kickoff order", () => {
     const grouped = groupMatches([
       match("3", "Premier League", "2026-07-15T18:00:00.000Z", "OPEN"),
       match("1", "La Liga", "2026-07-14T20:00:00.000Z", "OPEN"),
       match("2", "Premier League", "2026-07-14T12:00:00.000Z", "OPEN"),
     ], "UTC");
 
-    expect(grouped.map((dateGroup) => ({
-      date: dateGroup.date,
-      competitions: dateGroup.competitions.map((competitionGroup) => ({
-        name: competitionGroup.name,
-        ids: competitionGroup.matches.map((item) => item.id),
+    expect(grouped.map((competitionGroup) => ({
+      name: competitionGroup.name,
+      dates: competitionGroup.dates.map((dateGroup) => ({
+        date: dateGroup.date,
+        ids: dateGroup.matches.map((item) => item.id),
       })),
     }))).toEqual([
       {
-        date: "2026-07-14",
-        competitions: [
-          { name: "Premier League", ids: ["2"] },
-          { name: "La Liga", ids: ["1"] },
+        name: "Premier League",
+        dates: [
+          { date: "2026-07-14", ids: ["2"] },
+          { date: "2026-07-15", ids: ["3"] },
         ],
       },
-      { date: "2026-07-15", competitions: [{ name: "Premier League", ids: ["3"] }] },
+      { name: "La Liga", dates: [{ date: "2026-07-14", ids: ["1"] }] },
     ]);
   });
 

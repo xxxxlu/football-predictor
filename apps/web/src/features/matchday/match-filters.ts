@@ -33,23 +33,23 @@ export function sortMatchesForDisplay(matches: MatchView[]) {
   });
 }
 
-export type CompetitionMatchGroup = { name: string; matches: MatchView[] };
-export type DateMatchGroup = { date: string; competitions: CompetitionMatchGroup[] };
+export type DateMatchGroup = { date: string; matches: MatchView[] };
+export type CompetitionMatchGroup = { name: string; dates: DateMatchGroup[] };
 
-export function groupMatches(matches: MatchView[], timeZone?: string): DateMatchGroup[] {
+export function groupMatches(matches: MatchView[], timeZone?: string): CompetitionMatchGroup[] {
   const sorted = sortMatchesForDisplay(matches);
-  const dates = new Map<string, Map<string, MatchView[]>>();
+  const competitions = new Map<string, Map<string, MatchView[]>>();
   for (const match of sorted) {
     const date = matchDateKey(match, timeZone) || "unknown";
-    const competitions = dates.get(date) ?? new Map<string, MatchView[]>();
-    const competitionMatches = competitions.get(match.competitionName) ?? [];
-    competitionMatches.push(match);
-    competitions.set(match.competitionName, competitionMatches);
-    dates.set(date, competitions);
+    const dates = competitions.get(match.competitionName) ?? new Map<string, MatchView[]>();
+    const dateMatches = dates.get(date) ?? [];
+    dateMatches.push(match);
+    dates.set(date, dateMatches);
+    competitions.set(match.competitionName, dates);
   }
-  return [...dates].map(([date, competitions]) => ({
-    date,
-    competitions: [...competitions].map(([name, competitionMatches]) => ({ name, matches: competitionMatches })),
+  return [...competitions].map(([name, dates]) => ({
+    name,
+    dates: [...dates].map(([date, dateMatches]) => ({ date, matches: dateMatches })),
   }));
 }
 

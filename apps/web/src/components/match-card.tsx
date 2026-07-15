@@ -10,6 +10,13 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
     ? [{ label: "主胜", value: match.market.home }, { label: "平局", value: match.market.draw }, { label: "客胜", value: match.market.away }]
     : [];
   const statusTone = availability.predictable ? "text-[var(--field)]" : match.stale ? "text-[var(--amber)]" : "text-[var(--muted)]";
+  const resultLabel = match.result
+    ? match.result.homeScore > match.result.awayScore
+      ? `${match.homeTeam}胜`
+      : match.result.awayScore > match.result.homeScore
+        ? `${match.awayTeam}胜`
+        : "平局"
+    : null;
 
   return (
     <article className="surface field-accent overflow-hidden rounded-xl">
@@ -30,7 +37,18 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
             <span className="display text-sm font-bold leading-tight md:text-base">{match.homeTeam}</span>
           </div>
           <div className="flex flex-col items-center gap-2 pt-1.5">
-            <span className="vs-badge">VS</span>
+            {match.state === "FINISHED" ? match.result ? <div
+              aria-label={`最终比分 ${match.homeTeam} ${match.result.homeScore} 比 ${match.result.awayScore} ${match.awayTeam}`}
+              className="flex flex-col items-center gap-1 text-center"
+            >
+              <span className="tabular whitespace-nowrap text-2xl font-black text-[var(--ink)]">
+                {match.result.homeScore}<span className="px-1 text-[var(--muted)]">:</span>{match.result.awayScore}
+              </span>
+              <strong className="whitespace-nowrap text-xs text-[var(--field)]">{resultLabel}</strong>
+            </div> : <div className="flex flex-col items-center gap-1 text-center">
+              <span className="vs-badge">FT</span>
+              <strong className="whitespace-nowrap text-xs text-[var(--muted)]">赛果待确认</strong>
+            </div> : <span className="vs-badge">VS</span>}
             <time dateTime={match.kickoffAt} className="tabular block max-w-[6.5rem] text-center text-[11px] font-bold leading-tight text-[var(--muted)]">
               {kickoff.toLocaleString("zh-CN", { month: "numeric", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" })}
             </time>
@@ -40,7 +58,7 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
             <span className="display text-sm font-bold leading-tight md:text-base">{match.awayTeam}</span>
           </div>
         </div>
-        {odds.length > 0 && (
+        {match.state !== "FINISHED" && odds.length > 0 && (
           <dl className="mt-5 grid grid-cols-3 gap-2" aria-label="虚拟积分倍率">
             {odds.map((odd) => (
               <div key={odd.label} className="scoreboard-cell px-2 py-2 text-center">
