@@ -33,4 +33,9 @@ describe("supplier snapshot adapter mapping", () => {
     expect(mapped.kickoffAt).toBe("2026-07-13T12:00:00.000Z");
     expect(mapped.snapshot.dataAsOf).toBe("2026-07-13T09:55:00.000Z");
   });
+
+  it("parses JSON-string snapshots returned by the production cache", () => {
+    const mapped = mapSupplierSnapshotRow({ ...row, outcomes: JSON.stringify(row.outcomes) });
+    expect(mapped.snapshot.outcomes).toEqual(row.outcomes);
+  });
 });

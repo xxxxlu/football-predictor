@@ -44,7 +44,8 @@ export class PostgresSupplierSnapshotAdapter implements MarketSnapshotPort {
 export function mapSupplierSnapshotRow(row: SupplierSnapshotRow): MarketForSubmission {
   const prematch = row.fixtureStatus === "SCHEDULED";
   const open = row.sourceVerified && prematch;
-  const outcomes = Array.isArray(row.outcomes) ? row.outcomes.flatMap((value) => {
+  const decodedOutcomes = parseJsonValue(row.outcomes);
+  const outcomes = Array.isArray(decodedOutcomes) ? decodedOutcomes.flatMap((value) => {
     if (!value || typeof value !== "object") return [];
     const candidate = value as { selection?: unknown; decimalOdds?: unknown };
     if (!isSelection(candidate.selection) || typeof candidate.decimalOdds !== "string") return [];
@@ -66,6 +67,12 @@ export function mapSupplierSnapshotRow(row: SupplierSnapshotRow): MarketForSubmi
       sourceVerified: row.sourceVerified,
     },
   };
+}
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); }
+  catch { return value; }
 }
 
 function isSelection(value: unknown): value is PredictionSelection { return value === "HOME" || value === "DRAW" || value === "AWAY"; }
