@@ -43,7 +43,7 @@ export class PostgresSupplierSnapshotAdapter implements MarketSnapshotPort {
 
 export function mapSupplierSnapshotRow(row: SupplierSnapshotRow): MarketForSubmission {
   const prematch = row.fixtureStatus === "SCHEDULED";
-  const open = row.marketStatus === "OPEN" && (row.syncState === undefined || row.syncState === "IDLE") && prematch;
+  const open = row.sourceVerified && prematch;
   const outcomes = Array.isArray(row.outcomes) ? row.outcomes.flatMap((value) => {
     if (!value || typeof value !== "object") return [];
     const candidate = value as { selection?: unknown; decimalOdds?: unknown };
@@ -53,7 +53,7 @@ export function mapSupplierSnapshotRow(row: SupplierSnapshotRow): MarketForSubmi
   return {
     id: row.marketId,
     fixtureId: row.fixtureId,
-    status: open ? "OPEN" : row.marketStatus === "DATA_UNAVAILABLE" ? "DATA_UNAVAILABLE" : "CLOSED",
+    status: open ? "OPEN" : prematch ? "DATA_UNAVAILABLE" : "CLOSED",
     kickoffAt: asIsoString(row.kickoffAt),
     snapshot: {
       version: row.version,
