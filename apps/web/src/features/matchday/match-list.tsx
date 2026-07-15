@@ -122,7 +122,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
         <strong className="text-[var(--ink)]">筛选命中 {summary.total} / {matches.length} 场</strong>
         <span>可预测 {summary.open}</span>
         <span>已结束 {summary.finished}</span>
-        <span className={summary.stale ? "text-[var(--amber)]" : ""}>过期 {summary.stale}</span>
+        <span className={summary.stale ? "text-[var(--amber)]" : ""}>最后有效快照 {summary.stale}</span>
         <span className="basis-full sm:ml-auto sm:basis-auto">数据截至 {newestDataAsOf ? new Date(newestDataAsOf).toLocaleString("zh-CN") : "未知"}</span>
       </div>
     </section>

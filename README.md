@@ -35,6 +35,8 @@ The production match list synchronizes the active **2026 World Cup** window from
 
 OpenLigaDB does not provide bookmaker odds. To keep the non-cash prediction flow testable without fabricating betting data, upcoming matches receive a clearly labeled platform rule: fixed virtual-points multiplier `3.00` for home/draw/away. Kickoff times and results remain supplier data and are never invented. If the community source is temporarily unavailable, reads degrade to the latest database cache.
 
+When a verified bookmaker-odds snapshot has been stored, that exact version remains available for non-cash predictions until the server-recorded kickoff time. Snapshot age and supplier-sync health remain visible operational signals, but they do not close a prematch market by themselves. A missing, unverifiable, future-dated, cancelled, postponed, live, or finished market remains unavailable.
+
 API-FOOTBALL remains an optional supplier for licensed bookmaker odds. Its free plan does not expose the 2026 season, so `SUPPLIER_COMPETITIONS` and `SUPPLIER_REFERENCE_DATE` are blank by default. Configure a paid/current-season plan before enabling `SUPPLIER_CURRENT_SEASON_ENABLED`; the manual/scheduled workflow refuses to pretend the free plan can sync 2026.
 
 ```bash
