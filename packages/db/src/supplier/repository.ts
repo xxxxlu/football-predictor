@@ -56,10 +56,9 @@ export function cacheEtag(value: unknown): string {
   return `"${createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`;
 }
 
-export function statusForSync(syncState: SyncState, sourceVerified: boolean, dataAsOf: Date, now: Date, supplier?: OddsSnapshotRecord["supplier"]): "OPEN" | "DATA_UNAVAILABLE" {
+export function statusForSync(_syncState: SyncState, sourceVerified: boolean, dataAsOf: Date, now: Date, _supplier?: OddsSnapshotRecord["supplier"]): "OPEN" | "DATA_UNAVAILABLE" {
   const age = now.getTime() - dataAsOf.getTime();
-  const maxAgeMs = supplier === "THE_ODDS_API" ? 3 * 60 * 60_000 : 10 * 60_000;
-  return syncState === "IDLE" && sourceVerified && Number.isFinite(age) && age >= 0 && age <= maxAgeMs ? "OPEN" : "DATA_UNAVAILABLE";
+  return sourceVerified && Number.isFinite(age) && age >= 0 ? "OPEN" : "DATA_UNAVAILABLE";
 }
 
 type FixtureRow = {
@@ -227,9 +226,8 @@ export class PostgresMatchSnapshotRepository {
 
   async setSyncState(matchId: string, state: SyncState): Promise<void> {
     const now = this.clock.now();
-    const cutoff = new Date(now.getTime() - 10 * 60_000);
     await this.sql`UPDATE supplier.markets SET sync_state=${state}, status=CASE
-      WHEN ${state}='IDLE' AND source_verified=true AND data_as_of >= ${cutoff} AND data_as_of <= ${now} THEN 'OPEN'
+      WHEN source_verified=true AND data_as_of <= ${now} THEN 'OPEN'
       ELSE 'DATA_UNAVAILABLE' END, updated_at=${now} WHERE fixture_id=${matchId}`;
   }
 

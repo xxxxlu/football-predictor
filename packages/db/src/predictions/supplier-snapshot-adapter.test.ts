@@ -15,6 +15,15 @@ describe("supplier snapshot adapter mapping", () => {
     expect(mapSupplierSnapshotRow({ ...row, fixtureStatus: "LIVE" }).status).toBe("CLOSED");
   });
 
+  it("keeps a verified stored snapshot open while supplier synchronization is paused", () => {
+    expect(mapSupplierSnapshotRow({ ...row, syncState: "PAUSED" }).status).toBe("OPEN");
+    expect(mapSupplierSnapshotRow({ ...row, syncState: "FAILED" }).status).toBe("OPEN");
+  });
+
+  it("does not expose an unverified snapshot as open", () => {
+    expect(mapSupplierSnapshotRow({ ...row, sourceVerified: false }).status).toBe("DATA_UNAVAILABLE");
+  });
+
   it("accepts timestamp strings returned by raw postgres queries", () => {
     const mapped = mapSupplierSnapshotRow({
       ...row,

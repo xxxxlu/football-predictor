@@ -42,13 +42,14 @@ describe("supplier cache persistence helpers", () => {
     expect(cacheEtag({ version: "v1" })).toBe(cacheEtag({ version: "v1" }));
   });
 
-  it("only reopens an idle, verified and fresh market", () => {
+  it("keeps any non-future verified snapshot open regardless of age or sync health", () => {
     const now = new Date("2026-07-13T10:00:00Z");
     expect(statusForSync("IDLE", true, new Date("2026-07-13T09:50:00Z"), now)).toBe("OPEN");
-    expect(statusForSync("IDLE", true, new Date("2026-07-13T09:49:59.999Z"), now)).toBe("DATA_UNAVAILABLE");
-    expect(statusForSync("SYNCING", true, new Date("2026-07-13T10:00:00Z"), now)).toBe("DATA_UNAVAILABLE");
+    expect(statusForSync("IDLE", true, new Date("2026-07-01T00:00:00Z"), now)).toBe("OPEN");
+    expect(statusForSync("SYNCING", true, new Date("2026-07-01T00:00:00Z"), now)).toBe("OPEN");
+    expect(statusForSync("FAILED", true, new Date("2026-07-01T00:00:00Z"), now)).toBe("OPEN");
     expect(statusForSync("IDLE", false, new Date("2026-07-13T10:00:00Z"), now)).toBe("DATA_UNAVAILABLE");
-    expect(statusForSync("IDLE", true, new Date("2026-07-13T07:00:00Z"), now, "THE_ODDS_API")).toBe("OPEN");
-    expect(statusForSync("IDLE", true, new Date("2026-07-13T06:59:59.999Z"), now, "THE_ODDS_API")).toBe("DATA_UNAVAILABLE");
+    expect(statusForSync("IDLE", true, new Date("2026-07-13T10:00:00.001Z"), now)).toBe("DATA_UNAVAILABLE");
+    expect(statusForSync("IDLE", true, new Date("invalid"), now)).toBe("DATA_UNAVAILABLE");
   });
 });
