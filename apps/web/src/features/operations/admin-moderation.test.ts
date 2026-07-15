@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { moderationActionRequest, moderationReauthRequest } from "./admin-moderation.js";
+import { moderationActionRequest, moderationReauthRequest, preMatchVisibilityRequest } from "./admin-moderation.js";
 
 describe("admin moderation re-auth flow", () => {
   it("reauthenticates with the current password before sending the room action", () => {
@@ -10,6 +10,13 @@ describe("admin moderation re-auth flow", () => {
     expect(moderationActionRequest("room/1", "CLOSE", "多次违规举报")).toMatchObject({
       url: "/api/v1/admin/rooms/room%2F1",
       init: { method: "PATCH", credentials: "same-origin" },
+    });
+  });
+
+  it("sends only the pre-match visibility boolean to the dedicated room endpoint", () => {
+    expect(preMatchVisibilityRequest("room/1", true)).toEqual({
+      url: "/api/v1/admin/rooms/room%2F1/visibility",
+      init: { method: "PATCH", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preMatchStakeVisible: true }) },
     });
   });
 });
