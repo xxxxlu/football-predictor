@@ -118,10 +118,10 @@ describe("TicketSubmissionService validation", () => {
     await expectCode(second.service.submit(second.command), "MARKET_CLOSED");
   });
 
-  it("rejects stale, future, unverifiable or explicitly unavailable odds", async () => {
+  it("rejects future, invalid, unverifiable or explicitly unavailable odds", async () => {
     for (const mutate of [
-      (market: MarketForSubmission) => { market.snapshot.dataAsOf = "2026-07-13T09:49:59.999Z"; },
       (market: MarketForSubmission) => { market.snapshot.dataAsOf = "2026-07-13T10:00:00.001Z"; },
+      (market: MarketForSubmission) => { market.snapshot.dataAsOf = "not-a-date"; },
       (market: MarketForSubmission) => { market.snapshot.sourceVerified = false; },
       (market: MarketForSubmission) => { market.status = "DATA_UNAVAILABLE"; },
     ]) {
@@ -139,16 +139,11 @@ describe("TicketSubmissionService validation", () => {
     await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING", stakePoints: 1_000 });
   });
 
-  it("accepts The Odds API snapshots within the three-hour free-sync freshness window", async () => {
-    const current = setup();
-    current.fake.market!.snapshot.supplier = "THE_ODDS_API";
-    current.fake.market!.snapshot.dataAsOf = "2026-07-13T07:00:00.000Z";
-    await expect(current.service.submit(current.command)).resolves.toMatchObject({ status: "PENDING" });
-
-    const expired = setup();
-    expired.fake.market!.snapshot.supplier = "THE_ODDS_API";
-    expired.fake.market!.snapshot.dataAsOf = "2026-07-13T06:59:59.999Z";
-    await expectCode(expired.service.submit(expired.command), "DATA_UNAVAILABLE");
+  it("accepts the last verified The Odds API snapshot until kickoff", async () => {
+    const { service, command, fake } = setup();
+    fake.market!.snapshot.supplier = "THE_ODDS_API";
+    fake.market!.snapshot.dataAsOf = "2026-07-12T10:00:00.000Z";
+    await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING" });
   });
 
   it("requires the accepted version and decimal odds string to match current odds", async () => {
