@@ -12,3 +12,4 @@ skills-lock.json
 # Tencent Cloud EdgeOne
 .edgeone/
 .tef_dist/
+.worktrees/
