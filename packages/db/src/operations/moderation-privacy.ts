@@ -77,6 +77,33 @@ export class PostgresModerationPrivacyRepository {
     return rows.map((row) => ({ ...row, createdAt: timestampIso(row.createdAt), resolvedAt: row.resolvedAt ? timestampIso(row.resolvedAt) : null }));
   }
 
+  async listRooms(adminUserId: string) {
+    await this.assertSuperAdmin(adminUserId);
+    const rows = await this.sql<Array<{ roomId: string; name: string; status: ModeratedRoomStatus; memberCount: number; preMatchStakeVisible: boolean; postMatchTicketVisible: boolean }>>`
+      SELECT r.id AS "roomId",r.name,r.status,COUNT(m.user_id)::int AS "memberCount",
+        r.pre_match_stake_visible AS "preMatchStakeVisible",r.post_match_ticket_visible AS "postMatchTicketVisible"
+      FROM room.rooms r LEFT JOIN room.members m ON m.room_id=r.id
+      GROUP BY r.id,r.name,r.status,r.pre_match_stake_visible,r.post_match_ticket_visible,r.created_at
+      ORDER BY r.created_at DESC LIMIT 500`;
+    return rows;
+  }
+
+  async updatePreMatchStakeVisibility(adminUserId: string, roomId: string, visible: boolean) {
+    const auditId = randomUUID(); const now = this.clock.now().toISOString();
+    return this.sql.begin(async (tx) => {
+      const [admin] = await tx<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${adminUserId} AND status='ACTIVE' LIMIT 1`;
+      if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
+      const [room] = await tx<Array<{ previousValue: boolean }>>`SELECT pre_match_stake_visible AS "previousValue" FROM room.rooms WHERE id=${roomId} FOR UPDATE`;
+      if (!room) throw new OperationError("ROOM_NOT_FOUND", 404);
+      const [updated] = await tx<Array<{ roomId: string; preMatchStakeVisible: boolean }>>`
+        UPDATE room.rooms SET pre_match_stake_visible=${visible},updated_at=${now} WHERE id=${roomId}
+        RETURNING id AS "roomId",pre_match_stake_visible AS "preMatchStakeVisible"`;
+      await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
+        VALUES (${auditId},${adminUserId},'ROOM_PRE_MATCH_STAKE_VISIBILITY_UPDATED','ROOM',${roomId},'SUCCESS',${JSON.stringify({ previousValue: room.previousValue, newValue: visible })}::jsonb,${now})`;
+      return updated;
+    });
+  }
+
   async listAudit(adminUserId: string) {
     await this.assertSuperAdmin(adminUserId);
     // Governance audit lives in three tables: ops.audit_events (reports, room

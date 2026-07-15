@@ -14,6 +14,8 @@ function setup() {
     reportRoom: vi.fn().mockResolvedValue({ reportId: "report-1", status: "OPEN" }),
     listReports: vi.fn().mockResolvedValue([]),
     listAudit: vi.fn().mockResolvedValue([]),
+    listRooms: vi.fn().mockResolvedValue([{ roomId: "room-1", name: "决赛之夜", preMatchStakeVisible: false }]),
+    updatePreMatchStakeVisibility: vi.fn().mockResolvedValue({ roomId: "room-1", preMatchStakeVisible: true }),
     moderateRoom: vi.fn().mockResolvedValue({ roomId: "room-1", status: "RESTRICTED" }),
     deleteAccount: vi.fn().mockResolvedValue({ deleted: true }),
   };
@@ -58,5 +60,18 @@ describe("moderation and privacy API", () => {
     expect(valid.moderation.deleteAccount).toHaveBeenCalledWith("user-1");
     expect(response.headers.get("set-cookie")).toContain("fp_session=;");
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
+  });
+
+  it("lists all rooms and requires re-auth before changing pre-match stake visibility", async () => {
+    const valid = setup();
+    expect((await valid.handlers.listRooms(request("/api/v1/admin/rooms"))).status).toBe(200);
+    expect(valid.moderation.listRooms).toHaveBeenCalledWith("user-1");
+    const response = await valid.handlers.updatePreMatchVisibility(request("/api/v1/admin/rooms/room-1/visibility", "PATCH", { preMatchStakeVisible: true }), "room-1");
+    expect(response.status).toBe(200);
+    expect(valid.moderation.updatePreMatchStakeVisibility).toHaveBeenCalledWith("admin-1", "room-1", true);
+
+    const missing = setup();
+    const withoutProof = new Request("https://example.test/api/v1/admin/rooms/room-1/visibility", { method: "PATCH", headers: { cookie: "fp_session=token", origin: "https://example.test", "content-type": "application/json" }, body: JSON.stringify({ preMatchStakeVisible: true }) });
+    expect((await missing.handlers.updatePreMatchVisibility(withoutProof, "room-1")).status).toBe(403);
   });
 });
