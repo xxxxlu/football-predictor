@@ -27,4 +27,12 @@ describe("private room schema", () => {
     expect(migration).toContain("DEFAULT 'PRIVATE'");
     expect(migration).toContain("DROP NOT NULL");
   });
+
+  it("stores room ticket visibility settings with privacy-preserving defaults", async () => {
+    const migration = await readFile(new URL("../../migrations/0013_room_ticket_visibility.sql", import.meta.url), "utf8");
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS pre_match_stake_visible");
+    expect(migration).toContain("BOOLEAN NOT NULL DEFAULT FALSE");
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS post_match_ticket_visible");
+    expect(migration).toContain("BOOLEAN NOT NULL DEFAULT TRUE");
+  });
 });

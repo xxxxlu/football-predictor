@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, foreignKey, index, numeric, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, numeric, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
 import { identityUsers } from "../identity/schema.js";
 
 export const roomSchema = pgSchema("room");
@@ -13,6 +13,8 @@ export const rooms = roomSchema.table("rooms", {
   name: text("name").notNull(),
   status: roomStatus("status").notNull().default("ACTIVE"),
   visibility: roomVisibility("visibility").notNull().default("PRIVATE"),
+  preMatchStakeVisible: boolean("pre_match_stake_visible").notNull().default(false),
+  postMatchTicketVisible: boolean("post_match_ticket_visible").notNull().default(true),
   inviteTokenHash: text("invite_token_hash"),
   createdBy: uuid("created_by").notNull().references(() => identityUsers.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
