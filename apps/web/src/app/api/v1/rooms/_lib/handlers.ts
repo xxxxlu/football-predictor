@@ -3,12 +3,12 @@ import { z } from "zod";
 import { readSessionToken } from "../../auth/_lib/handlers";
 import { assertSameOrigin } from "../../_lib/request-origin";
 
-const createSchema = z.object({ name: z.string(), rulesAccepted: z.literal(true) });
+const createSchema = z.object({ name: z.string(), visibility: z.enum(["PUBLIC", "PRIVATE"]), rulesAccepted: z.literal(true) });
 const joinSchema = z.object({ rulesAccepted: z.literal(true) });
 
 interface IdentityLookup { authenticate(token: string): Promise<{ id: string } | null> }
 interface RoomsApplication {
-  create(input: { userId: string; name: string; rulesAccepted: boolean }): Promise<unknown>;
+  create(input: { userId: string; name: string; visibility: "PUBLIC" | "PRIVATE"; rulesAccepted: boolean }): Promise<unknown>;
   listRooms(userId: string): Promise<unknown>;
   getRoom(roomId: string, userId: string): Promise<unknown>;
   getBalance(roomId: string, userId: string): Promise<unknown>;
@@ -16,6 +16,8 @@ interface RoomsApplication {
   resetInvite(roomId: string, userId: string): Promise<unknown>;
   previewInvite(inviteToken: string): Promise<unknown>;
   join(input: { userId: string; inviteToken: string; rulesAccepted: boolean }): Promise<unknown>;
+  listPublic(userId: string): Promise<unknown>;
+  joinPublic(input: { roomId: string; userId: string; rulesAccepted: boolean }): Promise<unknown>;
 }
 
 export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplication) {
@@ -28,7 +30,7 @@ export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplica
   return {
     create: (request: Request) => execute(async () => {
       assertSameOrigin(request); const accountId = await userId(request); const input = createSchema.parse(await request.json());
-      return json({ data: await rooms.create({ userId: accountId, name: input.name, rulesAccepted: input.rulesAccepted }) }, 201);
+      return json({ data: await rooms.create({ userId: accountId, name: input.name, visibility: input.visibility, rulesAccepted: input.rulesAccepted }) }, 201);
     }),
     list: (request: Request) => execute(async () => json({ data: await rooms.listRooms(await userId(request)) })),
     detail: (request: Request, roomId: string) => execute(async () => json({ data: await rooms.getRoom(roomId, await userId(request)) })),
@@ -41,6 +43,11 @@ export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplica
     join: (request: Request, token: string) => execute(async () => {
       assertSameOrigin(request); const accountId = await userId(request); const input = joinSchema.parse(await request.json());
       return json({ data: await rooms.join({ userId: accountId, inviteToken: token, rulesAccepted: input.rulesAccepted }) });
+    }),
+    listPublic: (request: Request) => execute(async () => json({ data: await rooms.listPublic(await userId(request)) })),
+    joinPublic: (request: Request, roomId: string) => execute(async () => {
+      assertSameOrigin(request); const accountId = await userId(request); const input = joinSchema.parse(await request.json());
+      return json({ data: await rooms.joinPublic({ roomId, userId: accountId, rulesAccepted: input.rulesAccepted }) });
     }),
   };
 }
