@@ -174,6 +174,7 @@ export function createMatchView(input: {
     fixtureVersion: fixture.version,
     capabilities: { prematchPrediction: true, livePrediction: false },
     dataAsOf: fixture.dataAsOf,
+    ...(fixture.result ? { result: fixture.result } : {}),
     market: {
       ...assessMarketData(input),
       id: odds?.productMarketId ?? null,

@@ -65,6 +65,7 @@ type FixtureRow = {
   id: string; supplier: "API_FOOTBALL" | "OPENLIGADB"; supplierFixtureId: string; competitionId: string; competitionName: string;
   season: number; kickoffAt: Date | string; status: MatchStatus; homeTeamId: string; homeTeamName: string; awayTeamId: string;
   awayTeamName: string; currentVersion: string; dataAsOf: Date | string; capturedAt: Date | string; oddsDataAsOf?: Date | string | null;
+  resultConfirmed?: boolean; homeScore?: number | null; awayScore?: number | null; resultVersion?: string | null;
 };
 
 type OddsRow = {
@@ -100,6 +101,12 @@ function mapFixture(row: FixtureRow): FixtureSnapshotRecord {
     dataAsOf: isoTimestamp(row.dataAsOf),
     capturedAt: isoTimestamp(row.capturedAt),
     ...(row.oddsDataAsOf ? { oddsDataAsOf: isoTimestamp(row.oddsDataAsOf) } : {}),
+    ...(typeof row.resultConfirmed === "boolean" ? { result: {
+      confirmed: row.resultConfirmed,
+      homeScore: row.homeScore ?? null,
+      awayScore: row.awayScore ?? null,
+      version: row.resultVersion ?? null,
+    } } : {}),
   };
 }
 
@@ -193,7 +200,8 @@ export class PostgresMatchSnapshotRepository {
   async getFixture(matchId: string): Promise<FixtureSnapshotRecord | null> {
     const [row] = await this.sql<FixtureRow[]>`SELECT id,supplier,supplier_fixture_id AS "supplierFixtureId",competition_id AS "competitionId",
       competition_name AS "competitionName",season,kickoff_at AS "kickoffAt",status,home_team_id AS "homeTeamId",home_team_name AS "homeTeamName",
-      away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt"
+      away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",
+      result_confirmed AS "resultConfirmed",home_score AS "homeScore",away_score AS "awayScore",result_version AS "resultVersion"
       FROM supplier.fixtures WHERE id=${matchId} LIMIT 1`;
     return row ? mapFixture(row) : null;
   }
@@ -202,7 +210,7 @@ export class PostgresMatchSnapshotRepository {
     const rows = await this.sql<FixtureRow[]>`SELECT id,supplier,supplier_fixture_id AS "supplierFixtureId",competition_id AS "competitionId",
       competition_name AS "competitionName",season,kickoff_at AS "kickoffAt",status,home_team_id AS "homeTeamId",home_team_name AS "homeTeamName",
       away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",
-      latest_market."oddsDataAsOf"
+      result_confirmed AS "resultConfirmed",home_score AS "homeScore",away_score AS "awayScore",result_version AS "resultVersion",latest_market."oddsDataAsOf"
       FROM supplier.fixtures
       LEFT JOIN LATERAL (SELECT data_as_of AS "oddsDataAsOf" FROM supplier.markets WHERE fixture_id=supplier.fixtures.id ORDER BY data_as_of DESC LIMIT 1) latest_market ON true
       ORDER BY kickoff_at,id`;
