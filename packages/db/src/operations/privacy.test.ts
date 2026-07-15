@@ -2,20 +2,31 @@ import { describe, expect, it } from "vitest";
 import { projectLeaderboard, projectLedgerEntry, redactTicketHistory } from "./repository.js";
 
 const row = { ticketId: "t1", matchId: "f1", homeTeam: "A", awayTeam: "B", kickoffAt: new Date("2026-07-13T12:00:00Z"), submittedAt: new Date("2026-07-13T10:00:00Z"), ownerUserId: "bob", displayName: "Bob", selection: "HOME", stakePoints: "1000.00", confirmedOdds: "2.10", ticketStatus: "PENDING", outcome: null, grossReturnPoints: null, settlementVersion: null };
+const defaults = { preMatchStakeVisible: false, postMatchTicketVisible: true };
 
 describe("ticket history privacy", () => {
   it("removes selection, stake, and odds for another member before server cutoff", () => {
-    const result = redactTicketHistory(row, "alice", new Date("2026-07-13T11:59:59Z"));
+    const result = redactTicketHistory(row, "alice", new Date("2026-07-13T11:59:59Z"), defaults);
     expect(result).toMatchObject({ visibility: "PRIVATE", owner: { isCurrentUser: false } });
-    expect(result).not.toHaveProperty("selection"); expect(result).not.toHaveProperty("stakePoints"); expect(result).not.toHaveProperty("confirmedOdds");
+    expect(result).not.toHaveProperty("selection"); expect(result).not.toHaveProperty("stakePoints"); expect(result).not.toHaveProperty("confirmedOdds"); expect(result).not.toHaveProperty("submittedAt"); expect(result).not.toHaveProperty("outcome");
   });
-  it("always reveals the owner's ticket and reveals other members only at cutoff", () => {
-    expect(redactTicketHistory(row, "bob", new Date("2026-07-13T10:01:00Z"))).toMatchObject({ visibility: "REVEALED", selection: "HOME" });
-    expect(redactTicketHistory(row, "alice", new Date("2026-07-13T12:00:00Z"))).toMatchObject({ visibility: "REVEALED", selection: "HOME" });
+
+  it("reveals only stake and submission time before kickoff when the platform switch is on", () => {
+    const result = redactTicketHistory(row, "alice", new Date("2026-07-13T11:59:59Z"), { ...defaults, preMatchStakeVisible: true });
+    expect(result).toMatchObject({ visibility: "STAKE_ONLY", stakePoints: "1000.00", submittedAt: "2026-07-13T10:00:00.000Z" });
+    expect(result).not.toHaveProperty("selection"); expect(result).not.toHaveProperty("confirmedOdds"); expect(result).not.toHaveProperty("outcome");
+  });
+
+  it("always reveals the owner's ticket and follows the room switch after cutoff", () => {
+    expect(redactTicketHistory(row, "bob", new Date("2026-07-13T10:01:00Z"), defaults)).toMatchObject({ visibility: "REVEALED", selection: "HOME" });
+    expect(redactTicketHistory(row, "alice", new Date("2026-07-13T12:00:00Z"), defaults)).toMatchObject({ visibility: "REVEALED", selection: "HOME" });
+    const hidden = redactTicketHistory(row, "alice", new Date("2026-07-13T12:00:00Z"), { ...defaults, postMatchTicketVisible: false });
+    expect(hidden).toMatchObject({ visibility: "PRIVATE", submitted: true });
+    expect(hidden).not.toHaveProperty("stakePoints"); expect(hidden).not.toHaveProperty("settlementVersion");
   });
 
   it("explains a settled ticket with confirmed terms, return, net and result version", () => {
-    const result = redactTicketHistory({ ...row, ticketStatus: "SETTLED", outcome: "WIN", grossReturnPoints: "2100.00", settlementVersion: "result-v3" }, "bob", new Date("2026-07-13T10:01:00Z"));
+    const result = redactTicketHistory({ ...row, ticketStatus: "SETTLED", outcome: "WIN", grossReturnPoints: "2100.00", settlementVersion: "result-v3" }, "bob", new Date("2026-07-13T10:01:00Z"), defaults);
     expect(result).toMatchObject({
       selection: "HOME",
       stakePoints: "1000.00",
