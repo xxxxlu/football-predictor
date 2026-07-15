@@ -46,7 +46,7 @@ describe("market data assessment", () => {
     ).toEqual({ dataState: "FRESH", marketStatus: "OPEN", canSubmit: true });
   });
 
-  it("closes a market when odds are older than ten minutes", () => {
+  it("keeps an older verified snapshot open while marking its age transparently", () => {
     expect(
       assessMarketData({
         now: new Date("2026-07-13T10:10:00.001Z"),
@@ -55,7 +55,7 @@ describe("market data assessment", () => {
         sourceVerified: true,
         budgetAvailable: true,
       }),
-    ).toEqual({ dataState: "STALE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false });
+    ).toEqual({ dataState: "STALE", marketStatus: "OPEN", canSubmit: true });
   });
 
   it("keeps a verified platform-fixed multiplier open because the rule does not expire every ten minutes", () => {
@@ -66,16 +66,23 @@ describe("market data assessment", () => {
     })).toEqual({ dataState: "FRESH", marketStatus: "OPEN", canSubmit: true });
   });
 
-  it("keeps budgeted The Odds API snapshots usable for three hours only", () => {
+  it("keeps the last verified The Odds API snapshot usable beyond three hours", () => {
     const realOdds = { ...odds, supplier: "THE_ODDS_API" as const, dataAsOf: "2026-07-14T00:00:00.000Z" };
     expect(assessMarketData({ now: new Date("2026-07-14T03:00:00.000Z"), odds: realOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toMatchObject({ dataState: "FRESH", canSubmit: true });
-    expect(assessMarketData({ now: new Date("2026-07-14T03:00:00.001Z"), odds: realOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toMatchObject({ dataState: "STALE", canSubmit: false });
+    expect(assessMarketData({ now: new Date("2026-07-15T00:00:00.000Z"), odds: realOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toMatchObject({ dataState: "STALE", marketStatus: "OPEN", canSubmit: true });
   });
 
-  it("distinguishes syncing, paused and unverifiable data while rejecting submission", () => {
-    expect(assessMarketData({ now: new Date(), odds, syncState: "SYNCING", sourceVerified: true, budgetAvailable: true }).dataState).toBe("SYNCING");
-    expect(assessMarketData({ now: new Date(), odds, syncState: "PAUSED", sourceVerified: true, budgetAvailable: false }).dataState).toBe("PAUSED");
+  it("reports sync health without closing a verified snapshot", () => {
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds, syncState: "SYNCING", sourceVerified: true, budgetAvailable: true })).toEqual({ dataState: "SYNCING", marketStatus: "OPEN", canSubmit: true });
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds, syncState: "PAUSED", sourceVerified: true, budgetAvailable: false })).toEqual({ dataState: "PAUSED", marketStatus: "OPEN", canSubmit: true });
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds, syncState: "FAILED", sourceVerified: true, budgetAvailable: true })).toEqual({ dataState: "STALE", marketStatus: "OPEN", canSubmit: true });
     expect(assessMarketData({ now: new Date(), odds, syncState: "IDLE", sourceVerified: false, budgetAvailable: true }).dataState).toBe("UNAVAILABLE");
+  });
+
+  it("rejects missing, invalid, or future-dated snapshots", () => {
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds: null, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toEqual({ dataState: "UNAVAILABLE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false });
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds: { ...odds, dataAsOf: "not-a-date" }, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toEqual({ dataState: "UNAVAILABLE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false });
+    expect(assessMarketData({ now: new Date("2026-07-13T10:05:00Z"), odds: { ...odds, dataAsOf: "2026-07-13T10:05:00.001Z" }, syncState: "IDLE", sourceVerified: true, budgetAvailable: true })).toEqual({ dataState: "UNAVAILABLE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false });
   });
 });
 
