@@ -238,8 +238,7 @@ export class OpenLigaDbWorldCupSync {
 
   async run(): Promise<{ fixturesSynced: number; marketsSynced: number; oddsRequestMade: boolean }> {
     const now = this.now();
-    const recentCutoff = now.getTime() - 24 * 60 * 60_000;
-    const fixtures = (await this.client.fetchWorldCup2026()).filter((fixture) => new Date(fixture.kickoffAt).getTime() >= recentCutoff);
+    const fixtures = await this.client.fetchWorldCup2026();
     await this.repository.saveFixtures(fixtures);
     const upcoming = fixtures.filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now);
     if (!this.oddsClient) {

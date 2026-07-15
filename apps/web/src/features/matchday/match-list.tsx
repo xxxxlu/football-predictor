@@ -11,7 +11,9 @@ import {
   matchAvailability,
   matchDateKey,
   paginateMatches,
+  sortMatchesForDisplay,
   summarizeMatches,
+  type MatchStatusFilter,
 } from "./match-filters";
 import { normalizeMatch, type ApiEnvelope, type ApiFailure, type MatchView } from "./types";
 
@@ -24,6 +26,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   const [retry, setRetry] = useState(0);
   const [competition, setCompetition] = useState("");
   const [date, setDate] = useState("");
+  const [status, setStatus] = useState<MatchStatusFilter>("ALL");
   const [visibleCount, setVisibleCount] = useState(MATCH_BATCH_SIZE);
 
   useEffect(() => {
@@ -42,7 +45,6 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
           ? result.data
               .map((item) => normalizeMatch(item as Parameters<typeof normalizeMatch>[0]))
               .filter((item): item is MatchView => item !== null)
-              .sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime())
           : [];
         setMatches(normalized);
         setVisibleCount(MATCH_BATCH_SIZE);
@@ -72,7 +74,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   const competitions = [...new Set(matches.map((match) => match.competitionName))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
   const dates = [...new Set(matches.map((match) => matchDateKey(match)).filter(Boolean))].sort();
-  const filtered = filterMatches(matches, { competition, date });
+  const filtered = sortMatchesForDisplay(filterMatches(matches, { competition, date, status }));
   const page = paginateMatches(filtered, visibleCount);
   const groups = groupMatches(page.items);
   const summary = summarizeMatches(filtered);
@@ -87,6 +89,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
   const clearFilters = () => {
     setCompetition("");
     setDate("");
+    setStatus("ALL");
     resetBatch();
   };
 
@@ -95,7 +98,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
       <SoccerBall className="mt-0.5 size-5 shrink-0 text-[var(--volt)]" />
       <div>
         <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--volt)]">当前赛程 · 2026 世界杯</p>
-        <p className="mt-1 text-sm leading-6 text-white/70">仅展示正在进行和未来比赛；球队、赛事名称使用中文。开球时间与赛果来自 OpenLigaDB，显示的 3.00 为平台固定虚拟积分倍率，不是博彩公司赔率。</p>
+        <p className="mt-1 text-sm leading-6 text-white/70">展示 2026 世界杯完整赛程，包括已结束、正在进行和未来比赛；球队、赛事名称使用中文。开球时间与赛果来自 OpenLigaDB，显示的 3.00 为平台固定虚拟积分倍率，不是博彩公司赔率。</p>
       </div>
     </section>
     {notice && <section className="mb-6 rounded-xl border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
@@ -103,6 +106,18 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
       <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>
     </section>}
     <section className="surface mb-8 rounded-xl p-4" aria-label="比赛筛选和数据状态">
+      <fieldset className="mb-4">
+        <legend className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">比赛状态</legend>
+        <div className="mt-2 grid grid-cols-3 gap-2 sm:inline-grid sm:min-w-[24rem]">
+          {([["ALL", "全部"], ["PREDICTABLE", "可预测"], ["FINISHED", "已结束"]] as const).map(([value, label]) => <button
+            key={value}
+            type="button"
+            aria-pressed={status === value}
+            onClick={() => { setStatus(value); resetBatch(); }}
+            className={`min-h-10 rounded-full border-2 px-4 text-sm font-bold transition ${status === value ? "border-[var(--ink)] bg-[var(--ink)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--ink)]"}`}
+          >{label}</button>)}
+        </div>
+      </fieldset>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
         <label className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">联赛
           <select value={competition} onChange={(event) => { setCompetition(event.target.value); resetBatch(); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case text-[var(--ink)]">

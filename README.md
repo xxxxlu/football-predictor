@@ -31,7 +31,7 @@ The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of tr
 
 ## Current real match data
 
-The production match list synchronizes the active **2026 World Cup** window from OpenLigaDB before cache reads (at most once every five minutes per warm server instance). OpenLigaDB needs no API key. The product stores only the upcoming window plus the previous 24 hours required for settlement, and the public match list returns only live or future fixtures. Competition and World Cup team names are localized to Chinese.
+The production match list synchronizes the complete **2026 World Cup** schedule from OpenLigaDB before cache reads (at most once every five minutes per warm server instance). OpenLigaDB needs no API key. Finished, live, and future fixtures remain available in the public match list; users can switch between all, predictable, and finished matches. Current fixtures are shown first, while completed fixtures are ordered newest-first. Competition and World Cup team names are localized to Chinese.
 
 OpenLigaDB does not provide bookmaker odds. To keep the non-cash prediction flow testable without fabricating betting data, upcoming matches receive a clearly labeled platform rule: fixed virtual-points multiplier `3.00` for home/draw/away. Kickoff times and results remain supplier data and are never invented. If the community source is temporarily unavailable, reads degrade to the latest database cache.
 

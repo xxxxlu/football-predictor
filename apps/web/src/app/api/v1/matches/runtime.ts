@@ -24,7 +24,7 @@ type CurrentMatchView = { id?: string; status?: string; kickoffAt?: string };
 export function visibleCurrentMatches<T extends CurrentMatchView>(views: T[], now: Date): T[] {
   const nowMs = now.getTime();
   return views.filter((view) => {
-    if (view.status === "LIVE") return true;
+    if (view.status === "LIVE" || view.status === "FINISHED") return true;
     const kickoff = view.kickoffAt ? new Date(view.kickoffAt).getTime() : Number.NaN;
     return view.status === "SCHEDULED" && Number.isFinite(kickoff) && kickoff > nowMs;
   });
