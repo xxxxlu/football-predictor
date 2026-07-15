@@ -2,7 +2,7 @@ import type postgres from "postgres";
 import { createHash } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
 import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
-import { MatchCacheReader, OpenLigaDbWorldCupSync, TheOddsApiClient } from "@football-predictor/supplier";
+import { MatchCacheReader } from "@football-predictor/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
 export interface MatchReadAccess {
@@ -32,40 +32,21 @@ export function visibleCurrentMatches<T extends CurrentMatchView>(views: T[], no
 
 function etagOf(value: unknown): string { return `"${createHash("sha256").update(JSON.stringify(value)).digest("hex")}"`; }
 
-export function configuredOddsApiKey(environment: Record<string, string | undefined>): string | undefined {
-  const value = environment.THE_ODDS_API_KEY?.trim();
-  return value || undefined;
-}
-
-export class RefreshingCurrentMatchCache {
-  private lastAttempt = 0;
-  private pending: Promise<void> | undefined;
+export class CurrentMatchCache {
   private readonly reader: { list(): Promise<{ views: CurrentMatchView[]; etag: string }>; get(matchId: string): Promise<{ view: unknown; etag: string }> };
-  private readonly sync: { run(): Promise<unknown> };
   private readonly now: () => Date;
 
-  constructor(input: { reader: RefreshingCurrentMatchCache["reader"]; sync: RefreshingCurrentMatchCache["sync"]; now?: () => Date }) {
-    this.reader = input.reader; this.sync = input.sync; this.now = input.now ?? (() => new Date());
-  }
-
-  private async refresh(): Promise<void> {
-    const now = this.now().getTime();
-    if (now - this.lastAttempt < 5 * 60_000) return;
-    if (!this.pending) {
-      this.lastAttempt = now;
-      this.pending = this.sync.run().then(() => undefined).catch(() => undefined).finally(() => { this.pending = undefined; });
-    }
-    await this.pending;
+  constructor(input: { reader: CurrentMatchCache["reader"]; now?: () => Date }) {
+    this.reader = input.reader; this.now = input.now ?? (() => new Date());
   }
 
   async list(): Promise<{ views: CurrentMatchView[]; etag: string }> {
-    await this.refresh();
     const result = await this.reader.list();
     const views = visibleCurrentMatches(result.views, this.now());
     return { views, etag: etagOf(views) };
   }
 
-  async get(matchId: string): Promise<{ view: unknown; etag: string }> { await this.refresh(); return this.reader.get(matchId); }
+  async get(matchId: string): Promise<{ view: unknown; etag: string }> { return this.reader.get(matchId); }
 }
 
 declare global {
@@ -76,15 +57,12 @@ export function createMatchApiRuntime(input: {
   sql: postgres.Sql;
   close(): Promise<void>;
   identity?: { authenticate(token: string): Promise<{ id: string } | null> };
-  environment?: Record<string, string | undefined>;
 }): MatchApiRuntime {
   const identity = input.identity ?? getIdentityService();
   const repository = new PostgresMatchSnapshotRepository(input.sql);
   const reader = new MatchCacheReader({ repository });
-  const oddsApiKey = configuredOddsApiKey(input.environment ?? process.env);
-  const currentSync = new OpenLigaDbWorldCupSync({ repository, ...(oddsApiKey ? { oddsClient: new TheOddsApiClient({ apiKey: oddsApiKey }) } : {}) });
   return {
-    cache: new RefreshingCurrentMatchCache({ reader, sync: currentSync }),
+    cache: new CurrentMatchCache({ reader }),
     access: {
       authenticate: (token) => identity.authenticate(token),
       assertRoomMember: async (roomId, userId) => {
