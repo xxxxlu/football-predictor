@@ -9,6 +9,7 @@ import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { MatchList } from "@/features/matchday/match-list";
 import { buildInvitePath, normalizeRoomDetail, type RoomBalanceRecord, type RoomMemberRecord, type RoomSummaryRecord } from "./room-flow";
+import { RoomTicketHistoryView } from "./room-ticket-history-view";
 
 type Detail = ReturnType<typeof normalizeRoomDetail>;
 
@@ -80,6 +81,7 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
     </div>
 
     <section aria-labelledby="room-matches-title"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="room-matches-title" className="display text-2xl font-bold">本房间比赛</h2><button type="button" onClick={reportRoom} disabled={reporting} className="inline-flex min-h-10 items-center justify-center rounded-full border-2 border-[var(--coral)] px-4 text-sm font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-50">{reporting ? "正在提交…" : "举报此房间"}</button></div>{reportMessage && <div className="mb-4"><StatusMessage tone={reportMessage.includes("已提交") ? "success" : "error"} title={reportMessage}/></div>}<MatchList roomId={roomId} interactive={detail.status === "ACTIVE"}/></section>
+    <RoomTicketHistoryView roomId={roomId} isOwner={detail.isOwner} initialPostMatchTicketVisible={detail.postMatchTicketVisible}/>
   </div>;
 }
 

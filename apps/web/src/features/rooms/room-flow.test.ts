@@ -49,6 +49,8 @@ describe("room frontend flow contracts", () => {
       id: "room-1",
       isOwner: true,
       visibility: "PUBLIC",
+      preMatchStakeVisible: false,
+      postMatchTicketVisible: true,
       balance: { availablePoints: "10000.00" },
       members: [{ displayName: "alice", roleLabel: "房主" }, { displayName: "bob", roleLabel: "成员" }],
     });
