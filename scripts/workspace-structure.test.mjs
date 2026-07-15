@@ -20,7 +20,7 @@ test("workspace contains every architecture boundary", async () => {
   assert.equal(required.length, 10);
 });
 
-test("free-tier deployment builds the web workspace and bounds supplier synchronization", async () => {
+test("free-tier deployment builds the web workspace and bounds current World Cup synchronization", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8"));
   assert.equal(manifest.devDependencies.next, "16.2.10");
   const webManifest = JSON.parse(await readFile("apps/web/package.json", "utf8"));
@@ -33,13 +33,10 @@ test("free-tier deployment builds the web workspace and bounds supplier synchron
 
   const workflow = await readFile(".github/workflows/supplier-sync.yml", "utf8");
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /cron: "17 1,13 \* \* \*"/);
-  assert.match(workflow, /SUPPLIER_CURRENT_SEASON_ENABLED/);
-  assert.doesNotMatch(workflow, /default:.*2024/);
-  assert.match(workflow, /SUPPLIER_REFERENCE_DATE/);
+  assert.match(workflow, /cron: "17 \*\/2 \* \* \*"/);
   assert.match(workflow, /pnpm db:migrate/);
-  assert.match(workflow, /pnpm supplier:prewarm/);
-  for (const secret of ["DATABASE_URL", "API_FOOTBALL_KEY"]) {
+  assert.match(workflow, /pnpm supplier:current-world-cup/);
+  for (const secret of ["DATABASE_URL", "THE_ODDS_API_KEY"]) {
     assert.ok(workflow.includes(secret + ": ${{ secrets." + secret + " }}"));
   }
 });
