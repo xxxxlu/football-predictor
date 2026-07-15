@@ -6,6 +6,7 @@ import { assertSameOrigin } from "./request-origin";
 
 const reportSchema = z.object({ reason: z.string().trim().min(10).max(500) }).strict();
 const moderationSchema = z.object({ action: z.enum(["RESTRICT", "CLOSE", "RESTORE"]), reason: z.string().trim().min(5).max(500) }).strict();
+const visibilitySchema = z.object({ preMatchStakeVisible: z.boolean() }).strict();
 const deleteSchema = z.object({ confirmation: z.literal("DELETE") }).strict();
 
 interface Identity {
@@ -16,6 +17,8 @@ interface Moderation {
   reportRoom(roomId: string, userId: string, reason: string): Promise<unknown>;
   listReports(userId: string): Promise<unknown>;
   listAudit(userId: string): Promise<unknown>;
+  listRooms(userId: string): Promise<unknown>;
+  updatePreMatchStakeVisibility(userId: string, roomId: string, visible: boolean): Promise<unknown>;
   moderateRoom(userId: string, roomId: string, action: RoomModerationAction, reason: string): Promise<unknown>;
   deleteAccount(userId: string): Promise<unknown>;
 }
@@ -33,12 +36,20 @@ export function createModerationHandlers(identity: Identity, moderation: Moderat
     }),
     listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await user(request)) })),
     listAudit: (request: Request) => execute(async () => json({ data: await moderation.listAudit(await user(request)) })),
+    listRooms: (request: Request) => execute(async () => json({ data: await moderation.listRooms(await user(request)) })),
     moderateRoom: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const input = moderationSchema.parse(await request.json());
       const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
       const proofToken = readReauthProof(request); if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
       const actor = await identity.authorizeSuperAdminAction({ sessionToken, proofToken });
       return json({ data: await moderation.moderateRoom(actor.id, roomId, input.action, input.reason) });
+    }),
+    updatePreMatchVisibility: (request: Request, roomId: string) => execute(async () => {
+      assertSameOrigin(request); const input = visibilitySchema.parse(await request.json());
+      const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+      const proofToken = readReauthProof(request); if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
+      const actor = await identity.authorizeSuperAdminAction({ sessionToken, proofToken });
+      return json({ data: await moderation.updatePreMatchStakeVisibility(actor.id, roomId, input.preMatchStakeVisible) });
     }),
     deleteAccount: (request: Request) => execute(async () => {
       assertSameOrigin(request); const id = await user(request); deleteSchema.parse(await request.json());
