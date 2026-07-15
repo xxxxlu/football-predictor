@@ -115,7 +115,7 @@ describe("RoomService", () => {
     const { service } = setup();
     const created = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
     const rotated = await service.resetInvite(created.id, "alice");
-    await expect(service.previewInvite(created.inviteToken)).rejects.toMatchObject({ code: "INVITE_INVALID" });
+    await expect(service.previewInvite(created.inviteToken!)).rejects.toMatchObject({ code: "INVITE_INVALID" });
     await expect(service.previewInvite(rotated.inviteToken)).resolves.toMatchObject({ id: created.id });
     await expect(service.getBalance(created.id, "alice")).resolves.toMatchObject({ availablePoints: "10000.00" });
   });
@@ -123,7 +123,7 @@ describe("RoomService", () => {
   it("concurrent repeated joins create one membership, one account and one grant", async () => {
     const { repository, service } = setup();
     const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
-    const results = await Promise.all(Array.from({ length: 8 }, () => service.join({ userId: "bob", inviteToken: room.inviteToken, rulesAccepted: true })));
+    const results = await Promise.all(Array.from({ length: 8 }, () => service.join({ userId: "bob", inviteToken: room.inviteToken!, rulesAccepted: true })));
     expect(results.filter((result) => result.joined)).toHaveLength(1);
     expect(repository.ledger.filter((entry) => entry.userId === "bob")).toHaveLength(1);
     await expect(service.getBalance(room.id, "bob")).resolves.toMatchObject({ availablePoints: "10000.00", frozenPoints: "0.00" });
