@@ -8,6 +8,8 @@ export type RoomSummaryRecord = {
   visibility: RoomVisibility;
   role: RoomRole;
   memberCount?: number;
+  preMatchStakeVisible?: boolean;
+  postMatchTicketVisible?: boolean;
 };
 
 export type PublicRoomSummaryRecord = {
@@ -82,6 +84,8 @@ export function normalizeRoomDetail(input: {
     visibility: input.room.visibility,
     memberCount: input.room.memberCount ?? input.members.length,
     isOwner: input.room.role === "room_owner",
+    preMatchStakeVisible: input.room.preMatchStakeVisible === true,
+    postMatchTicketVisible: input.room.postMatchTicketVisible !== false,
     balance: input.balance,
     members: input.members.map((member) => ({
       ...member,
