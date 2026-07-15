@@ -14,6 +14,15 @@
   --shadow: 0 12px 34px rgb(23 35 59 / 9%);
 }
 
+.account-balance-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.account-balance-cell { min-height: 8.5rem; padding: 1.35rem; border-right: 1px solid var(--line); display: flex; flex-direction: column; justify-content: center; }
+.account-balance-cell:last-child { border-right: 0; }
+@media (max-width: 760px) {
+  .account-balance-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .account-balance-cell:nth-child(2) { border-right: 0; }
+  .account-balance-cell:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+
 @theme inline {
   --color-background: var(--paper);
   --color-foreground: var(--ink);
