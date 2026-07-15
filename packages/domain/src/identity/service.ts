@@ -2,6 +2,16 @@ import { randomUUID } from "node:crypto";
 
 export type AuthAttemptKind = "LOGIN" | "RECOVERY";
 export type AccountStatus = "ACTIVE" | "DISABLED";
+export type AccessEventKind = "REGISTER" | "LOGIN";
+export interface AccessContext {
+  ipAddress: string; countryCode: string; region: string; city: string; timezone: string;
+  userAgent: string; acceptLanguage: string; deviceClass: string; os: string; browser: string;
+}
+export interface AudienceDimension { key: string; userCount: number }
+export interface AudienceStats {
+  totalUsers: number; locatedUsers: number; countries: AudienceDimension[]; regions: AudienceDimension[];
+  cities: AudienceDimension[]; deviceClasses: AudienceDimension[]; operatingSystems: AudienceDimension[]; browsers: AudienceDimension[];
+}
 
 export interface IdentityAccount {
   id: string;
@@ -33,6 +43,8 @@ export interface IdentityRepository {
   recordFailure(kind: AuthAttemptKind, accountKey: string, sourceKey: string, occurredAt: Date): Promise<void>;
   recordSecurityEvent(kind: string, accountKey: string, sourceKey: string, occurredAt: Date): Promise<void>;
   clearFailures(kind: AuthAttemptKind, accountKey: string): Promise<void>;
+  recordAccessEvent(input: AccessContext & { userId: string; kind: AccessEventKind; occurredAt: Date }): Promise<void>;
+  getAudienceStats(): Promise<AudienceStats>;
 }
 
 export interface PasswordHasher {
@@ -83,7 +95,7 @@ export class IdentityService {
     this.reauthTtlMs = options.reauthTtlMs ?? 5 * 60_000;
   }
 
-  async register(input: { username: string; password: string; isAdultConfirmed: boolean; nonCashRulesVersion: string }) {
+  async register(input: { username: string; password: string; isAdultConfirmed: boolean; nonCashRulesVersion: string; accessContext?: AccessContext }) {
     const usernameCanonical = normalizeUsername(input.username);
     assertPassword(input.password);
     if (!input.isAdultConfirmed || input.nonCashRulesVersion !== this.options.currentRulesVersion) {
@@ -106,10 +118,11 @@ export class IdentityService {
       updatedAt: occurredAt,
     };
     await this.repository.createRegisteredAccount(account);
+    if (input.accessContext) await this.repository.recordAccessEvent({ ...input.accessContext, userId: account.id, kind: "REGISTER", occurredAt }).catch(() => undefined);
     return { userId: account.id, username: usernameCanonical, recoveryCode };
   }
 
-  async login(input: { username: string; password: string; sourceKey: string }) {
+  async login(input: { username: string; password: string; sourceKey: string; accessContext?: AccessContext }) {
     const usernameCanonical = safeNormalizeUsername(input.username);
     await this.assertNotRateLimited("LOGIN", usernameCanonical, input.sourceKey);
     const account = await this.repository.findAccountByUsername(usernameCanonical);
@@ -123,6 +136,7 @@ export class IdentityService {
     const sessionToken = this.tokens.sessionToken();
     const expiresAt = new Date(this.now().getTime() + this.options.sessionTtlMs);
     await this.repository.createSession({ tokenHash: this.tokens.hash(sessionToken), userId: account.id, expiresAt });
+    if (input.accessContext) await this.repository.recordAccessEvent({ ...input.accessContext, userId: account.id, kind: "LOGIN", occurredAt: this.now() }).catch(() => undefined);
     return { sessionToken, expiresAt, userId: account.id, mustChangePassword: account.mustChangePassword };
   }
 
@@ -175,6 +189,11 @@ export class IdentityService {
     const changed = await this.repository.setNormalAccountStatus({ actorUserId: actor.id, targetUserId: input.targetUserId, status: input.status, changedAt: this.now(), auditId });
     if (!changed) throw new AuthError("TARGET_NOT_MANAGEABLE", 422, "Only normal user accounts can be changed here.");
     return { targetUserId: input.targetUserId, status: input.status, auditId };
+  }
+
+  async getAudienceStats(sessionToken: string) {
+    await this.requireReadySuperAdmin(sessionToken);
+    return this.repository.getAudienceStats();
   }
 
   private async requireReadySuperAdmin(sessionToken: string) {

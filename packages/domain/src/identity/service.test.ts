@@ -3,6 +3,7 @@ import {
   AuthError,
   IdentityService,
   type AuthAttemptKind,
+  type AccessContext,
   type IdentityAccount,
   type IdentityRepository,
   type PasswordHasher,
@@ -15,6 +16,7 @@ class MemoryIdentityRepository implements IdentityRepository {
   failures: Array<{ kind: AuthAttemptKind; accountKey: string; sourceKey: string; occurredAt: Date }> = [];
   proofs = new Map<string, { userId: string; sessionTokenHash: string; expiresAt: Date }>();
   adminEvents: Array<{ actorUserId: string; targetUserId: string; action: string }> = [];
+  accessEvents: Array<AccessContext & { userId: string; kind: "REGISTER" | "LOGIN"; occurredAt: Date }> = [];
 
   async createRegisteredAccount(account: IdentityAccount): Promise<void> {
     if (this.accounts.has(account.usernameCanonical)) throw new AuthError("USERNAME_UNAVAILABLE", 409);
@@ -81,6 +83,8 @@ class MemoryIdentityRepository implements IdentityRepository {
   async clearFailures(kind: AuthAttemptKind, accountKey: string) {
     this.failures = this.failures.filter((failure) => failure.kind !== kind || failure.accountKey !== accountKey);
   }
+  async recordAccessEvent(input: AccessContext & { userId: string; kind: "REGISTER" | "LOGIN"; occurredAt: Date }) { this.accessEvents.push(input); }
+  async getAudienceStats() { return { totalUsers: this.accounts.size, locatedUsers: 0, countries: [], regions: [], cities: [], deviceClasses: [], operatingSystems: [], browsers: [] }; }
 }
 
 const passwordHasher: PasswordHasher = {
