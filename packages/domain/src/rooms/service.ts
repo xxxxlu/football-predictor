@@ -1,19 +1,31 @@
 export type RoomStatus = "ACTIVE" | "RESTRICTED" | "CLOSED";
 export type RoomRole = "OWNER" | "MEMBER";
+export type RoomVisibility = "PUBLIC" | "PRIVATE";
 
 export interface RoomSummaryRecord {
   id: string;
   name: string;
   status: RoomStatus;
+  visibility: RoomVisibility;
   role: RoomRole;
   memberCount: number;
 }
 
+export interface PublicRoomSummaryRecord {
+  id: string;
+  name: string;
+  ownerName: string;
+  memberCount: number;
+  joined: boolean;
+}
+
 export interface RoomRepository {
-  createRoom(input: { id: string; name: string; ownerId: string; rulesVersion: string; inviteTokenHash: string; initialPoints: string; now: Date; auditId: string }): Promise<void>;
+  createRoom(input: { id: string; name: string; ownerId: string; visibility: RoomVisibility; rulesVersion: string; inviteTokenHash: string | null; initialPoints: string; now: Date; auditId: string }): Promise<void>;
   rotateInvite(input: { roomId: string; ownerId: string; inviteTokenHash: string; now: Date; auditId: string }): Promise<boolean>;
   previewInvite(inviteTokenHash: string): Promise<{ id: string; name: string; status: RoomStatus } | null>;
   joinByInvite(input: { inviteTokenHash: string; userId: string; rulesVersion: string; initialPoints: string; now: Date; auditId: string }): Promise<{ roomId: string; joined: boolean } | null>;
+  listPublicRooms(userId: string): Promise<PublicRoomSummaryRecord[]>;
+  joinPublicRoom(input: { roomId: string; userId: string; rulesVersion: string; initialPoints: string; now: Date; auditId: string }): Promise<{ roomId: string; joined: boolean } | null>;
   listRooms(userId: string): Promise<RoomSummaryRecord[]>;
   getRoomForMember(roomId: string, userId: string): Promise<RoomSummaryRecord | null>;
   getBalance(roomId: string, userId: string): Promise<{ availablePoints: string; frozenPoints: string; correctionDebt: string } | null>;
@@ -41,23 +53,27 @@ export class RoomService {
     private readonly options: { rulesVersion: string; initialPoints: string },
   ) {}
 
-  async create(input: { userId: string; name: string; rulesAccepted: boolean }) {
+  async create(input: { userId: string; name: string; visibility: RoomVisibility; rulesAccepted: boolean }) {
     this.assertRules(input.rulesAccepted);
     const name = normalizeRoomName(input.name);
     const id = this.tokens.id();
     const auditId = this.tokens.id();
-    const inviteToken = this.tokens.inviteToken();
+    const inviteToken = input.visibility === "PRIVATE" ? this.tokens.inviteToken() : undefined;
     await this.repository.createRoom({
       id,
       name,
       ownerId: input.userId,
+      visibility: input.visibility,
       rulesVersion: this.options.rulesVersion,
-      inviteTokenHash: this.tokens.hash(inviteToken),
+      inviteTokenHash: inviteToken ? this.tokens.hash(inviteToken) : null,
       initialPoints: this.options.initialPoints,
       now: this.now(),
       auditId,
     });
-    return { id, name, role: "room_owner" as const, memberCount: 1, inviteToken, auditId };
+    return {
+      id, name, visibility: input.visibility, role: "room_owner" as const, memberCount: 1, auditId,
+      ...(inviteToken ? { inviteToken } : {}),
+    };
   }
 
   async resetInvite(roomId: string, ownerId: string) {
@@ -88,6 +104,24 @@ export class RoomService {
     return joined;
   }
 
+  async listPublic(userId: string) {
+    return this.repository.listPublicRooms(userId);
+  }
+
+  async joinPublic(input: { roomId: string; userId: string; rulesAccepted: boolean }) {
+    this.assertRules(input.rulesAccepted);
+    const joined = await this.repository.joinPublicRoom({
+      roomId: input.roomId,
+      userId: input.userId,
+      rulesVersion: this.options.rulesVersion,
+      initialPoints: this.options.initialPoints,
+      now: this.now(),
+      auditId: this.tokens.id(),
+    });
+    if (!joined) throw new RoomError("ROOM_NOT_JOINABLE", 404, "This public room is not available to join.");
+    return joined;
+  }
+
   async listRooms(userId: string) {
     return (await this.repository.listRooms(userId)).map(toView);
   }
@@ -111,7 +145,7 @@ export class RoomService {
   }
 
   private assertRules(accepted: boolean) {
-    if (!accepted) throw new RoomError("ROOM_RULES_REQUIRED", 422, "Confirm the current private-room rules.");
+    if (!accepted) throw new RoomError("ROOM_RULES_REQUIRED", 422, "Confirm the current room rules.");
   }
 }
 
@@ -122,5 +156,5 @@ function normalizeRoomName(value: string) {
 }
 
 function toView(room: RoomSummaryRecord) {
-  return { id: room.id, name: room.name, status: room.status, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
+  return { id: room.id, name: room.name, status: room.status, visibility: room.visibility, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
 }
