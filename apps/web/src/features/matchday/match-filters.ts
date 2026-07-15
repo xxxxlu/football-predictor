@@ -1,6 +1,7 @@
 import type { MatchView } from "./types.js";
 
-export type MatchFilter = { competition?: string; date?: string; timeZone?: string };
+export type MatchStatusFilter = "ALL" | "PREDICTABLE" | "FINISHED";
+export type MatchFilter = { competition?: string; date?: string; timeZone?: string; status?: MatchStatusFilter };
 
 export function matchDateKey(match: MatchView, timeZone?: string) {
   const date = new Date(match.kickoffAt);
@@ -11,14 +12,32 @@ export function matchDateKey(match: MatchView, timeZone?: string) {
 }
 
 export function filterMatches(matches: MatchView[], filter: MatchFilter) {
-  return matches.filter((match) => (!filter.competition || match.competitionName === filter.competition) && (!filter.date || matchDateKey(match, filter.timeZone) === filter.date));
+  return matches.filter((match) => {
+    const statusMatches = !filter.status || filter.status === "ALL"
+      || (filter.status === "PREDICTABLE" && matchAvailability(match).predictable)
+      || (filter.status === "FINISHED" && match.state === "FINISHED");
+    return statusMatches
+      && (!filter.competition || match.competitionName === filter.competition)
+      && (!filter.date || matchDateKey(match, filter.timeZone) === filter.date);
+  });
+}
+
+export function sortMatchesForDisplay(matches: MatchView[]) {
+  return [...matches].sort((left, right) => {
+    const leftFinished = left.state === "FINISHED";
+    const rightFinished = right.state === "FINISHED";
+    if (leftFinished !== rightFinished) return leftFinished ? 1 : -1;
+    const leftKickoff = new Date(left.kickoffAt).getTime();
+    const rightKickoff = new Date(right.kickoffAt).getTime();
+    return leftFinished ? rightKickoff - leftKickoff : leftKickoff - rightKickoff;
+  });
 }
 
 export type CompetitionMatchGroup = { name: string; matches: MatchView[] };
 export type DateMatchGroup = { date: string; competitions: CompetitionMatchGroup[] };
 
 export function groupMatches(matches: MatchView[], timeZone?: string): DateMatchGroup[] {
-  const sorted = [...matches].sort((left, right) => new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime());
+  const sorted = sortMatchesForDisplay(matches);
   const dates = new Map<string, Map<string, MatchView[]>>();
   for (const match of sorted) {
     const date = matchDateKey(match, timeZone) || "unknown";

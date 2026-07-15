@@ -59,14 +59,14 @@ describe("supplier synchronization", () => {
     expect(market?.outcomes.map((outcome) => outcome.decimalOdds)).toEqual(["3.00", "3.00", "3.00"]);
   });
 
-  it("does not import expired OpenLigaDB history but keeps a recent result for settlement", async () => {
+  it("imports the complete 2026 World Cup schedule including older finished matches", async () => {
     const match = (matchID: number, kickoffAt: string, finished: boolean) => ({ matchID, leagueId: 501, leagueName: "WM 2026", leagueSeason: 2026, leagueShortcut: "wm26", matchDateTimeUTC: kickoffAt, lastUpdateDateTime: "2026-07-14T10:00:00Z", matchIsFinished: finished, team1: { teamId: 10, teamName: "England", shortName: "ENG" }, team2: { teamId: 20, teamName: "Argentina", shortName: "ARG" }, matchResults: finished ? [{ resultTypeID: 2, pointsTeam1: 1, pointsTeam2: 2 }] : [] });
     const repository = new InMemoryMatchSnapshotRepository();
-    const client = new OpenLigaDbClient({ fetcher: async () => Response.json([match(1, "2024-07-14T19:00:00Z", true), match(2, "2026-07-14T08:00:00Z", true), match(3, "2026-07-15T19:00:00Z", false)]), now: () => new Date("2026-07-14T10:00:00Z") });
+    const client = new OpenLigaDbClient({ fetcher: async () => Response.json([match(1, "2026-06-11T19:00:00Z", true), match(2, "2026-07-14T08:00:00Z", true), match(3, "2026-07-15T19:00:00Z", false)]), now: () => new Date("2026-07-14T10:00:00Z") });
     const sync = new OpenLigaDbWorldCupSync({ repository, client, now: () => new Date("2026-07-14T10:00:00Z") });
 
-    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 2, marketsSynced: 1, oddsRequestMade: false });
-    expect(await repository.getFixture("openligadb:1")).toBeNull();
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 3, marketsSynced: 1, oddsRequestMade: false });
+    expect(await repository.getFixture("openligadb:1")).toMatchObject({ status: "FINISHED", result: { confirmed: true } });
     expect(await repository.getFixture("openligadb:2")).toMatchObject({ status: "FINISHED", result: { confirmed: true, homeScore: 1, awayScore: 2 } });
   });
 

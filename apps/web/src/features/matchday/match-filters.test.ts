@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { datasetNotice, filterMatches, groupMatches, matchAvailability, matchDateKey, paginateMatches, summarizeMatches } from "./match-filters.js";
+import { datasetNotice, filterMatches, groupMatches, matchAvailability, matchDateKey, paginateMatches, sortMatchesForDisplay, summarizeMatches } from "./match-filters.js";
 import type { MatchView } from "./types.js";
 
 const match = (id: string, competitionName: string, kickoffAt: string, state: MatchView["state"], stale = false): MatchView => ({
@@ -24,6 +24,22 @@ describe("multi-match filters", () => {
   it("filters by real competition name and local match date without assuming a tournament", () => {
     expect(filterMatches(matches, { competition: "Premier League", date: "2026-07-15", timeZone: "UTC" }).map((item) => item.id)).toEqual(["3"]);
     expect(matchDateKey(matches[0]!, "UTC")).toBe("2026-07-14");
+  });
+
+  it("filters all, predictable, and finished match states", () => {
+    expect(filterMatches(matches, { status: "ALL" }).map((item) => item.id)).toEqual(["1", "2", "3"]);
+    expect(filterMatches(matches, { status: "PREDICTABLE" }).map((item) => item.id)).toEqual(["1"]);
+    expect(filterMatches(matches, { status: "FINISHED" }).map((item) => item.id)).toEqual(["2"]);
+  });
+
+  it("orders current matches first and finished matches newest first", () => {
+    const ordered = sortMatchesForDisplay([
+      match("old-result", "World Cup", "2026-06-11T12:00:00.000Z", "FINISHED"),
+      match("later", "World Cup", "2026-07-16T12:00:00.000Z", "OPEN"),
+      match("new-result", "World Cup", "2026-07-14T12:00:00.000Z", "FINISHED"),
+      match("sooner", "World Cup", "2026-07-15T12:00:00.000Z", "OPEN"),
+    ]);
+    expect(ordered.map((item) => item.id)).toEqual(["sooner", "later", "new-result", "old-result"]);
   });
 
   it("summarizes visible, open, finished, and stale counts", () => {
