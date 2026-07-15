@@ -123,24 +123,31 @@ export function assessMarketData(input: {
   budgetAvailable: boolean;
   maxAgeMs?: number;
 }): MarketAssessment {
-  if (!input.sourceVerified || input.syncState === "FAILED" || input.odds === null) {
+  if (!input.sourceVerified || input.odds === null) {
     return { dataState: "UNAVAILABLE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
   }
+  const age = input.now.getTime() - new Date(input.odds.dataAsOf).getTime();
+  if (!Number.isFinite(age) || age < 0) {
+    return { dataState: "UNAVAILABLE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
+  }
+  const available = { marketStatus: "OPEN" as const, canSubmit: true };
   if (input.syncState === "PAUSED" || !input.budgetAvailable) {
-    return { dataState: "PAUSED", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
+    return { dataState: "PAUSED", ...available };
   }
   if (input.syncState === "SYNCING") {
-    return { dataState: "SYNCING", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
+    return { dataState: "SYNCING", ...available };
+  }
+  if (input.syncState === "FAILED") {
+    return { dataState: "STALE", ...available };
   }
   if (input.odds.supplier === "PLATFORM") {
-    return { dataState: "FRESH", marketStatus: "OPEN", canSubmit: true };
+    return { dataState: "FRESH", ...available };
   }
-  const age = input.now.getTime() - new Date(input.odds.dataAsOf).getTime();
   const providerMaxAgeMs = input.odds.supplier === "THE_ODDS_API" ? THE_ODDS_API_MAX_AGE_MS : PREMATCH_ODDS_MAX_AGE_MS;
-  if (!Number.isFinite(age) || age < 0 || age > (input.maxAgeMs ?? providerMaxAgeMs)) {
-    return { dataState: "STALE", marketStatus: "DATA_UNAVAILABLE", canSubmit: false };
+  if (age > (input.maxAgeMs ?? providerMaxAgeMs)) {
+    return { dataState: "STALE", ...available };
   }
-  return { dataState: "FRESH", marketStatus: "OPEN", canSubmit: true };
+  return { dataState: "FRESH", ...available };
 }
 
 export function createMatchView(input: {
