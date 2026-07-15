@@ -7,6 +7,8 @@ export interface RoomSummaryRecord {
   name: string;
   status: RoomStatus;
   visibility: RoomVisibility;
+  preMatchStakeVisible: boolean;
+  postMatchTicketVisible: boolean;
   role: RoomRole;
   memberCount: number;
 }
@@ -30,6 +32,7 @@ export interface RoomRepository {
   getRoomForMember(roomId: string, userId: string): Promise<RoomSummaryRecord | null>;
   getBalance(roomId: string, userId: string): Promise<{ availablePoints: string; frozenPoints: string; correctionDebt: string } | null>;
   listMembers(roomId: string, userId: string): Promise<Array<{ userId: string; username: string; role: RoomRole }> | null>;
+  updatePostMatchTicketVisibility(input: { roomId: string; ownerId: string; visible: boolean; now: Date; auditId: string }): Promise<boolean>;
 }
 
 export interface RoomTokenFactory {
@@ -144,6 +147,12 @@ export class RoomService {
     return members.map((member) => ({ ...member, role: member.role === "OWNER" ? "room_owner" as const : "member" as const }));
   }
 
+  async updatePostMatchTicketVisibility(roomId: string, ownerId: string, visible: boolean) {
+    const updated = await this.repository.updatePostMatchTicketVisibility({ roomId, ownerId, visible, now: this.now(), auditId: this.tokens.id() });
+    if (!updated) throw new RoomError("ROOM_OWNER_REQUIRED", 403, "Only the room owner can change post-kickoff record visibility.");
+    return { roomId, postMatchTicketVisible: visible };
+  }
+
   private assertRules(accepted: boolean) {
     if (!accepted) throw new RoomError("ROOM_RULES_REQUIRED", 422, "Confirm the current room rules.");
   }
@@ -156,5 +165,5 @@ function normalizeRoomName(value: string) {
 }
 
 function toView(room: RoomSummaryRecord) {
-  return { id: room.id, name: room.name, status: room.status, visibility: room.visibility, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
+  return { id: room.id, name: room.name, status: room.status, visibility: room.visibility, preMatchStakeVisible: room.preMatchStakeVisible, postMatchTicketVisible: room.postMatchTicketVisible, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
 }

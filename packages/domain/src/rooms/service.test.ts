@@ -8,7 +8,7 @@ class MemoryRoomRepository implements RoomRepository {
   ledger: Array<{ roomId: string; userId: string; kind: string; amount: string }> = [];
 
   async createRoom(input: Parameters<RoomRepository["createRoom"]>[0]) {
-    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId });
+    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, preMatchStakeVisible: false, postMatchTicketVisible: true, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId });
     this.members.set(`${input.id}:${input.ownerId}`, { userId: input.ownerId, role: "OWNER", rulesVersion: input.rulesVersion });
     this.balances.set(`${input.id}:${input.ownerId}`, { availablePoints: input.initialPoints, frozenPoints: "0.00", correctionDebt: "0.00" });
     this.ledger.push({ roomId: input.id, userId: input.ownerId, kind: "INITIAL_GRANT", amount: input.initialPoints });
@@ -73,6 +73,13 @@ class MemoryRoomRepository implements RoomRepository {
     if (!this.members.has(`${roomId}:${userId}`)) return null;
     return [...this.members.entries()].filter(([key]) => key.startsWith(`${roomId}:`)).map(([, member]) => ({ userId: member.userId, username: member.userId, role: member.role }));
   }
+  async updatePostMatchTicketVisibility(input: Parameters<RoomRepository["updatePostMatchTicketVisibility"]>[0]) {
+    const room = this.rooms.get(input.roomId);
+    const membership = this.members.get(`${input.roomId}:${input.ownerId}`);
+    if (!room || membership?.role !== "OWNER") return false;
+    room.postMatchTicketVisible = input.visible;
+    return true;
+  }
 }
 
 let sequence = 0;
@@ -134,5 +141,13 @@ describe("RoomService", () => {
     const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
     await expect(service.getRoom(room.id, "mallory")).rejects.toEqual(new RoomError("ROOM_NOT_FOUND", 404));
     await expect(service.getRoom("missing", "mallory")).rejects.toEqual(new RoomError("ROOM_NOT_FOUND", 404));
+  });
+
+  it("lets only the room owner control post-kickoff ticket visibility", async () => {
+    const { service } = setup();
+    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
+    await expect(service.updatePostMatchTicketVisibility(room.id, "alice", false)).resolves.toMatchObject({ roomId: room.id, postMatchTicketVisible: false });
+    await expect(service.getRoom(room.id, "alice")).resolves.toMatchObject({ preMatchStakeVisible: false, postMatchTicketVisible: false });
+    await expect(service.updatePostMatchTicketVisibility(room.id, "mallory", true)).rejects.toMatchObject({ code: "ROOM_OWNER_REQUIRED", status: 403 });
   });
 });

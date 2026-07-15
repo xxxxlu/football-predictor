@@ -74,17 +74,17 @@ export class DrizzleRoomRepository implements RoomRepository {
 
   async listRooms(userId: string): Promise<RoomSummaryRecord[]> {
     const allMembers = alias(roomMembers, "all_members");
-    const rows = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, role: roomMembers.role, memberCount: count(allMembers.userId) })
+    const rows = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(eq(roomMembers.userId, userId)).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, roomMembers.role).orderBy(rooms.createdAt);
+      .where(eq(roomMembers.userId, userId)).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).orderBy(rooms.createdAt);
     return rows.map((row) => ({ ...row, memberCount: Number(row.memberCount) }));
   }
 
   async getRoomForMember(roomId: string, userId: string): Promise<RoomSummaryRecord | null> {
     const allMembers = alias(roomMembers, "all_members");
-    const [row] = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, role: roomMembers.role, memberCount: count(allMembers.userId) })
+    const [row] = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, roomMembers.role).limit(1);
+      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).limit(1);
     return row ? { ...row, memberCount: Number(row.memberCount) } : null;
   }
 
@@ -100,6 +100,22 @@ export class DrizzleRoomRepository implements RoomRepository {
     if (!authorized) return null;
     return this.db.select({ userId: roomMembers.userId, username: sql<string>`COALESCE(${identityUsers.nickname}, ${identityUsers.usernameCanonical})`, role: roomMembers.role })
       .from(roomMembers).innerJoin(identityUsers, eq(identityUsers.id, roomMembers.userId)).where(eq(roomMembers.roomId, roomId)).orderBy(roomMembers.joinedAt);
+  }
+
+  async updatePostMatchTicketVisibility(input: Parameters<RoomRepository["updatePostMatchTicketVisibility"]>[0]) {
+    return this.db.transaction(async (tx) => {
+      const [owned] = await tx.select({ id: rooms.id }).from(rooms)
+        .innerJoin(roomMembers, and(eq(roomMembers.roomId, rooms.id), eq(roomMembers.userId, input.ownerId), eq(roomMembers.role, "OWNER")))
+        .where(eq(rooms.id, input.roomId)).for("update").limit(1);
+      if (!owned) return false;
+      await tx.update(rooms).set({ postMatchTicketVisible: input.visible, updatedAt: input.now }).where(eq(rooms.id, input.roomId));
+      await tx.insert(roomAuditEvents).values({
+        auditId: input.auditId, actorUserId: input.ownerId, roomId: input.roomId,
+        action: input.visible ? "POST_MATCH_TICKET_VISIBILITY_ENABLED" : "POST_MATCH_TICKET_VISIBILITY_DISABLED",
+        result: "SUCCESS", occurredAt: input.now,
+      });
+      return true;
+    });
   }
 
   private async addMember(tx: RoomTransaction, roomId: string, input: { userId: string; rulesVersion: string; initialPoints: string; now: Date; auditId: string }) {

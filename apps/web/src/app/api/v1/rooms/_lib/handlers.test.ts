@@ -17,6 +17,7 @@ function setup() {
     join: vi.fn().mockResolvedValue({ roomId: "room-1", joined: true }),
     listPublic: vi.fn().mockResolvedValue([{ id: "public-1", name: "公开看球局", ownerName: "alice", memberCount: 3, joined: false }]),
     joinPublic: vi.fn().mockResolvedValue({ roomId: "public-1", joined: true }),
+    updatePostMatchTicketVisibility: vi.fn().mockResolvedValue({ roomId: "room-1", postMatchTicketVisible: false }),
   };
   return { identity, rooms, handlers: createRoomHandlers(identity, rooms) };
 }
@@ -87,5 +88,17 @@ describe("room HTTP handlers", () => {
     const response = await handlers.list(get("/api/v1/rooms", ""));
     expect(response.status).toBe(401);
     await expect(response.json()).resolves.toMatchObject({ error: { code: "UNAUTHENTICATED" } });
+  });
+
+  it("lets an authenticated owner update post-kickoff record visibility", async () => {
+    const { handlers, rooms } = setup();
+    const request = new Request("https://example.test/api/v1/rooms/room-1/settings", {
+      method: "PATCH",
+      headers: { origin: "https://example.test", cookie: "fp_session=session-token", "content-type": "application/json" },
+      body: JSON.stringify({ postMatchTicketVisible: false }),
+    });
+    const response = await handlers.updateSettings(request, "room-1");
+    expect(response.status).toBe(200);
+    expect(rooms.updatePostMatchTicketVisibility).toHaveBeenCalledWith("room-1", "user-1", false);
   });
 });
