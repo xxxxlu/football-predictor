@@ -1,4 +1,4 @@
-import { cp, mkdir, readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -10,8 +10,9 @@ export async function hoistCloudBaseNativePackages(rootDirectory) {
   const aliases = [];
 
   for (const entry of entries) {
-    if (!entry.isDirectory() || !/^argon2-[a-f0-9]+$/.test(entry.name)) continue;
-    const source = join(tracedScope, entry.name);
+    if ((!entry.isDirectory() && !entry.isSymbolicLink()) || !/^argon2-[a-f0-9]+$/.test(entry.name)) continue;
+    const tracedSource = join(tracedScope, entry.name);
+    const source = entry.isSymbolicLink() ? await realpath(tracedSource) : tracedSource;
     const manifest = JSON.parse(await readFile(join(source, "package.json"), "utf8"));
     if (manifest.name !== "@node-rs/argon2") continue;
     await mkdir(runtimeScope, { recursive: true });
