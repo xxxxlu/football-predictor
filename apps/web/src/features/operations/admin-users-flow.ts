@@ -1,4 +1,6 @@
 export type ManagedUser = { id: string; username: string; status: "ACTIVE" | "DISABLED" };
+export type AudienceDimension = { key: string; userCount: number };
+export type AudienceStats = { totalUsers: number; locatedUsers: number; countries: AudienceDimension[]; regions: AudienceDimension[]; cities: AudienceDimension[]; deviceClasses: AudienceDimension[]; operatingSystems: AudienceDimension[]; browsers: AudienceDimension[] };
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Failure = { error?: { message?: string } };
 
@@ -7,6 +9,13 @@ export async function loadAdminUsers(fetcher: Fetcher = fetch): Promise<ManagedU
   const result = await response.json().catch(() => ({})) as Failure & { data?: { users?: ManagedUser[] } };
   if (!response.ok) throw new Error(result.error?.message || "无法加载用户列表");
   return result.data?.users ?? [];
+}
+
+export async function loadAudienceStats(fetcher: Fetcher = fetch): Promise<AudienceStats> {
+  const response = await fetcher("/api/v1/admin/audience", { credentials: "same-origin", cache: "no-store" });
+  const result = await response.json().catch(() => ({})) as Failure & { data?: AudienceStats };
+  if (!response.ok || !result.data) throw new Error(result.error?.message || "无法加载用户画像");
+  return result.data;
 }
 
 export async function updateAdminUserStatus(fetcher: Fetcher = fetch, input: { userId: string; status: ManagedUser["status"]; password: string }) {

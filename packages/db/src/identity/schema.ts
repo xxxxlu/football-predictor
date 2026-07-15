@@ -3,6 +3,7 @@ import { index, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid, boo
 export const identitySchema = pgSchema("identity");
 export const accountStatus = pgEnum("identity_account_status", ["ACTIVE", "DISABLED"]);
 export const authAttemptKind = pgEnum("identity_auth_attempt_kind", ["LOGIN", "RECOVERY"]);
+export const accessEventKind = pgEnum("identity_access_event_kind", ["REGISTER", "LOGIN"]);
 
 export const identityUsers = identitySchema.table("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -68,3 +69,23 @@ export const securityEvents = identitySchema.table("security_events", {
   sourceKey: text("source_key").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
 });
+
+export const accessEvents = identitySchema.table("access_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  kind: accessEventKind("kind").notNull(),
+  ipAddress: text("ip_address").notNull(),
+  countryCode: text("country_code"),
+  region: text("region"),
+  city: text("city"),
+  timezone: text("timezone"),
+  userAgent: text("user_agent"),
+  acceptLanguage: text("accept_language"),
+  deviceClass: text("device_class"),
+  os: text("os"),
+  browser: text("browser"),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("identity_access_events_user_time_idx").on(table.userId, table.occurredAt),
+  index("identity_access_events_country_time_idx").on(table.countryCode, table.occurredAt),
+]);

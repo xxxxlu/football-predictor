@@ -29,7 +29,7 @@ describe("auth HTTP handlers", () => {
     const response = await handlers.register(request("/api/v1/auth/register", { username: "alice", password: "correct-horse-123", ageConfirmed: true, nonCashTermsAccepted: true }));
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({ data: { recoveryCode: expect.stringMatching(/^FP-/) } });
-    expect(service.register).toHaveBeenCalledWith({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    expect(service.register).toHaveBeenCalledWith(expect.objectContaining({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07", accessContext: expect.objectContaining({ ipAddress: "unknown", deviceClass: "OTHER" }) }));
   });
 
   it("routes a seeded super-admin to mandatory password change, then rotates the session cookie", async () => {

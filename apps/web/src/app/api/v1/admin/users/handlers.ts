@@ -6,6 +6,7 @@ import { assertSameOrigin } from "../../_lib/request-origin";
 const statusSchema = z.object({ status: z.enum(["ACTIVE", "DISABLED"]) }).strict();
 interface AdminIdentity {
   listManageableAccounts(sessionToken: string): Promise<unknown>;
+  getAudienceStats(sessionToken: string): Promise<unknown>;
   setAccountStatus(input: { actorSessionToken: string; proofToken: string; targetUserId: string; status: "ACTIVE" | "DISABLED" }): Promise<unknown>;
 }
 
@@ -17,6 +18,7 @@ export function createAdminIdentityHandlers(identity: AdminIdentity) {
   };
   return {
     list: (request: Request) => execute(async () => Response.json({ data: await identity.listManageableAccounts(session(request)) }, { headers: noStore })),
+    audience: (request: Request) => execute(async () => Response.json({ data: await identity.getAudienceStats(session(request)) }, { headers: noStore })),
     setStatus: (request: Request, targetUserId: string) => execute(async () => {
       assertSameOrigin(request);
       const proofToken = readReauthProof(request);

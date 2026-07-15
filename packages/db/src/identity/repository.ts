@@ -1,10 +1,10 @@
-import { and, count, desc, eq, gt, isNull, or } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { AuthError, type AuthAttemptKind, type IdentityAccount, type IdentityRepository } from "@football-predictor/domain";
-import { adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions } from "./schema.js";
+import { AuthError, type AccessContext, type AccessEventKind, type AudienceDimension, type AuthAttemptKind, type IdentityAccount, type IdentityRepository } from "@football-predictor/domain";
+import { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions } from "./schema.js";
 
-const schema = { adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions };
+const schema = { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions };
 export type IdentityDatabase = PostgresJsDatabase<typeof schema>;
 
 export function createIdentityDatabase(databaseUrl: string) {
@@ -146,6 +146,34 @@ export class DrizzleIdentityRepository implements IdentityRepository {
 
   async clearFailures(kind: AuthAttemptKind, accountKey: string): Promise<void> {
     await this.db.delete(authAttempts).where(and(eq(authAttempts.kind, kind), eq(authAttempts.accountKey, accountKey)));
+  }
+
+  async recordAccessEvent(input: AccessContext & { userId: string; kind: AccessEventKind; occurredAt: Date }): Promise<void> {
+    await this.db.insert(accessEvents).values(input);
+  }
+
+  async getAudienceStats() {
+    const totals = await this.db.execute<{ total_users: number; located_users: number }>(sql`
+      WITH latest AS (SELECT DISTINCT ON (user_id) user_id, country_code FROM identity.access_events ORDER BY user_id, occurred_at DESC)
+      SELECT (SELECT COUNT(*)::int FROM identity.users WHERE is_super_admin = false) AS total_users,
+             COUNT(*) FILTER (WHERE country_code IS NOT NULL AND country_code <> '')::int AS located_users
+      FROM latest INNER JOIN identity.users u ON u.id = latest.user_id AND u.is_super_admin = false
+    `);
+    const dimension = async (column: "country_code" | "region" | "city" | "device_class" | "os" | "browser"): Promise<AudienceDimension[]> => {
+      const field = sql.raw(column);
+      const rows = await this.db.execute<{ key: string; user_count: number }>(sql`
+        WITH latest AS (SELECT DISTINCT ON (user_id) user_id, ${field} AS value FROM identity.access_events ORDER BY user_id, occurred_at DESC)
+        SELECT value AS key, COUNT(*)::int AS user_count FROM latest
+        INNER JOIN identity.users u ON u.id = latest.user_id AND u.is_super_admin = false
+        WHERE value IS NOT NULL AND value <> '' GROUP BY value ORDER BY user_count DESC, value ASC LIMIT 20
+      `);
+      return rows.map((row) => ({ key: row.key, userCount: Number(row.user_count) }));
+    };
+    return {
+      totalUsers: Number(totals[0]?.total_users ?? 0), locatedUsers: Number(totals[0]?.located_users ?? 0),
+      countries: await dimension("country_code"), regions: await dimension("region"), cities: await dimension("city"),
+      deviceClasses: await dimension("device_class"), operatingSystems: await dimension("os"), browsers: await dimension("browser"),
+    };
   }
 }
 

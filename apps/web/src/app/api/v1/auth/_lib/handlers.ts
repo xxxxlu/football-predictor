@@ -1,7 +1,8 @@
 import { AuthError } from "@football-predictor/domain";
 import { z } from "zod";
 import { assertSameOrigin } from "../../_lib/request-origin";
-import { sourceKey } from "./runtime";
+import { accessContext, sourceKey } from "./runtime";
+import type { AccessContext } from "@football-predictor/domain";
 
 const registerSchema = z.object({
   username: z.string(),
@@ -15,8 +16,8 @@ const passwordChangeSchema = z.object({ currentPassword: z.string(), newPassword
 const reauthSchema = z.object({ password: z.string() });
 
 interface AuthService {
-  register(input: { username: string; password: string; isAdultConfirmed: boolean; nonCashRulesVersion: string }): Promise<{ userId: string; username: string; recoveryCode: string }>;
-  login(input: { username: string; password: string; sourceKey: string }): Promise<{ sessionToken: string; expiresAt: Date; userId: string; mustChangePassword: boolean }>;
+  register(input: { username: string; password: string; isAdultConfirmed: boolean; nonCashRulesVersion: string; accessContext?: AccessContext }): Promise<{ userId: string; username: string; recoveryCode: string }>;
+  login(input: { username: string; password: string; sourceKey: string; accessContext?: AccessContext }): Promise<{ sessionToken: string; expiresAt: Date; userId: string; mustChangePassword: boolean }>;
   logout(sessionToken: string): Promise<void>;
   recover(input: { username: string; recoveryCode: string; newPassword: string; sourceKey: string }): Promise<{ recoveryCode: string }>;
   authenticate(sessionToken: string, allowPasswordChange?: boolean): Promise<{ id: string; usernameCanonical: string; status: string; isSuperAdmin: boolean; mustChangePassword: boolean } | null>;
@@ -34,13 +35,14 @@ export function createAuthHandlers(service: AuthService, options: { rulesVersion
         password: input.password,
         isAdultConfirmed: input.ageConfirmed,
         nonCashRulesVersion: options.rulesVersion,
+        accessContext: accessContext(request),
       });
       return json({ data: result }, 201);
     }),
     login: (request: Request) => execute(async () => {
       assertSameOrigin(request);
       const input = loginSchema.parse(await request.json());
-      const result = await service.login({ ...input, sourceKey: sourceKey(request) });
+      const result = await service.login({ ...input, sourceKey: sourceKey(request), accessContext: accessContext(request) });
       const response = json({ data: { redirectTo: result.mustChangePassword ? "/change-password" : "/rooms", mustChangePassword: result.mustChangePassword } });
       response.headers.append("set-cookie", sessionCookie(result.sessionToken, result.expiresAt, options.secureCookie));
       return response;
