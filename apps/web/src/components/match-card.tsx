@@ -50,9 +50,9 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
             ))}
           </dl>
         )}
-        {match.stale && <div className="mt-4"><StatusBanner kind="stale" timestamp={match.dataAsOf} /></div>}
+        {match.stale && match.market && <div className="mt-4"><StatusBanner kind="stale" timestamp={match.dataAsOf} /></div>}
         {!match.stale && match.state === "CLOSED" && <div className="mt-4"><StatusBanner kind="closed" /></div>}
-        {!match.stale && ["PAUSED", "DATA_UNAVAILABLE"].includes(match.state) && <div className="mt-4"><StatusBanner kind="unavailable" /></div>}
+        {(!match.market || !match.stale) && ["PAUSED", "DATA_UNAVAILABLE"].includes(match.state) && <div className="mt-4"><StatusBanner kind="unavailable" /></div>}
         {action && (
           <details className="mt-5 border-t rule pt-4">
             <summary className="flex cursor-pointer items-center gap-2 font-bold text-[var(--field)]">

@@ -31,9 +31,10 @@ describe("multi-match filters", () => {
     expect(summarizeMatches([...matches, waitingForOdds])).toEqual({ total: 4, open: 1, finished: 1, stale: 1 });
   });
 
-  it("makes finished, stale, and unavailable fixtures explicitly non-predictable", () => {
+  it("keeps a last-known snapshot predictable while blocking finished and unavailable fixtures", () => {
+    const lastKnown = match("last-known", "World Cup", "2026-07-16T03:00:00.000Z", "OPEN", true);
     expect(matchAvailability(matches[1]!)).toMatchObject({ label: "已结束", predictable: false });
-    expect(matchAvailability(matches[2]!)).toMatchObject({ label: "倍率数据已过期", predictable: false });
+    expect(matchAvailability(lastKnown)).toMatchObject({ label: "使用最后有效赔率", predictable: true });
     expect(matchAvailability(match("4", "Serie A", "2026-07-16T18:00:00.000Z", "DATA_UNAVAILABLE"))).toMatchObject({ label: "数据不可用", predictable: false });
   });
 
