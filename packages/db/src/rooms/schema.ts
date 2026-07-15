@@ -6,16 +6,21 @@ export const roomSchema = pgSchema("room");
 export const ledgerSchema = pgSchema("ledger");
 export const roomStatus = pgEnum("room_status", ["ACTIVE", "RESTRICTED", "CLOSED"]);
 export const roomRole = pgEnum("room_role", ["OWNER", "MEMBER"]);
+export const roomVisibility = pgEnum("room_visibility", ["PUBLIC", "PRIVATE"]);
 
 export const rooms = roomSchema.table("rooms", {
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   status: roomStatus("status").notNull().default("ACTIVE"),
-  inviteTokenHash: text("invite_token_hash").notNull(),
+  visibility: roomVisibility("visibility").notNull().default("PRIVATE"),
+  inviteTokenHash: text("invite_token_hash"),
   createdBy: uuid("created_by").notNull().references(() => identityUsers.id),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-}, (table) => [unique("room_invite_token_hash_unique").on(table.inviteTokenHash)]);
+}, (table) => [
+  unique("room_invite_token_hash_unique").on(table.inviteTokenHash),
+  index("room_public_discovery_idx").on(table.visibility, table.status, table.createdAt),
+]);
 
 export const roomMembers = roomSchema.table("members", {
   roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),

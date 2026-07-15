@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
+import { readFile } from "node:fs/promises";
 import { pointAccounts, pointLedgerEntries, roomAuditEvents, roomMembers, rooms } from "./schema.js";
 
 describe("private room schema", () => {
@@ -16,5 +17,14 @@ describe("private room schema", () => {
     expect(getTableConfig(roomMembers).columns.map((column) => column.name)).toContain("accepted_rules_version");
     expect(getTableConfig(pointLedgerEntries).columns.map((column) => column.name)).toEqual(expect.arrayContaining(["kind", "amount", "audit_id"]));
     expect(getTableConfig(roomAuditEvents).columns.map((column) => column.name)).toContain("audit_id");
+  });
+
+  it("stores public or private visibility and migrates existing rooms as private", async () => {
+    expect(getTableConfig(rooms).columns.map((column) => column.name)).toContain("visibility");
+    const migration = await readFile(new URL("../../migrations/0012_room_visibility.sql", import.meta.url), "utf8");
+    expect(migration).toContain("room_visibility");
+    expect(migration).toContain("'PUBLIC', 'PRIVATE'");
+    expect(migration).toContain("DEFAULT 'PRIVATE'");
+    expect(migration).toContain("DROP NOT NULL");
   });
 });
