@@ -6,6 +6,8 @@ export class OperationError extends Error {
 
 type DbTimestamp = Date | string;
 export type TicketHistoryRow = { ticketId: string; matchId: string; homeTeam: string; awayTeam: string; kickoffAt: DbTimestamp; matchStatus?: string; submittedAt: DbTimestamp; ownerUserId: string; displayName: string; selection: string; stakePoints: string; confirmedOdds: string; ticketStatus: string; outcome?: string | null; grossReturnPoints?: string | null; settlementVersion?: string | null };
+export interface RoomTicketVisibilitySettings { preMatchStakeVisible: boolean; postMatchTicketVisible: boolean }
+export type TicketHistoryVisibility = "REVEALED" | "STAKE_ONLY" | "PRIVATE";
 
 export type CrossCompetitionHistoryRow = {
   ticketId: string; roomId: string; roomName: string; fixtureId: string;
@@ -57,17 +59,29 @@ export function projectCrossCompetitionHistory(rows: CrossCompetitionHistoryRow[
   };
 }
 
-export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now: Date) {
+export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now: Date, settings: RoomTicketVisibilitySettings = { preMatchStakeVisible: false, postMatchTicketVisible: true }) {
   const isCurrentUser = row.ownerUserId === viewerId;
-  const reveal = isCurrentUser || now >= timestampDate(row.kickoffAt) || (row.matchStatus !== undefined && row.matchStatus !== "SCHEDULED");
+  const started = now >= timestampDate(row.kickoffAt) || (row.matchStatus !== undefined && row.matchStatus !== "SCHEDULED");
+  const visibility: TicketHistoryVisibility = isCurrentUser
+    ? "REVEALED"
+    : started
+      ? settings.postMatchTicketVisible ? "REVEALED" : "PRIVATE"
+      : settings.preMatchStakeVisible ? "STAKE_ONLY" : "PRIVATE";
   const returnPoints = row.grossReturnPoints ?? null;
-  return {
+  const common = {
     ticketId: row.ticketId, matchId: row.matchId, homeTeam: row.homeTeam, awayTeam: row.awayTeam,
-    kickoffAt: timestampIso(row.kickoffAt), submittedAt: timestampIso(row.submittedAt),
+    kickoffAt: timestampIso(row.kickoffAt), submitted: true,
     owner: { userId: row.ownerUserId, displayName: row.displayName, isCurrentUser },
-    visibility: reveal ? "REVEALED" as const : "PRIVATE" as const,
-    ...(reveal ? { selection: row.selection, stakePoints: row.stakePoints, confirmedOdds: row.confirmedOdds } : {}),
+    visibility,
     status: row.ticketStatus !== "SETTLED" ? "FROZEN" : row.outcome === "WIN" ? "WON" : row.outcome === "LOSS" ? "LOST" : "VOID",
+  };
+  if (visibility === "PRIVATE") return common;
+  const stake = { ...common, submittedAt: timestampIso(row.submittedAt), stakePoints: row.stakePoints };
+  if (visibility === "STAKE_ONLY") return stake;
+  return {
+    ...stake,
+    selection: row.selection,
+    confirmedOdds: row.confirmedOdds,
     outcome: row.outcome ?? null,
     returnPoints,
     netPoints: returnPoints === null ? null : signed(String(Number(returnPoints) - Number(row.stakePoints))),
@@ -149,10 +163,13 @@ export class PostgresOperationsRepository {
   }
 
   private async assertMember(roomId: string, userId: string, ownerOnly = false) {
-    const [row] = await this.sql<Array<{ role: string }>>`SELECT role FROM room.members WHERE room_id=${roomId} AND user_id=${userId} LIMIT 1`;
+    const [row] = await this.sql<Array<{ role: string; preMatchStakeVisible: boolean; postMatchTicketVisible: boolean }>>`
+      SELECT m.role,r.pre_match_stake_visible AS "preMatchStakeVisible",r.post_match_ticket_visible AS "postMatchTicketVisible"
+      FROM room.members m JOIN room.rooms r ON r.id=m.room_id
+      WHERE m.room_id=${roomId} AND m.user_id=${userId} LIMIT 1`;
     if (!row) throw new OperationError("ROOM_NOT_FOUND", 404);
     if (ownerOnly && row.role !== "OWNER") throw new OperationError("FORBIDDEN", 403);
-    return row.role;
+    return row;
   }
 
   async submissionStatus(roomId: string, userId: string) {
@@ -174,7 +191,7 @@ export class PostgresOperationsRepository {
   }
 
   async ticketHistory(roomId: string, userId: string) {
-    await this.assertMember(roomId, userId);
+    const membership = await this.assertMember(roomId, userId);
     const rows = await this.sql<TicketHistoryRow[]>`
       SELECT t.id AS "ticketId",t.fixture_id AS "matchId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",f.status AS "matchStatus",
         t.created_at AS "submittedAt",t.user_id AS "ownerUserId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
@@ -183,7 +200,8 @@ export class PostgresOperationsRepository {
       FROM prediction.tickets t JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
       JOIN supplier.fixtures f ON f.id=t.fixture_id JOIN identity.users u ON u.id=t.user_id LEFT JOIN prediction.settlements s ON s.id=t.active_settlement_id
       WHERE t.room_id=${roomId} ORDER BY t.created_at DESC LIMIT 200`;
-    return rows.map((row) => redactTicketHistory(row, userId, this.clock.now()));
+    const settings = { preMatchStakeVisible: membership.preMatchStakeVisible, postMatchTicketVisible: membership.postMatchTicketVisible };
+    return rows.map((row) => redactTicketHistory(row, userId, this.clock.now(), settings));
   }
 
   async ledger(roomId: string, userId: string) {
