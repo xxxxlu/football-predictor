@@ -5,6 +5,7 @@ import { assertSameOrigin } from "../../_lib/request-origin";
 
 const createSchema = z.object({ name: z.string(), visibility: z.enum(["PUBLIC", "PRIVATE"]), rulesAccepted: z.literal(true) });
 const joinSchema = z.object({ rulesAccepted: z.literal(true) });
+const settingsSchema = z.object({ postMatchTicketVisible: z.boolean() }).strict();
 
 interface IdentityLookup { authenticate(token: string): Promise<{ id: string } | null> }
 interface RoomsApplication {
@@ -18,6 +19,7 @@ interface RoomsApplication {
   join(input: { userId: string; inviteToken: string; rulesAccepted: boolean }): Promise<unknown>;
   listPublic(userId: string): Promise<unknown>;
   joinPublic(input: { roomId: string; userId: string; rulesAccepted: boolean }): Promise<unknown>;
+  updatePostMatchTicketVisibility(roomId: string, userId: string, visible: boolean): Promise<unknown>;
 }
 
 export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplication) {
@@ -48,6 +50,10 @@ export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplica
     joinPublic: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const accountId = await userId(request); const input = joinSchema.parse(await request.json());
       return json({ data: await rooms.joinPublic({ roomId, userId: accountId, rulesAccepted: input.rulesAccepted }) });
+    }),
+    updateSettings: (request: Request, roomId: string) => execute(async () => {
+      assertSameOrigin(request); const accountId = await userId(request); const input = settingsSchema.parse(await request.json());
+      return json({ data: await rooms.updatePostMatchTicketVisibility(roomId, accountId, input.postMatchTicketVisible) });
     }),
   };
 }
