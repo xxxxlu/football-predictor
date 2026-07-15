@@ -16,6 +16,7 @@
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
     "test": "pnpm build:packages && vitest run",
     "build": "pnpm build:packages && pnpm --filter @football-predictor/worker build && pnpm --filter @football-predictor/web build",
+    "cloudbase:prepare-package": "node scripts/cloudbase-packaging.mjs",
     "verify:workspace": "node --test scripts/workspace-structure.test.mjs",
     "smoke": "node scripts/smoke-test.mjs"
   },
