@@ -4,6 +4,7 @@ import { BalanceSummary } from "@/components/balance-summary";
 import { RoomSwitcher } from "@/components/room-switcher";
 import { StatusMessage } from "@/components/status-message";
 import { MatchList } from "./match-list";
+import { MyPredictions } from "./my-predictions";
 import type { ApiEnvelope, ApiFailure, BalanceView, RoomSummary } from "./types";
 
 export function RoomDashboard({ currentRoomId }: { currentRoomId?: string }) {
@@ -14,5 +15,5 @@ export function RoomDashboard({ currentRoomId }: { currentRoomId?: string }) {
   if (!rooms.length) return <section className="surface p-8 text-center"><h2 className="display text-2xl font-bold">还没有加入房间</h2><p className="mt-2 text-sm text-[var(--muted)]">通过朋友发送的有效邀请链接加入私人房间。</p></section>;
   if (!currentRoomId) return <section className="surface p-6"><RoomSwitcher rooms={rooms}/><p className="mt-5 text-sm text-[var(--muted)]">选择一个房间，查看该房间的独立积分与比赛。</p></section>;
   const room = rooms.find(item => item.id === currentRoomId);
-  return <><div className="surface overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-end"><RoomSwitcher rooms={rooms} currentRoomId={currentRoomId}/><p className="text-xs text-[var(--muted)]">{room?.memberCount === undefined ? "私人房间" : `${room.memberCount} 位成员`}</p></div><BalanceSummary balance={balance}/></div><div className="mt-6"><MatchList roomId={currentRoomId} interactive/></div></>;
+  return <><div className="surface overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-end"><RoomSwitcher rooms={rooms} currentRoomId={currentRoomId}/><p className="text-xs text-[var(--muted)]">{room?.memberCount === undefined ? "私人房间" : `${room.memberCount} 位成员`}</p></div><BalanceSummary balance={balance}/></div><div className="mt-6"><MatchList roomId={currentRoomId} interactive/></div><div className="mt-10"><MyPredictions roomId={currentRoomId}/></div></>;
 }

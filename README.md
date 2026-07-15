@@ -31,6 +31,10 @@ Registered users can create either `PUBLIC` or `PRIVATE` rooms. Active public ro
 
 The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of truth. First-login rotation updates only the database hash, clears `must_change_password`, revokes prior sessions, and issues a new browser session. Local `.env` files are intentionally not rewritten, and a later seed run does not reset an existing administrator password.
 
+## Access control and admin governance
+
+Authorization is enforced on the server (domain services, repositories and SQL) — never by hiding UI. Room detail, members, balances, ledger, leaderboard and predictions require room membership; there is no super-admin bypass of private-room content. Prediction selections stay hidden from other members until kickoff. The two seeded super-admins can list and disable/restore normal users, moderate reported rooms (restrict/close/restore) and read system health, each sensitive write requiring a fresh same-origin re-authentication proof valid for at most five minutes. Super-admins cannot modify points, delete predictions or ledger entries, read passwords/recovery codes/session tokens, view pre-kickoff selections, or disable/replace another super-admin, and the product cannot mint a third. `GET /api/v1/admin/audit` returns a single time-ordered governance trail consolidated from the account, room and operations audit stores, with secret-bearing metadata redacted. See `docs/reviews/2026-07-15-admin-rbac-audit.md` for the full permission matrix and audit.
+
 ## Current real match data
 
 The production match list synchronizes the complete **2026 World Cup** schedule from OpenLigaDB before cache reads (at most once every five minutes per warm server instance). OpenLigaDB needs no API key. Finished, live, and future fixtures remain available in the public match list; users can switch between all, predictable, and finished matches. Current fixtures are shown first, while completed fixtures are ordered newest-first. Competition and World Cup team names are localized to Chinese.

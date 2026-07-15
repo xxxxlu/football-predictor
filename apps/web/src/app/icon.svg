@@ -1,7 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">football · 看球账本</title>
-  <rect width="512" height="512" rx="96" fill="#176B4D"/>
-  <g transform="translate(256 256) scale(6.2) translate(-32 -32)">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="football">
+  <rect width="64" height="64" rx="14" fill="#176B4D"/>
+  <g transform="translate(32 32) scale(0.7) translate(-32 -32)">
     <circle cx="32" cy="32" r="27" fill="#FBFAF6" stroke="#101D33" stroke-width="2.6"/>
     <path d="M32 20.5 43 28.5 38.8 41.5 25.2 41.5 21 28.5Z" fill="#101D33"/>
     <g stroke="#101D33" stroke-width="2.4" stroke-linecap="round">
