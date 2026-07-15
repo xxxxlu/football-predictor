@@ -1,11 +1,21 @@
 export type RoomRole = "member" | "room_owner";
+export type RoomVisibility = "PUBLIC" | "PRIVATE";
 
 export type RoomSummaryRecord = {
   id: string;
   name: string;
   status?: "ACTIVE" | "RESTRICTED" | "CLOSED";
+  visibility: RoomVisibility;
   role: RoomRole;
   memberCount?: number;
+};
+
+export type PublicRoomSummaryRecord = {
+  id: string;
+  name: string;
+  ownerName: string;
+  memberCount: number;
+  joined: boolean;
 };
 
 export type RoomMemberRecord = {
@@ -20,14 +30,26 @@ export type RoomBalanceRecord = {
   correctionDebt?: string;
 };
 
-export function createRoomRequest(name: string) {
+export function createRoomRequest(name: string, visibility: RoomVisibility) {
   return {
     url: "/api/v1/rooms",
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin" as const,
-      body: JSON.stringify({ name: name.trim(), rulesAccepted: true }),
+      body: JSON.stringify({ name: name.trim(), visibility, rulesAccepted: true }),
+    },
+  };
+}
+
+export function publicRoomJoinRequest(roomId: string) {
+  return {
+    url: `/api/v1/rooms/${encodeURIComponent(roomId)}/join`,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin" as const,
+      body: JSON.stringify({ rulesAccepted: true }),
     },
   };
 }
@@ -57,6 +79,7 @@ export function normalizeRoomDetail(input: {
     id: input.room.id,
     name: input.room.name,
     status: input.room.status ?? "ACTIVE",
+    visibility: input.room.visibility,
     memberCount: input.room.memberCount ?? input.members.length,
     isOwner: input.room.role === "room_owner",
     balance: input.balance,
