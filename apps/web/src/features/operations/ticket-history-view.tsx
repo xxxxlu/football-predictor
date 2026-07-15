@@ -44,7 +44,7 @@ export function TicketHistoryView() {
 
   if (loading) return <DataStatePanel state="loading" title="正在加载长期档案" description="正在汇总已结算判断。"/>;
   if (error) return <DataStatePanel state="error" title="长期档案暂不可用" description={error}/>;
-  if (!archive?.records.length) return <DataStatePanel state="empty" title="还没有已结算记录" description="参加任意房间并完成比赛结算后，跨赛事记录会出现在这里。"/>;
+  if (!archive?.records.length) return <DataStatePanel state="empty" title="还没有已结算记录" description="这里只汇总已经结算的判断。刚提交、还没开赛的判断请到对应房间页面的「我的判断记录」查看；比赛结算后会自动出现在这里。"/>;
 
   return <div>
     <section aria-label="长期表现摘要" className="grid grid-cols-2 gap-3 sm:grid-cols-4">

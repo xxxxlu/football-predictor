@@ -1,9 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
-  <title id="title">看球账本</title>
+  <title id="title">football · 看球账本</title>
   <rect width="512" height="512" fill="#176B4D"/>
-  <path d="M128 96h256v320H128z" fill="#17233B"/>
-  <path d="M156 124h200v264H156z" fill="#FFFDF7"/>
-  <path d="M184 182h144M184 230h144M184 278h88M184 326h120" stroke="#CBC4B5" stroke-width="16"/>
-  <circle cx="316" cy="316" r="52" fill="#D85B45"/>
-  <path d="m292 316 16 16 34-38" fill="none" stroke="#fff" stroke-width="14"/>
+  <g transform="translate(256 256) scale(5.4) translate(-32 -32)">
+    <circle cx="32" cy="32" r="27" fill="#FBFAF6" stroke="#101D33" stroke-width="2.6"/>
+    <path d="M32 20.5 43 28.5 38.8 41.5 25.2 41.5 21 28.5Z" fill="#101D33"/>
+    <g stroke="#101D33" stroke-width="2.4" stroke-linecap="round">
+      <path d="M32 20.5V8.6"/>
+      <path d="m43 28.5 10.4-4.2"/>
+      <path d="m38.8 41.5 7.9 10.4"/>
+      <path d="m25.2 41.5-7.9 10.4"/>
+      <path d="M21 28.5 10.6 24.3"/>
+    </g>
+    <g fill="#101D33">
+      <circle cx="32" cy="7.4" r="2.2"/>
+      <circle cx="55.4" cy="23.6" r="2.2"/>
+      <circle cx="47.4" cy="53" r="2.2"/>
+      <circle cx="16.6" cy="53" r="2.2"/>
+      <circle cx="8.6" cy="23.6" r="2.2"/>
+    </g>
+  </g>
 </svg>

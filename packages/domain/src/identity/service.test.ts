@@ -203,6 +203,47 @@ describe("IdentityService super-admin controls", () => {
   });
 });
 
+describe("IdentityService role enforcement", () => {
+  it("denies a normal authenticated user every super-admin capability", async () => {
+    const { service: identity, repository } = service();
+    await identity.register({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    await identity.register({ username: "bob", password: "correct-horse-456", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    const login = await identity.login({ username: "alice", password: "correct-horse-123", sourceKey: "ip:user" });
+    const bobId = repository.accounts.get("bob")!.id;
+
+    await expect(identity.listManageableAccounts(login.sessionToken)).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    await expect(identity.authorizeSuperAdminAction({ sessionToken: login.sessionToken, proofToken: "anything" })).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    await expect(identity.reauthenticate({ sessionToken: login.sessionToken, password: "correct-horse-123" })).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    await expect(identity.setAccountStatus({ actorSessionToken: login.sessionToken, proofToken: "anything", targetUserId: bobId, status: "DISABLED" })).rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    expect(repository.accounts.get("bob")!.status).toBe("ACTIVE");
+  });
+
+  it("rejects anonymous or unknown sessions before any super-admin read", async () => {
+    const { service: identity } = service();
+    await expect(identity.listManageableAccounts("")).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
+    await expect(identity.listManageableAccounts("unknown-token")).rejects.toMatchObject({ code: "UNAUTHENTICATED", status: 401 });
+  });
+
+  it("never provisions a super-admin through public registration", async () => {
+    const { service: identity, repository } = service();
+    await identity.register({ username: "attacker", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    expect(repository.accounts.get("attacker")!.isSuperAdmin).toBe(false);
+    const login = await identity.login({ username: "attacker", password: "correct-horse-123", sourceKey: "ip:user" });
+    expect((await identity.authenticate(login.sessionToken))?.isSuperAdmin).toBe(false);
+  });
+
+  it("lets a ready super-admin read only the normal-account roster", async () => {
+    const { service: identity, repository } = service();
+    await identity.register({ username: "ops_admin", password: "rotated-password-456", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    await identity.register({ username: "alice", password: "correct-horse-123", isAdultConfirmed: true, nonCashRulesVersion: "rules-2026-07" });
+    repository.accounts.get("ops_admin")!.isSuperAdmin = true;
+    const login = await identity.login({ username: "ops_admin", password: "rotated-password-456", sourceKey: "ip:ops" });
+    const roster = await identity.listManageableAccounts(login.sessionToken);
+    expect(roster.users.map((user) => user.username)).toEqual(["alice"]);
+    expect(roster.users.some((user) => user.username === "ops_admin")).toBe(false);
+  });
+});
+
 describe("IdentityService recovery", () => {
   it("rotates the recovery code, changes the password, and revokes every prior session", async () => {
     const { service: identity } = service();

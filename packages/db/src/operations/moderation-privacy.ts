@@ -13,6 +13,40 @@ export function roomTransition(action: RoomModerationAction): ModeratedRoomStatu
 }
 export function anonymousDisplayName(userId: string) { return `已删除用户-${userId.slice(0, 8)}`; }
 
+/**
+ * Defensive secret redaction for governance audit metadata. Even though writers
+ * are expected to persist only non-sensitive fields, this guarantees the admin
+ * audit response never surfaces a token, password, recovery code, invite secret
+ * or proof — satisfying FR54/NFR41 regardless of what a future writer stores.
+ */
+const SENSITIVE_AUDIT_KEY = /(token|password|secret|recovery|invite|proof|hash|credential|otp|apikey|api_key)/i;
+export function redactAuditMetadata(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactAuditMetadata);
+  if (value && typeof value === "object") {
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      output[key] = SENSITIVE_AUDIT_KEY.test(key) ? "[REDACTED]" : redactAuditMetadata(entry);
+    }
+    return output;
+  }
+  return value;
+}
+
+export type GovernanceAuditRow = { id: string; actor: string | null; action: string; target_type: string; target_id: string; result: string; metadata: unknown; occurred_at: DbTimestamp };
+/** Maps a merged audit row (from any of the three audit tables) into the stable API shape with redacted metadata and an ISO timestamp. */
+export function normalizeAuditEvent(row: GovernanceAuditRow) {
+  return {
+    id: row.id,
+    actor: row.actor ?? null,
+    action: row.action,
+    targetType: row.target_type,
+    targetId: row.target_id,
+    result: row.result,
+    metadata: redactAuditMetadata(row.metadata ?? {}),
+    occurredAt: timestampIso(row.occurred_at),
+  };
+}
+
 export class PostgresModerationPrivacyRepository {
   constructor(private readonly sql: postgres.Sql, private readonly clock: { now(): Date } = { now: () => new Date() }) {}
 
@@ -45,11 +79,27 @@ export class PostgresModerationPrivacyRepository {
 
   async listAudit(adminUserId: string) {
     await this.assertSuperAdmin(adminUserId);
-    const rows = await this.sql<Array<{ id: string; actor: string | null; action: string; targetType: string; targetId: string; result: string; metadata: unknown; occurredAt: DbTimestamp }>>`
-      SELECT a.id,COALESCE(u.nickname,u.username_canonical) AS actor,a.action,a.target_type AS "targetType",a.target_id AS "targetId",
-        a.result,a.metadata,a.occurred_at AS "occurredAt" FROM ops.audit_events a
-      LEFT JOIN identity.users u ON u.id=a.actor_user_id ORDER BY a.occurred_at DESC LIMIT 200`;
-    return rows.map((row) => ({ ...row, occurredAt: timestampIso(row.occurredAt) }));
+    // Governance audit lives in three tables: ops.audit_events (reports, room
+    // moderation, account anonymization), identity.admin_account_audit_events
+    // (account disable/restore) and room.audit_events (room create/join/invite
+    // reset). FR60 requires all of these to be reviewable, so merge them into a
+    // single non-repudiable, time-ordered trail before redaction.
+    const rows = await this.sql<GovernanceAuditRow[]>`
+      SELECT merged.id, COALESCE(u.nickname, u.username_canonical) AS actor, merged.action,
+        merged.target_type, merged.target_id, merged.result, merged.metadata, merged.occurred_at
+      FROM (
+        SELECT a.id::text AS id, a.actor_user_id, a.action, a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
+          FROM ops.audit_events a
+        UNION ALL
+        SELECT e.audit_id::text, e.actor_user_id, e.action, 'USER'::text, e.target_user_id::text, e.result, '{}'::jsonb, e.occurred_at
+          FROM identity.admin_account_audit_events e
+        UNION ALL
+        SELECT r.audit_id::text, r.actor_user_id, r.action, 'ROOM'::text, r.room_id::text, r.result, '{}'::jsonb, r.occurred_at
+          FROM room.audit_events r
+      ) merged
+      LEFT JOIN identity.users u ON u.id = merged.actor_user_id
+      ORDER BY merged.occurred_at DESC LIMIT 200`;
+    return rows.map(normalizeAuditEvent);
   }
 
   async moderateRoom(adminUserId: string, roomId: string, action: RoomModerationAction, reason: string) {
