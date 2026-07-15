@@ -1,6 +1,4 @@
 export const MAX_TICKET_STAKE_POINTS = 20_000;
-export const MAX_PREMATCH_ODDS_AGE_MS = 10 * 60_000;
-export const THE_ODDS_API_SUBMISSION_MAX_AGE_MS = 3 * 60 * 60_000;
 
 export type TicketSubmissionErrorCode =
   | "MARKET_CLOSED"
@@ -129,13 +127,9 @@ function assertMarketAvailable(market: MarketForSubmission | null, now: Date): a
   if (!Number.isFinite(kickoffAt)) throw new TicketSubmissionError("DATA_UNAVAILABLE");
   if (now.getTime() >= kickoffAt) throw new TicketSubmissionError("MARKET_CLOSED");
 
-  if (market.snapshot.supplier !== "PLATFORM") {
-    const dataAsOf = new Date(market.snapshot.dataAsOf).getTime();
-    const age = now.getTime() - dataAsOf;
-    const maxAgeMs = market.snapshot.supplier === "THE_ODDS_API" ? THE_ODDS_API_SUBMISSION_MAX_AGE_MS : MAX_PREMATCH_ODDS_AGE_MS;
-    if (!Number.isFinite(age) || age < 0 || age > maxAgeMs) {
-      throw new TicketSubmissionError("DATA_UNAVAILABLE");
-    }
+  const dataAsOf = new Date(market.snapshot.dataAsOf).getTime();
+  if (!Number.isFinite(dataAsOf) || dataAsOf > now.getTime()) {
+    throw new TicketSubmissionError("DATA_UNAVAILABLE");
   }
 }
 
