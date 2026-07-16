@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
-import type { ApiEnvelope, ApiFailure, OddsSelection } from "./types";
+import { formatSelectionLabel } from "./selection-label";
+import type { ApiEnvelope, ApiFailure } from "./types";
 
 type TicketStatus = "FROZEN" | "WON" | "LOST" | "VOID";
 type SettlementOutcome = "WIN" | "LOSS" | "PUSH" | "CANCEL";
@@ -16,7 +17,7 @@ type TicketRecord = {
   submittedAt: string;
   owner: { userId: string; displayName: string; isCurrentUser: boolean };
   visibility: "REVEALED" | "PRIVATE";
-  selection?: OddsSelection;
+  selection?: string;
   stakePoints?: string;
   confirmedOdds?: string;
   status: TicketStatus;
@@ -26,7 +27,6 @@ type TicketRecord = {
   settlementVersion: string | null;
 };
 
-const selectionLabel: Record<OddsSelection, string> = { HOME: "主胜", DRAW: "平局", AWAY: "客胜" };
 const statusLabel: Record<TicketStatus, string> = { FROZEN: "待结算", WON: "命中", LOST: "未命中", VOID: "走盘 / 取消" };
 
 function statusChipClass(status: TicketStatus): string {
@@ -118,7 +118,7 @@ function PredictionRow({ record }: { record: TicketRecord }) {
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${statusChipClass(record.status)}`}>{statusLabel[record.status]}</span>
       </header>
       <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
-        <Fact label="选择" value={record.selection ? selectionLabel[record.selection] : "—"} />
+        <Fact label="选择" value={record.selection ? formatSelectionLabel(record.selection) : "—"} />
         <Fact label="投入" value={record.stakePoints ?? "—"} />
         <Fact label="确认倍率" value={record.confirmedOdds ?? "—"} />
         {record.status === "FROZEN"

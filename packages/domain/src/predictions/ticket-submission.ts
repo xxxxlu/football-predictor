@@ -1,3 +1,6 @@
+import type { RoomTier } from "../rooms/service.js";
+import { marketKindFromSupplierMarketId } from "./markets.js";
+
 export const MAX_TICKET_STAKE_POINTS = 20_000;
 
 export type TicketSubmissionErrorCode =
@@ -5,7 +8,9 @@ export type TicketSubmissionErrorCode =
   | "ODDS_CHANGED"
   | "DATA_UNAVAILABLE"
   | "INSUFFICIENT_POINTS"
-  | "INVALID_STAKE";
+  | "INVALID_STAKE"
+  | "ADVANCED_ROOM_REQUIRED"
+  | "SCORE_TICKET_EXISTS";
 
 export class TicketSubmissionError extends Error {
   constructor(readonly code: TicketSubmissionErrorCode) {
@@ -14,7 +19,10 @@ export class TicketSubmissionError extends Error {
   }
 }
 
-export type PredictionSelection = "HOME" | "DRAW" | "AWAY";
+export type OneXTwoSelection = "HOME" | "DRAW" | "AWAY";
+export type CorrectScoreSelection = `${number}-${number}` | "OTHER";
+/** A 1X2 selection or a correct-score string; validated against the market outcomes at submission. */
+export type PredictionSelection = OneXTwoSelection | CorrectScoreSelection;
 
 export interface MarketForSubmission {
   id: string;
@@ -89,6 +97,10 @@ export interface TicketSubmissionTransaction {
   findByIdempotencyKey(scope: IdempotencyScope): Promise<SubmittedTicket | null>;
   getPointsAccount(userId: string, roomId: string): Promise<PointsAccount>;
   getMarket(marketId: string): Promise<MarketForSubmission | null>;
+  /** Room tier gate for correct-score markets; read under the account row lock. */
+  getRoomTier(roomId: string): Promise<RoomTier>;
+  /** Whether the user already holds an unsettled correct-score ticket on the fixture; read under the account row lock. */
+  hasOpenCorrectScoreTicket(userId: string, roomId: string, fixtureId: string): Promise<boolean>;
   /** Must enforce the idempotency unique key and account row lock itself. */
   persistFreeze(write: AtomicFreezeWrite): Promise<SubmittedTicket>;
 }
@@ -160,6 +172,15 @@ export class TicketSubmissionService {
       const now = this.clock.now();
       const market = await transaction.getMarket(command.marketId);
       assertMarketAvailable(market, now);
+
+      if (marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE") {
+        if ((await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
+          throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");
+        }
+        if (await transaction.hasOpenCorrectScoreTicket(command.userId, command.roomId, market.fixtureId)) {
+          throw new TicketSubmissionError("SCORE_TICKET_EXISTS");
+        }
+      }
 
       const outcome = market.snapshot.outcomes.find((candidate) => candidate.selection === command.selection);
       if (!outcome || !validPositiveDecimal(outcome.decimalOdds)) throw new TicketSubmissionError("DATA_UNAVAILABLE");

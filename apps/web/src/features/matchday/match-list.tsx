@@ -19,7 +19,7 @@ import { normalizeMatch, type ApiEnvelope, type ApiFailure, type MatchView } fro
 
 const MATCH_BATCH_SIZE = 24;
 
-export function MatchList({ roomId, interactive = false }: { roomId?: string; interactive?: boolean }) {
+export function MatchList({ roomId, interactive = false, advanced = false }: { roomId?: string; interactive?: boolean; advanced?: boolean }) {
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -173,7 +173,7 @@ export function MatchList({ roomId, interactive = false }: { roomId?: string; in
                   return <MatchCard
                     key={match.id}
                     match={match}
-                    action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} /> : undefined}
+                    action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} /> : undefined}
                   />;
                 })}
               </div>

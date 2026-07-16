@@ -7,7 +7,7 @@ const bodySchema = z.object({
   matchId: z.string().min(1),
   marketId: z.union([z.string().min(1), z.number().int()]).transform(String),
   marketVersion: z.string().min(1),
-  selection: z.enum(["HOME", "DRAW", "AWAY"]),
+  selection: z.string().regex(/^(?:HOME|DRAW|AWAY|OTHER|\d{1,2}-\d{1,2})$/),
   stakePoints: z.union([z.string().regex(/^\d+$/), z.number().int()]).transform(Number),
   acceptedOdds: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/),
 });
@@ -29,7 +29,7 @@ export function createTicketPost(identity: IdentityLookup, tickets: TicketApplic
         userId: account.id,
         roomId,
         marketId: input.marketId,
-        selection: input.selection,
+        selection: input.selection as PredictionSelection,
         stakePoints: input.stakePoints,
         acceptedOddsVersion: input.marketVersion,
         acceptedDecimalOdds: input.acceptedOdds,
@@ -46,13 +46,17 @@ export function createTicketPost(identity: IdentityLookup, tickets: TicketApplic
 }
 
 function ticketError(error: TicketSubmissionError) {
-  const status = error.code === "DATA_UNAVAILABLE" ? 503 : error.code === "MARKET_CLOSED" || error.code === "ODDS_CHANGED" ? 409 : 422;
+  const status = error.code === "DATA_UNAVAILABLE" ? 503
+    : error.code === "MARKET_CLOSED" || error.code === "ODDS_CHANGED" || error.code === "SCORE_TICKET_EXISTS" ? 409
+    : error.code === "ADVANCED_ROOM_REQUIRED" ? 403 : 422;
   const messages: Record<TicketSubmissionError["code"], string> = {
     MARKET_CLOSED: "This market is closed. No points were frozen.",
     ODDS_CHANGED: "Odds changed. Confirm the latest odds and submit again.",
     DATA_UNAVAILABLE: "Verified fresh market data is unavailable. No points were frozen.",
     INSUFFICIENT_POINTS: "The room account does not have enough available points.",
     INVALID_STAKE: "Use a whole-number stake from 1 to 20,000 points.",
+    ADVANCED_ROOM_REQUIRED: "Correct-score predictions are available in advanced rooms only.",
+    SCORE_TICKET_EXISTS: "You already have an open correct-score prediction on this match.",
   };
   return failure(error.code, messages[error.code], status);
 }

@@ -1,10 +1,12 @@
 import { and, eq, sql } from "drizzle-orm";
 import {
+  CORRECT_SCORE_SUPPLIER_MARKET_ID,
   RoomError,
   TicketSubmissionError,
   type AtomicFreezeWrite,
   type IdempotencyScope,
   type MarketForSubmission,
+  type PredictionSelection,
   type SubmittedTicket,
   type TicketSubmissionTransaction,
   type TicketSubmissionTransactionPort,
@@ -24,7 +26,7 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
 
   async run<T>(scope: IdempotencyScope, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
     return this.db.transaction(async (tx) => {
-      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId, roomStatus: rooms.status }).from(pointAccounts).innerJoin(rooms, eq(rooms.id, pointAccounts.roomId))
+      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId, roomStatus: rooms.status, roomTier: rooms.tier }).from(pointAccounts).innerJoin(rooms, eq(rooms.id, pointAccounts.roomId))
         .where(and(eq(pointAccounts.roomId, scope.roomId), eq(pointAccounts.userId, scope.userId))).for("update").limit(1);
       if (!lockedAccount) throw new RoomError("ROOM_NOT_FOUND", 404);
       if (!roomAllowsPredictions(lockedAccount.roomStatus)) throw new RoomError("ROOM_RESTRICTED", 403, "This room is not accepting predictions.");
@@ -44,6 +46,16 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
           return { userId, roomId, availablePoints: toSafeInteger(account.availablePoints), frozenPoints: toSafeInteger(account.frozenPoints) };
         },
         getMarket: (marketId) => this.snapshots.getMarket(marketId, tx as IdentityDatabase),
+        getRoomTier: async () => lockedAccount.roomTier,
+        hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => {
+          const existing = await tx.select({ id: predictionTickets.id }).from(predictionTickets)
+            .innerJoin(predictionLegs, and(eq(predictionLegs.ticketId, predictionTickets.id), eq(predictionLegs.legNumber, 1)))
+            .where(and(
+              eq(predictionTickets.userId, userId), eq(predictionTickets.roomId, roomId), eq(predictionTickets.fixtureId, fixtureId),
+              eq(predictionTickets.status, "PENDING"), eq(predictionLegs.supplierMarketId, CORRECT_SCORE_SUPPLIER_MARKET_ID),
+            )).limit(1);
+          return existing.length > 0;
+        },
         persistFreeze: async (write) => persistFreeze(tx as IdentityDatabase, write),
       };
       return work(transaction);
@@ -107,7 +119,7 @@ function mapTicket(ticket: typeof predictionTickets.$inferSelect, legs: Array<ty
   return {
     id: ticket.id, userId: ticket.userId, roomId: ticket.roomId, marketId: ticket.marketId, fixtureId: ticket.fixtureId,
     idempotencyKey: ticket.idempotencyKey, stakePoints: toSafeInteger(ticket.stakePoints), status: "PENDING", createdAt: ticket.createdAt.toISOString(),
-    legs: legs.map((leg) => ({ selection: leg.selection as "HOME" | "DRAW" | "AWAY", oddsSnapshot: {
+    legs: legs.map((leg) => ({ selection: leg.selection as PredictionSelection, oddsSnapshot: {
       version: leg.oddsVersion, decimalOdds: leg.decimalOdds, dataAsOf: leg.dataAsOf.toISOString(), supplier: leg.supplier,
       supplierFixtureId: leg.supplierFixtureId, bookmakerId: leg.bookmakerId, marketId: leg.supplierMarketId,
     } })),

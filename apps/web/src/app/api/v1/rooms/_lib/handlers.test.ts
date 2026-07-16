@@ -28,7 +28,7 @@ describe("room HTTP handlers", () => {
     const response = await handlers.create(post("/api/v1/rooms", { name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true }));
     expect(response.status).toBe(201);
     await expect(response.json()).resolves.toMatchObject({ data: { id: "room-1", inviteToken: "invite-token" } });
-    expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
+    expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
   });
 
   it("accepts a same-origin write validated against the browser Host header, not Next's request URL", async () => {
@@ -42,7 +42,7 @@ describe("room HTTP handlers", () => {
     });
     const response = await handlers.create(request);
     expect(response.status).toBe(201);
-    expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", visibility: "PRIVATE", rulesAccepted: true });
+    expect(rooms.create).toHaveBeenCalledWith({ userId: "user-1", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
   });
 
   it("rejects a genuinely cross-origin write with INVALID_ORIGIN", async () => {

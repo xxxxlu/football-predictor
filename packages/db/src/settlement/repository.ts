@@ -19,11 +19,12 @@ export interface SettlementCandidateRecord {
   resultConfirmed: boolean;
   homeScore: number | null;
   awayScore: number | null;
-  selection: "HOME" | "DRAW" | "AWAY";
+  selection: string;
+  supplierMarketId: number;
 }
 
 export function mapSettlementCandidateRow(row: SettlementCandidateRecord): SettlementCandidateRecord {
-  return { ...row };
+  return { ...row, supplierMarketId: Number(row.supplierMarketId) };
 }
 
 type StateRow = {
@@ -142,7 +143,7 @@ export class PostgresSettlementCandidateRepository {
   async scan(limit: number): Promise<SettlementCandidateRecord[]> {
     const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
     const rows = await this.sql<CandidateRow[]>`SELECT t.id AS "ticketId",f.result_version AS "settlementVersion",s.settlement_version AS "activeSettlementVersion",
-      f.status AS "matchStatus",f.result_confirmed AS "resultConfirmed",f.home_score AS "homeScore",f.away_score AS "awayScore",l.selection
+      f.status AS "matchStatus",f.result_confirmed AS "resultConfirmed",f.home_score AS "homeScore",f.away_score AS "awayScore",l.selection,l.supplier_market_id AS "supplierMarketId"
       FROM prediction.tickets t JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
       JOIN supplier.fixtures f ON f.id=t.fixture_id LEFT JOIN prediction.settlements s ON s.id=t.active_settlement_id
       WHERE f.result_confirmed=true AND f.result_version IS NOT NULL AND f.status IN ('FINISHED','CANCELLED')
@@ -153,7 +154,7 @@ export class PostgresSettlementCandidateRepository {
 
   async get(ticketId: string): Promise<SettlementCandidateRecord | null> {
     const [row] = await this.sql<CandidateRow[]>`SELECT t.id AS "ticketId",f.result_version AS "settlementVersion",s.settlement_version AS "activeSettlementVersion",
-      f.status AS "matchStatus",f.result_confirmed AS "resultConfirmed",f.home_score AS "homeScore",f.away_score AS "awayScore",l.selection
+      f.status AS "matchStatus",f.result_confirmed AS "resultConfirmed",f.home_score AS "homeScore",f.away_score AS "awayScore",l.selection,l.supplier_market_id AS "supplierMarketId"
       FROM prediction.tickets t JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
       JOIN supplier.fixtures f ON f.id=t.fixture_id LEFT JOIN prediction.settlements s ON s.id=t.active_settlement_id
       WHERE t.id=${ticketId} LIMIT 1`;

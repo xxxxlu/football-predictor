@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
-import type { ApiEnvelope, ApiFailure, OddsSelection } from "@/features/matchday/types";
+import { formatSelectionLabel } from "../matchday/selection-label";
+import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { competitionFilterOptions, filterHistoryRecords, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
 
 type HistoryArchive = {
@@ -12,7 +13,6 @@ type HistoryArchive = {
   records: CrossCompetitionRecord[];
 };
 
-const selectionLabel: Record<OddsSelection, string> = { HOME: "主胜", DRAW: "平局", AWAY: "客胜" };
 const outcomeLabel: Record<SettlementOutcome, string> = { WIN: "命中", LOSS: "未命中", PUSH: "走盘", CANCEL: "取消退款" };
 
 export function TicketHistoryView() {
@@ -80,7 +80,7 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
       <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
     </header>
     <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
-      <Fact label="选择" value={selectionLabel[record.selection]}/>
+      <Fact label="选择" value={formatSelectionLabel(record.selection)}/>
       <Fact label="投入" value={record.stakePoints}/>
       <Fact label="最终返还" value={record.settlement.grossReturnPoints}/>
       <div className="min-w-0">

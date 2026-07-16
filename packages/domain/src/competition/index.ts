@@ -8,6 +8,8 @@ export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";
 export type DataState = "FRESH" | "SYNCING" | "STALE" | "PAUSED" | "UNAVAILABLE";
 export type MarketStatus = "OPEN" | "DATA_UNAVAILABLE";
 export type Selection = "HOME" | "DRAW" | "AWAY";
+/** 1X2 selection or a correct-score string ("2-1" / "OTHER") carried in a market snapshot outcome. */
+export type MarketOutcomeSelection = string;
 
 export interface FixtureSnapshot {
   id: string;
@@ -38,7 +40,7 @@ export interface OddsSnapshot {
   version: string;
   dataAsOf: string;
   capturedAt: string;
-  outcomes: Array<{ selection: Selection; supplierLabel: string; decimalOdds: string }>;
+  outcomes: Array<{ selection: MarketOutcomeSelection; supplierLabel: string; decimalOdds: string }>;
 }
 
 export interface LiveSnapshot {
@@ -62,21 +64,25 @@ export interface MarketAssessment {
   canSubmit: boolean;
 }
 
+export type MarketView = MarketAssessment & {
+  id: string | null;
+  odds: OddsSnapshot["outcomes"] | null;
+  dataAsOf: string | null;
+  trace: {
+    supplier: FixtureSupplier | MarketSupplier;
+    supplierFixtureId: number;
+    bookmakerId: number | null;
+    marketId: number | null;
+    oddsVersion: string | null;
+  };
+};
+
 export interface MatchView extends Omit<FixtureSnapshot, "version" | "capturedAt"> {
   fixtureVersion: string;
   capabilities: { prematchPrediction: true; livePrediction: false };
-  market: MarketAssessment & {
-    id: string | null;
-    odds: OddsSnapshot["outcomes"] | null;
-    dataAsOf: string | null;
-    trace: {
-      supplier: FixtureSupplier | MarketSupplier;
-      supplierFixtureId: number;
-      bookmakerId: number | null;
-      marketId: number | null;
-      oddsVersion: string | null;
-    };
-  };
+  market: MarketView;
+  /** Platform-fixed correct-score market when offered for this fixture; null when unavailable. */
+  correctScoreMarket: MarketView | null;
   live: LiveSnapshot | null;
 }
 
@@ -154,12 +160,14 @@ export function createMatchView(input: {
   now: Date;
   fixture: FixtureSnapshot;
   odds: OddsSnapshot | null;
+  correctScoreOdds?: OddsSnapshot | null;
   live?: LiveSnapshot | null;
   syncState: SyncState;
   sourceVerified: boolean;
   budgetAvailable: boolean;
 }): MatchView {
   const { fixture, odds } = input;
+  const correctScoreOdds = input.correctScoreOdds ?? null;
   return {
     id: fixture.id,
     supplier: fixture.supplier,
@@ -188,6 +196,21 @@ export function createMatchView(input: {
         oddsVersion: odds?.version ?? null,
       },
     },
+    correctScoreMarket: correctScoreOdds
+      ? {
+          ...assessMarketData({ now: input.now, odds: correctScoreOdds, syncState: "IDLE", sourceVerified: true, budgetAvailable: true }),
+          id: correctScoreOdds.productMarketId,
+          odds: correctScoreOdds.outcomes,
+          dataAsOf: correctScoreOdds.dataAsOf,
+          trace: {
+            supplier: correctScoreOdds.supplier,
+            supplierFixtureId: fixture.supplierFixtureId,
+            bookmakerId: correctScoreOdds.bookmakerId,
+            marketId: correctScoreOdds.marketId,
+            oddsVersion: correctScoreOdds.version,
+          },
+        }
+      : null,
     live: input.live ?? null,
   };
 }
