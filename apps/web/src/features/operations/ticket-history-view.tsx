@@ -83,9 +83,12 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
       <Fact label="选择" value={selectionLabel[record.selection]}/>
       <Fact label="投入" value={record.stakePoints}/>
       <Fact label="最终返还" value={record.settlement.grossReturnPoints}/>
-      <Fact label="结算版本" value={record.settlement.version}/>
+      <div className="min-w-0">
+        <dt className="text-[10px] text-[var(--muted)]">结算版本</dt>
+        <dd className="tabular mt-1 truncate font-bold" title={record.settlement.version}>{record.settlement.version}</dd>
+      </div>
     </dl>
-    <details className="mt-4 text-xs text-[var(--muted)]"><summary className="cursor-pointer font-bold">审计追溯</summary><p className="tabular mt-2 break-all">票号 {record.ticketId}</p><p className="tabular mt-1 break-all">账本 {record.settlement.ledgerId}</p><p className="tabular mt-1 break-all">审计 {record.settlement.auditId}</p></details>
+    <details className="mt-4 text-xs text-[var(--muted)]"><summary className="cursor-pointer font-bold">审计追溯</summary><p className="tabular mt-2 break-all">结算版本 {record.settlement.version}</p><p className="tabular mt-1 break-all">票号 {record.ticketId}</p><p className="tabular mt-1 break-all">账本 {record.settlement.ledgerId}</p><p className="tabular mt-1 break-all">审计 {record.settlement.auditId}</p></details>
   </li>;
 }
 

@@ -128,7 +128,7 @@ function PredictionRow({ record }: { record: TicketRecord }) {
       {record.status !== "FROZEN" && (record.netPoints !== null || record.settlementVersion) && (
         <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
           {record.netPoints !== null && <span>净积分 <strong className="tabular text-[var(--ink)]">{record.netPoints}</strong></span>}
-          {record.settlementVersion && <span className="tabular">结算版本 {record.settlementVersion}</span>}
+          {record.settlementVersion && <span className="tabular min-w-0 max-w-full truncate" title={record.settlementVersion}>结算版本 {record.settlementVersion}</span>}
         </p>
       )}
       <details className="mt-3 text-xs text-[var(--muted)]"><summary className="cursor-pointer font-bold">审计追溯</summary><p className="tabular mt-2 break-all">票号 {record.ticketId}</p></details>

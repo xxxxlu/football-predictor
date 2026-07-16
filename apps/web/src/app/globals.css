@@ -228,7 +228,9 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .btn-solid:hover { transform: translateY(-2px); background: var(--field); }
 .btn-outline { border: 2px solid currentColor; }
 .btn-outline:hover { transform: translateY(-2px); background: currentColor; }
-.btn-outline:hover > * { color: var(--paper); }
+/* Fill is currentColor (white on the dark hero) — recolor only the label to dark so it stays
+   legible. Do NOT set color on the button itself, or `background: currentColor` turns dark too. */
+.btn-outline:hover > * { color: var(--ink); }
 
 /* --- Arrow link (slides on hover) --- */
 .link-arrow { display: inline-flex; align-items: center; gap: .5em; }
