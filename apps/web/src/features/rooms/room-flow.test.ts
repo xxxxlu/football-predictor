@@ -8,16 +8,21 @@ import {
 } from "./room-flow.js";
 
 describe("room frontend flow contracts", () => {
-  it("submits room creation with an explicit current-rules confirmation", () => {
+  it("submits room creation with an explicit current-rules confirmation and default standard tier", () => {
     expect(createRoomRequest("  周末看球局  ", "PUBLIC")).toEqual({
       url: "/api/v1/rooms",
       init: {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "same-origin",
-        body: JSON.stringify({ name: "周末看球局", visibility: "PUBLIC", rulesAccepted: true }),
+        body: JSON.stringify({ name: "周末看球局", visibility: "PUBLIC", tier: "STANDARD", rulesAccepted: true }),
       },
     });
+  });
+
+  it("carries the advanced tier when creating a correct-score room", () => {
+    expect(createRoomRequest("高级局", "PRIVATE", "ADVANCED").init.body)
+      .toBe(JSON.stringify({ name: "高级局", visibility: "PRIVATE", tier: "ADVANCED", rulesAccepted: true }));
   });
 
   it("joins a public room by id without an invitation credential", () => {
@@ -49,6 +54,7 @@ describe("room frontend flow contracts", () => {
       id: "room-1",
       isOwner: true,
       visibility: "PUBLIC",
+      tier: "STANDARD",
       preMatchStakeVisible: false,
       postMatchTicketVisible: true,
       balance: { availablePoints: "10000.00" },

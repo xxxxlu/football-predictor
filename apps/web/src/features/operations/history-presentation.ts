@@ -5,7 +5,7 @@ export type CrossCompetitionRecord = {
   room: { id: string; name: string };
   competition: { id: string; name: string; season: number };
   fixture: { id: string; homeTeam: string; awayTeam: string; kickoffAt: string };
-  selection: "HOME" | "DRAW" | "AWAY";
+  selection: string;
   stakePoints: string;
   settlement: { outcome: SettlementOutcome; grossReturnPoints: string; version: string; settledAt: string; ledgerId: string; auditId: string };
 };

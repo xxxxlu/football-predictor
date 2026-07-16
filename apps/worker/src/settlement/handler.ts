@@ -1,5 +1,6 @@
+import { correctScoreSelectionForResult, marketKindFromSupplierMarketId } from "@football-predictor/domain";
+
 export type CandidateMatchStatus = "FINISHED" | "CANCELLED" | "POSTPONED" | "SUSPENDED" | "SCHEDULED" | "LIVE";
-export type CandidateSelection = "HOME" | "DRAW" | "AWAY";
 
 export interface SettlementCandidate {
   ticketId: string;
@@ -9,7 +10,8 @@ export interface SettlementCandidate {
   resultConfirmed: boolean;
   homeScore: number | null;
   awayScore: number | null;
-  selection: CandidateSelection;
+  selection: string;
+  supplierMarketId: number;
 }
 
 export interface SettlementCandidatePort {
@@ -31,7 +33,9 @@ export interface SettlementApplicationPort {
 export function outcomeForCandidate(candidate: SettlementCandidate): "WIN" | "LOSS" | "CANCEL" {
   if (candidate.matchStatus === "CANCELLED") return "CANCEL";
   if (candidate.matchStatus !== "FINISHED" || candidate.homeScore === null || candidate.awayScore === null) throw new Error("Result is not settleable");
-  const winningSelection: CandidateSelection = candidate.homeScore > candidate.awayScore ? "HOME" : candidate.homeScore < candidate.awayScore ? "AWAY" : "DRAW";
+  const winningSelection = marketKindFromSupplierMarketId(candidate.supplierMarketId) === "CORRECT_SCORE"
+    ? correctScoreSelectionForResult(candidate.homeScore, candidate.awayScore)
+    : candidate.homeScore > candidate.awayScore ? "HOME" : candidate.homeScore < candidate.awayScore ? "AWAY" : "DRAW";
   return candidate.selection === winningSelection ? "WIN" : "LOSS";
 }
 

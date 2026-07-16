@@ -1,21 +1,26 @@
-export type RoomSummary = { id: string; name: string; role: "member" | "room_owner"; memberCount?: number };
+export type RoomTier = "STANDARD" | "ADVANCED";
+export type RoomSummary = { id: string; name: string; role: "member" | "room_owner"; memberCount?: number; tier?: RoomTier };
 export type MatchState = "OPEN" | "PAUSED" | "CLOSED" | "DATA_UNAVAILABLE" | "FINISHED";
 export type OddsSelection = "HOME" | "DRAW" | "AWAY";
+export type CorrectScoreOutcome = { selection: string; decimalOdds: string };
 export type MatchView = {
   id: string; competitionName: string; homeTeam: string; awayTeam: string; kickoffAt: string; state: MatchState;
   dataAsOf?: string; stale?: boolean; supplierStatus?: string;
   market?: { id: string | number; version: string; home: string; draw: string; away: string };
+  correctScore?: { id: string | number; version: string; outcomes: CorrectScoreOutcome[] };
   result?: { homeScore: number; awayScore: number };
 };
 export type BalanceView = { availablePoints: string; frozenPoints: string; correctionDebt?: string };
 export type ApiEnvelope<T> = { data: T; meta?: Record<string, unknown> };
 export type ApiFailure = { error?: { code?: string; message?: string; correlationId?: string } };
 
+type ProductMarket = { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: unknown; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
 type ProductMatch = {
   id?: string; competitionName?: string; kickoffAt?: string; status?: string; dataAsOf?: string;
   homeTeam?: string | { name?: string }; awayTeam?: string | { name?: string };
   result?: { confirmed?: boolean; homeScore?: number | null; awayScore?: number | null; version?: string | null };
-  market?: { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: unknown; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
+  market?: ProductMarket;
+  correctScoreMarket?: ProductMarket | null;
 };
 
 function normalizedOdds(value: unknown): Array<{ selection?: string; decimalOdds?: string }> {
@@ -40,5 +45,12 @@ export function normalizeMatch(value: ProductMatch): MatchView | null {
   const result = status === "FINISHED" && value.result?.confirmed && validScore(value.result.homeScore) && validScore(value.result.awayScore)
     ? { homeScore: value.result.homeScore, awayScore: value.result.awayScore }
     : undefined;
-  return { id: value.id, competitionName: value.competitionName?.trim() || "未标注联赛", kickoffAt: value.kickoffAt, homeTeam: team(value.homeTeam), awayTeam: team(value.awayTeam), state, dataAsOf: value.market?.dataAsOf || value.dataAsOf, stale: dataState === "STALE", supplierStatus: dataState, market: home && draw && away && value.market?.id && value.market.trace?.oddsVersion ? { id: value.market.id, version: value.market.trace.oddsVersion, home, draw, away } : undefined, result };
+  const cs = value.correctScoreMarket;
+  const csOutcomes = normalizedOdds(cs?.odds)
+    .filter((item): item is { selection: string; decimalOdds: string } => typeof item.selection === "string" && typeof item.decimalOdds === "string")
+    .map((item) => ({ selection: item.selection, decimalOdds: item.decimalOdds }));
+  const correctScore = cs && cs.marketStatus === "OPEN" && cs.id && cs.trace?.oddsVersion && csOutcomes.length
+    ? { id: cs.id, version: cs.trace.oddsVersion, outcomes: csOutcomes }
+    : undefined;
+  return { id: value.id, competitionName: value.competitionName?.trim() || "未标注联赛", kickoffAt: value.kickoffAt, homeTeam: team(value.homeTeam), awayTeam: team(value.awayTeam), state, dataAsOf: value.market?.dataAsOf || value.dataAsOf, stale: dataState === "STALE", supplierStatus: dataState, market: home && draw && away && value.market?.id && value.market.trace?.oddsVersion ? { id: value.market.id, version: value.market.trace.oddsVersion, home, draw, away } : undefined, correctScore, result };
 }

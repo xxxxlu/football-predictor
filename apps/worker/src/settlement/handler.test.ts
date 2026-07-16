@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID } from "@football-predictor/domain";
 import { createSettlementJobHandler, createSettlementRetryService, outcomeForCandidate, type SettlementCandidate } from "./handler.js";
 
 const candidate = (overrides: Partial<SettlementCandidate> = {}): SettlementCandidate => ({
   ticketId: "ticket-1", settlementVersion: "result-v1", activeSettlementVersion: null,
-  matchStatus: "FINISHED", resultConfirmed: true, homeScore: 2, awayScore: 1, selection: "HOME", ...overrides,
+  matchStatus: "FINISHED", resultConfirmed: true, homeScore: 2, awayScore: 1, selection: "HOME", supplierMarketId: ONE_X_TWO_SUPPLIER_MARKET_ID, ...overrides,
 });
 
 describe("settlement worker", () => {
@@ -12,6 +13,16 @@ describe("settlement worker", () => {
     expect(outcomeForCandidate(candidate({ selection: "DRAW" }))).toBe("LOSS");
     expect(outcomeForCandidate(candidate({ homeScore: 1, awayScore: 1, selection: "DRAW" }))).toBe("WIN");
     expect(outcomeForCandidate(candidate({ matchStatus: "CANCELLED", homeScore: null, awayScore: null }))).toBe("CANCEL");
+  });
+
+  it("derives correct-score WIN/LOSS with the OTHER catch-all by exact score", () => {
+    const cs = (overrides: Partial<SettlementCandidate> = {}) => candidate({ supplierMarketId: CORRECT_SCORE_SUPPLIER_MARKET_ID, ...overrides });
+    expect(outcomeForCandidate(cs({ selection: "2-1", homeScore: 2, awayScore: 1 }))).toBe("WIN");
+    expect(outcomeForCandidate(cs({ selection: "2-1", homeScore: 1, awayScore: 1 }))).toBe("LOSS");
+    expect(outcomeForCandidate(cs({ selection: "1-1", homeScore: 1, awayScore: 1 }))).toBe("WIN");
+    expect(outcomeForCandidate(cs({ selection: "OTHER", homeScore: 4, awayScore: 3 }))).toBe("WIN");
+    expect(outcomeForCandidate(cs({ selection: "OTHER", homeScore: 2, awayScore: 1 }))).toBe("LOSS");
+    expect(outcomeForCandidate(cs({ matchStatus: "CANCELLED", homeScore: null, awayScore: null, selection: "2-1" }))).toBe("CANCEL");
   });
 
   it("scans and settles new confirmed tickets", async () => {

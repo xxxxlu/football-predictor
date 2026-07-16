@@ -7,12 +7,14 @@ export const ledgerSchema = pgSchema("ledger");
 export const roomStatus = pgEnum("room_status", ["ACTIVE", "RESTRICTED", "CLOSED"]);
 export const roomRole = pgEnum("room_role", ["OWNER", "MEMBER"]);
 export const roomVisibility = pgEnum("room_visibility", ["PUBLIC", "PRIVATE"]);
+export const roomTier = pgEnum("room_tier", ["STANDARD", "ADVANCED"]);
 
 export const rooms = roomSchema.table("rooms", {
   id: uuid("id").primaryKey(),
   name: text("name").notNull(),
   status: roomStatus("status").notNull().default("ACTIVE"),
   visibility: roomVisibility("visibility").notNull().default("PRIVATE"),
+  tier: roomTier("tier").notNull().default("STANDARD"),
   preMatchStakeVisible: boolean("pre_match_stake_visible").notNull().default(false),
   postMatchTicketVisible: boolean("post_match_ticket_visible").notNull().default(true),
   inviteTokenHash: text("invite_token_hash"),

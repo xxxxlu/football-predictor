@@ -29,6 +29,10 @@ Required runtime keys are validated by `@football-predictor/config`. Missing or 
 
 Registered users can create either `PUBLIC` or `PRIVATE` rooms. Active public rooms appear in the authenticated lobby and can be joined directly after rules confirmation; private rooms remain invitation-only. Every room keeps its own one-time 10,000-point initial account, and repeat joins never issue another grant.
 
+### Advanced rooms and correct-score predictions
+
+Rooms are created at one of two tiers — `STANDARD` (1X2 only) or `ADVANCED` — chosen at creation, immutable afterwards, with existing rooms defaulting to `STANDARD`. Advanced rooms additionally offer a platform-virtual **correct-score** market (`supplier = PLATFORM`, `supplier_market_id = 2`) that coexists with the 1X2 market (`supplier_market_id = 1`) on the same fixture. Players pick one score from a 17-way candidate set — the 16 listed scorelines plus an `OTHER` catch-all for any scoreline outside that set — at fixed virtual-points multipliers clearly labeled as a platform rule, not real bookmaker odds. The advanced-only gate, the 20,000-point stake ceiling, at most one unsettled correct-score ticket per fixture per player, atomic freeze, versioned-odds re-confirmation (`ODDS_CHANGED`) and settlement (an exact score match wins; `OTHER` wins only when the final score falls outside the listed set) are all enforced on the server — hiding the entry in standard rooms is never the authorization boundary. Refunds, idempotency, ledger append and result-correction reversal follow the same 1X2 rules (correct-score has no push). Run `pnpm db:migrate` to apply migration `0015` (adds the room tier) before using advanced rooms.
+
 The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of truth. First-login rotation updates only the database hash, clears `must_change_password`, revokes prior sessions, and issues a new browser session. Local `.env` files are intentionally not rewritten, and a later seed run does not reset an existing administrator password.
 
 ## Access control and admin governance

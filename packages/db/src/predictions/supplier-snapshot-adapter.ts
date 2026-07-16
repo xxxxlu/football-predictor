@@ -1,4 +1,5 @@
 import { sql } from "drizzle-orm";
+import { isCorrectScoreSelection } from "@football-predictor/domain";
 import type { MarketForSubmission, PredictionSelection } from "@football-predictor/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import type { MarketSnapshotPort } from "./repository.js";
@@ -75,7 +76,9 @@ function parseJsonValue(value: unknown): unknown {
   catch { return value; }
 }
 
-function isSelection(value: unknown): value is PredictionSelection { return value === "HOME" || value === "DRAW" || value === "AWAY"; }
+function isSelection(value: unknown): value is PredictionSelection {
+  return typeof value === "string" && (value === "HOME" || value === "DRAW" || value === "AWAY" || isCorrectScoreSelection(value));
+}
 function toSafeInteger(value: string | number) { const parsed = Number(value); if (!Number.isSafeInteger(parsed)) throw new Error("Invalid supplier identifier"); return parsed; }
 function asIsoString(value: Date | string) {
   const date = value instanceof Date ? value : new Date(value);

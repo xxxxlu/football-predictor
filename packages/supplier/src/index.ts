@@ -1,5 +1,9 @@
 import { createHash } from "node:crypto";
 import {
+  CORRECT_SCORE_OTHER,
+  CORRECT_SCORE_SELECTIONS,
+  CORRECT_SCORE_SUPPLIER_MARKET_ID,
+  ONE_X_TWO_SUPPLIER_MARKET_ID,
   createMatchView,
   localizeCompetitionName,
   localizeTeamName,
@@ -20,6 +24,7 @@ export interface MatchSnapshotRepository {
   getFixture(matchId: string): Promise<FixtureSnapshot | null>;
   listFixtures(): Promise<FixtureSnapshot[]>;
   getOdds(matchId: string): Promise<OddsSnapshot | null>;
+  getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null>;
   getLive(matchId: string): Promise<LiveSnapshot | null>;
   setSyncState(matchId: string, state: SyncState): Promise<void>;
   getSyncState(matchId: string): Promise<SyncState>;
@@ -223,13 +228,36 @@ function platformPredictionMarket(fixture: FixtureSnapshot, now: Date): OddsSnap
   };
 }
 
+/** Platform-fixed virtual correct-score odds. Not real bookmaker prices; see PRD Correct Score contract. */
+const CORRECT_SCORE_ODDS: Readonly<Record<string, string>> = {
+  "0-0": "8.00", "1-0": "7.00", "0-1": "7.00", "1-1": "6.00",
+  "2-0": "9.00", "0-2": "9.00", "2-1": "8.00", "1-2": "8.00",
+  "2-2": "12.00", "3-0": "15.00", "0-3": "15.00", "3-1": "15.00",
+  "1-3": "15.00", "3-2": "20.00", "2-3": "20.00", "3-3": "28.00",
+  [CORRECT_SCORE_OTHER]: "5.00",
+};
+
+function correctScoreMarket(fixture: FixtureSnapshot, now: Date): OddsSnapshot {
+  const outcomes = [...CORRECT_SCORE_SELECTIONS, CORRECT_SCORE_OTHER].map((selection) => ({
+    selection,
+    supplierLabel: selection === CORRECT_SCORE_OTHER ? "其他比分" : selection,
+    decimalOdds: CORRECT_SCORE_ODDS[selection] ?? "5.00",
+  }));
+  return {
+    productMarketId: `${fixture.id}:bookmaker:0:market:${CORRECT_SCORE_SUPPLIER_MARKET_ID}`, fixtureId: fixture.id, supplier: "PLATFORM",
+    supplierFixtureId: fixture.supplierFixtureId, bookmakerId: 0, bookmakerName: "平台固定虚拟积分", marketId: CORRECT_SCORE_SUPPLIER_MARKET_ID,
+    marketName: "正确比分固定积分倍率", version: etagOf({ fixtureId: fixture.id, marketId: CORRECT_SCORE_SUPPLIER_MARKET_ID, outcomes }).slice(1, -1),
+    dataAsOf: now.toISOString(), capturedAt: now.toISOString(), outcomes,
+  };
+}
+
 export class OpenLigaDbWorldCupSync {
-  private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "claimExternalSync">;
+  private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">;
   private readonly client: OpenLigaDbClient;
   private readonly oddsClient: RealOddsClient | undefined;
   private readonly now: () => Date;
 
-  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; now?: () => Date }) {
+  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; now?: () => Date }) {
     this.repository = input.repository;
     this.client = input.client ?? new OpenLigaDbClient();
     this.oddsClient = input.oddsClient;
@@ -242,11 +270,15 @@ export class OpenLigaDbWorldCupSync {
     await this.repository.saveFixtures(fixtures);
     const upcoming = fixtures.filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now);
     if (!this.oddsClient) {
-      for (const fixture of upcoming) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+      for (const fixture of upcoming) {
+        await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+        if (!(await this.repository.getCorrectScoreOdds(fixture.id))) await this.repository.saveOdds(correctScoreMarket(fixture, now));
+      }
       return { fixturesSynced: fixtures.length, marketsSynced: upcoming.length, oddsRequestMade: false };
     }
     for (const fixture of upcoming) {
       if (!(await this.repository.getOdds(fixture.id))) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
+      if (!(await this.repository.getCorrectScoreOdds(fixture.id))) await this.repository.saveOdds(correctScoreMarket(fixture, now));
     }
     if (upcoming.length === 0 || !(await this.repository.claimExternalSync("the-odds-api:world-cup:h2h:eu", now, REAL_ODDS_SYNC_INTERVAL_MS))) {
       return { fixturesSynced: fixtures.length, marketsSynced: 0, oddsRequestMade: false };
@@ -284,11 +316,12 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   private externalSyncs = new Map<string, number>();
 
   async saveFixtures(fixtures: FixtureSnapshot[]): Promise<void> { for (const fixture of fixtures) this.fixtures.set(fixture.id, structuredClone(fixture)); }
-  async saveOdds(odds: OddsSnapshot): Promise<void> { this.odds.set(odds.fixtureId, structuredClone(odds)); }
+  async saveOdds(odds: OddsSnapshot): Promise<void> { this.odds.set(`${odds.fixtureId}:${odds.marketId}`, structuredClone(odds)); }
   async saveLive(live: LiveSnapshot): Promise<void> { this.live.set(live.fixtureId, structuredClone(live)); }
   async getFixture(matchId: string): Promise<FixtureSnapshot | null> { return structuredClone(this.fixtures.get(matchId) ?? null); }
   async listFixtures(): Promise<FixtureSnapshot[]> { return [...this.fixtures.values()].sort((a, b) => a.kickoffAt.localeCompare(b.kickoffAt)).map((fixture) => structuredClone(fixture)); }
-  async getOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(matchId) ?? null); }
+  async getOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${ONE_X_TWO_SUPPLIER_MARKET_ID}`) ?? null); }
+  async getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${CORRECT_SCORE_SUPPLIER_MARKET_ID}`) ?? null); }
   async getLive(matchId: string): Promise<LiveSnapshot | null> { return structuredClone(this.live.get(matchId) ?? null); }
   async setSyncState(matchId: string, state: SyncState): Promise<void> { this.syncStates.set(matchId, state); }
   async getSyncState(matchId: string): Promise<SyncState> { return this.syncStates.get(matchId) ?? "IDLE"; }
@@ -384,8 +417,8 @@ export class MatchCacheReader {
   constructor(input: { repository: MatchSnapshotRepository; now?: () => Date }) { this.repository = input.repository; this.now = input.now ?? (() => new Date()); }
 
   private async viewFor(fixture: FixtureSnapshot): Promise<MatchView> {
-    const [odds, live, syncState] = await Promise.all([this.repository.getOdds(fixture.id), this.repository.getLive(fixture.id), this.repository.getSyncState(fixture.id)]);
-    return createMatchView({ now: this.now(), fixture, odds, live, syncState, sourceVerified: syncState !== "FAILED", budgetAvailable: syncState !== "PAUSED" });
+    const [odds, correctScoreOdds, live, syncState] = await Promise.all([this.repository.getOdds(fixture.id), this.repository.getCorrectScoreOdds(fixture.id), this.repository.getLive(fixture.id), this.repository.getSyncState(fixture.id)]);
+    return createMatchView({ now: this.now(), fixture, odds, correctScoreOdds, live, syncState, sourceVerified: syncState !== "FAILED", budgetAvailable: syncState !== "PAUSED" });
   }
 
   async get(matchId: string): Promise<{ view: MatchView; etag: string }> {

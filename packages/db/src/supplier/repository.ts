@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID } from "@football-predictor/domain";
 import type postgres from "postgres";
 
 export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";
@@ -34,7 +35,7 @@ export interface OddsSnapshotRecord {
   version: string;
   dataAsOf: string;
   capturedAt: string;
-  outcomes: Array<{ selection: Selection; supplierLabel: string; decimalOdds: string }>;
+  outcomes: Array<{ selection: string; supplierLabel: string; decimalOdds: string }>;
 }
 
 export interface LiveSnapshotRecord {
@@ -137,8 +138,8 @@ function parseOutcomes(value: unknown): OddsSnapshotRecord["outcomes"] {
   return candidate.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const outcome = item as { selection?: unknown; supplierLabel?: unknown; decimalOdds?: unknown };
-    if (!["HOME", "DRAW", "AWAY"].includes(String(outcome.selection)) || typeof outcome.decimalOdds !== "string") return [];
-    return [{ selection: outcome.selection as Selection, supplierLabel: typeof outcome.supplierLabel === "string" ? outcome.supplierLabel : String(outcome.selection), decimalOdds: outcome.decimalOdds }];
+    if (typeof outcome.selection !== "string" || outcome.selection.length === 0 || typeof outcome.decimalOdds !== "string") return [];
+    return [{ selection: outcome.selection, supplierLabel: typeof outcome.supplierLabel === "string" ? outcome.supplierLabel : outcome.selection, decimalOdds: outcome.decimalOdds }];
   });
 }
 
@@ -218,10 +219,18 @@ export class PostgresMatchSnapshotRepository {
   }
 
   async getOdds(matchId: string): Promise<(OddsSnapshotRecord & { productMarketId: string }) | null> {
+    return this.getMarketOdds(matchId, ONE_X_TWO_SUPPLIER_MARKET_ID);
+  }
+
+  async getCorrectScoreOdds(matchId: string): Promise<(OddsSnapshotRecord & { productMarketId: string }) | null> {
+    return this.getMarketOdds(matchId, CORRECT_SCORE_SUPPLIER_MARKET_ID);
+  }
+
+  private async getMarketOdds(matchId: string, supplierMarketId: number): Promise<(OddsSnapshotRecord & { productMarketId: string }) | null> {
     const [row] = await this.sql<OddsRow[]>`SELECT id AS "productMarketId",fixture_id AS "fixtureId",supplier,supplier_fixture_id AS "supplierFixtureId",
       bookmaker_id AS "bookmakerId",bookmaker_name AS "bookmakerName",supplier_market_id AS "supplierMarketId",market_name AS "marketName",
       current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",outcomes
-      FROM supplier.markets WHERE fixture_id=${matchId} ORDER BY captured_at DESC LIMIT 1`;
+      FROM supplier.markets WHERE fixture_id=${matchId} AND supplier_market_id=${supplierMarketId} ORDER BY captured_at DESC LIMIT 1`;
     return row ? mapOdds(row) : null;
   }
 

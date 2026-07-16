@@ -1,12 +1,14 @@
 export type RoomStatus = "ACTIVE" | "RESTRICTED" | "CLOSED";
 export type RoomRole = "OWNER" | "MEMBER";
 export type RoomVisibility = "PUBLIC" | "PRIVATE";
+export type RoomTier = "STANDARD" | "ADVANCED";
 
 export interface RoomSummaryRecord {
   id: string;
   name: string;
   status: RoomStatus;
   visibility: RoomVisibility;
+  tier: RoomTier;
   preMatchStakeVisible: boolean;
   postMatchTicketVisible: boolean;
   role: RoomRole;
@@ -22,7 +24,7 @@ export interface PublicRoomSummaryRecord {
 }
 
 export interface RoomRepository {
-  createRoom(input: { id: string; name: string; ownerId: string; visibility: RoomVisibility; rulesVersion: string; inviteTokenHash: string | null; initialPoints: string; now: Date; auditId: string }): Promise<void>;
+  createRoom(input: { id: string; name: string; ownerId: string; visibility: RoomVisibility; tier: RoomTier; rulesVersion: string; inviteTokenHash: string | null; initialPoints: string; now: Date; auditId: string }): Promise<void>;
   rotateInvite(input: { roomId: string; ownerId: string; inviteTokenHash: string; now: Date; auditId: string }): Promise<boolean>;
   previewInvite(inviteTokenHash: string): Promise<{ id: string; name: string; status: RoomStatus } | null>;
   joinByInvite(input: { inviteTokenHash: string; userId: string; rulesVersion: string; initialPoints: string; now: Date; auditId: string }): Promise<{ roomId: string; joined: boolean } | null>;
@@ -56,7 +58,7 @@ export class RoomService {
     private readonly options: { rulesVersion: string; initialPoints: string },
   ) {}
 
-  async create(input: { userId: string; name: string; visibility: RoomVisibility; rulesAccepted: boolean }) {
+  async create(input: { userId: string; name: string; visibility: RoomVisibility; tier: RoomTier; rulesAccepted: boolean }) {
     this.assertRules(input.rulesAccepted);
     const name = normalizeRoomName(input.name);
     const id = this.tokens.id();
@@ -67,6 +69,7 @@ export class RoomService {
       name,
       ownerId: input.userId,
       visibility: input.visibility,
+      tier: input.tier,
       rulesVersion: this.options.rulesVersion,
       inviteTokenHash: inviteToken ? this.tokens.hash(inviteToken) : null,
       initialPoints: this.options.initialPoints,
@@ -74,7 +77,7 @@ export class RoomService {
       auditId,
     });
     return {
-      id, name, visibility: input.visibility, role: "room_owner" as const, memberCount: 1, auditId,
+      id, name, visibility: input.visibility, tier: input.tier, role: "room_owner" as const, memberCount: 1, auditId,
       ...(inviteToken ? { inviteToken } : {}),
     };
   }
@@ -165,5 +168,5 @@ function normalizeRoomName(value: string) {
 }
 
 function toView(room: RoomSummaryRecord) {
-  return { id: room.id, name: room.name, status: room.status, visibility: room.visibility, preMatchStakeVisible: room.preMatchStakeVisible, postMatchTicketVisible: room.postMatchTicketVisible, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
+  return { id: room.id, name: room.name, status: room.status, visibility: room.visibility, tier: room.tier, preMatchStakeVisible: room.preMatchStakeVisible, postMatchTicketVisible: room.postMatchTicketVisible, memberCount: room.memberCount, role: room.role === "OWNER" ? "room_owner" as const : "member" as const };
 }
