@@ -27,6 +27,6 @@ export function createOperationsHandlers(identity: Identity, operations: Operati
     adminStatus: read((id) => operations.adminStatus(id)),
   };
 }
-async function execute(operation: () => Promise<Response>) { try { return await operation(); } catch (error) { if (error instanceof AuthError || error instanceof OperationError) return failure(error.code, error.status); if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422); return failure("INTERNAL_ERROR", 500); } }
+async function execute(operation: () => Promise<Response>) { try { return await operation(); } catch (error) { if (error instanceof AuthError || error instanceof OperationError) return failure(error.code, error.status); if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422); console.error("[operations] unexpected failure", error); return failure("INTERNAL_ERROR", 500); } }
 function json(body: unknown) { return Response.json(body, { headers: { "cache-control": "no-store" } }); }
 function failure(code: string, status: number) { const message = code === "FORBIDDEN" ? "You do not have permission for this operation." : code === "ROOM_NOT_FOUND" ? "The requested room was not found." : code === "UNAUTHENTICATED" ? "Log in to continue." : code === "INVALID_REQUEST" ? "Check the submitted fields and try again." : "The request could not be completed."; return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } }); }
