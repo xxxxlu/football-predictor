@@ -230,6 +230,8 @@ PULSE 赛事脉搏
 
 ### 5.1 推荐方案 A：PULSE SLASH
 
+> **2026-07-17 拍板：方案 A / A1 基准型已选定为主 Logo 方向**（A3 红底碳黑 P 为其 PWA 图标变体，A2 鬃毛切线留档不用）。结构草案已在 `/design-system` 样板页落地，待精修图稿。
+
 主图形由三个部分构成：
 
 1. 向前倾斜的字母 `P`；
@@ -883,6 +885,11 @@ type Sport = "FOOTBALL" | "BASKETBALL" | "FORMULA_1";
 - 自有生成的非品牌赛车和场景图。
 
 不能直接抓取 Lando Norris、Ferrari、F1 或 NBA 官网图片作为生产素材。
+
+**素材落地（2026-07-17）**：
+
+- **赛道轮廓已解决**：采用 [bacinger/f1-circuits](https://github.com/bacinger/f1-circuits)（MIT License）的 GeoJSON 数据，自行投影渲染为抽象 SVG 轮廓线，非 F1 官方图形资产。Silverstone / Spa 已进原型（`apps/web/src/app/design-system/circuits.ts`），Phase 5 按 2026 赛历补齐其余分站。
+- **车手/赛车照片待落地**：合法来源为 Wikimedia Commons 的 CC BY / CC BY-SA 照片（需页面署名）；当前开发机网络到 wikimedia 阻断，落地方式与登记规范见 `apps/web/src/app/design-system/CREDITS.md`。v1 兜底方案：车队色条 + 车号 + 三字码，不用人像。
 
 ---
 
