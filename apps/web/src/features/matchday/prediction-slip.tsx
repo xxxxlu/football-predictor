@@ -3,6 +3,7 @@ import { FormEvent, useMemo, useState } from "react";
 import { OddsButton } from "@/components/odds-button";
 import { StatusMessage } from "@/components/status-message";
 import { scoreChipLabel } from "./selection-label";
+import { matchViewFromDetailPayload } from "./types";
 import type { ApiFailure, MatchView, OddsSelection } from "./types";
 
 const ticketErrors: Record<string, string> = {
@@ -18,8 +19,12 @@ const ticketErrors: Record<string, string> = {
 type MarketKind = "1X2" | "CS";
 
 export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: { roomId: string; match: MatchView; advanced?: boolean; onAccepted?: () => void }) {
-  const oneXTwo = match.market;
-  const correctScore = advanced ? match.correctScore : undefined;
+  // match 是父组件的静态 prop；遇到 ODDS_CHANGED 时用重拉的最新赔率覆盖它，
+  // 否则再次提交仍带旧版本号，会永远撞 ODDS_CHANGED。
+  const [freshMatch, setFreshMatch] = useState<MatchView>();
+  const current = freshMatch ?? match;
+  const oneXTwo = current.market;
+  const correctScore = advanced ? current.correctScore : undefined;
   const canBuyScore = Boolean(correctScore);
 
   const [market, setMarket] = useState<MarketKind>("1X2");
@@ -48,7 +53,20 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
     return active?.decimalOdds && Number.isFinite(amount * value) ? (amount * value).toFixed(2) : "—";
   }, [stake, active]);
 
-  const unavailable = match.state !== "OPEN" || !active?.id;
+  const unavailable = current.state !== "OPEN" || !active?.id;
+
+  async function refreshOdds() {
+    try {
+      const response = await fetch(`/api/v1/matches/${encodeURIComponent(match.id)}`, { credentials: "same-origin", cache: "no-store" });
+      const view = response.ok ? matchViewFromDetailPayload(await response.json().catch(() => null)) : null;
+      if (view) {
+        setFreshMatch(view);
+        setError("积分倍率已经变化，已为你更新为最新倍率，请确认后再次提交。");
+        return;
+      }
+    } catch { /* 拉取失败时退回手动提示 */ }
+    setError(ticketErrors.ODDS_CHANGED);
+  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -62,7 +80,11 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
         body: JSON.stringify({ matchId: match.id, marketId: active.id, marketVersion: active.version, selection: active.selection, stakePoints: stake, acceptedOdds: active.decimalOdds }),
       });
       const result = await response.json().catch(() => ({})) as ApiFailure & { data?: { ticketId?: string } };
-      if (!response.ok) { const code = result.error?.code || "UNKNOWN"; setError(ticketErrors[code] || result.error?.message || "提交失败，本次积分未发生变化。"); return; }
+      if (!response.ok) {
+        const code = result.error?.code || "UNKNOWN";
+        if (code === "ODDS_CHANGED") { await refreshOdds(); return; }
+        setError(ticketErrors[code] || result.error?.message || "提交失败，本次积分未发生变化。"); return;
+      }
       setReceipt(result.data?.ticketId || "已记录");
       onAccepted?.();
     } catch { setError("网络连接失败。系统不会离线排队，本次积分未发生变化。"); }

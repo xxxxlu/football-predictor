@@ -32,6 +32,14 @@ function normalizedOdds(value: unknown): Array<{ selection?: string; decimalOdds
   return Array.isArray(candidate) ? candidate.filter((item): item is { selection?: string; decimalOdds?: string } => Boolean(item) && typeof item === "object") : [];
 }
 
+// GET /api/v1/matches/[matchId] 的响应体 → MatchView；载荷缺失或无法归一化时返回 null。
+export function matchViewFromDetailPayload(payload: unknown): MatchView | null {
+  if (!payload || typeof payload !== "object") return null;
+  const data = (payload as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  return normalizeMatch(data as ProductMatch);
+}
+
 export function normalizeMatch(value: ProductMatch): MatchView | null {
   if (!value.id || !value.kickoffAt) return null;
   const team = (input: ProductMatch["homeTeam"]) => typeof input === "string" ? input : input?.name || "待定";

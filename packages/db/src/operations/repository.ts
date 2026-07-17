@@ -139,7 +139,7 @@ export class PostgresOperationsRepository {
   }
 
   async updateNickname(userId: string, nickname: string) {
-    const [row] = await this.sql<Array<{ id: string }>>`UPDATE identity.users SET nickname=${nickname},updated_at=${this.clock.now()} WHERE id=${userId} AND status='ACTIVE' RETURNING id`;
+    const [row] = await this.sql<Array<{ id: string }>>`UPDATE identity.users SET nickname=${nickname},updated_at=${this.clock.now().toISOString()} WHERE id=${userId} AND status='ACTIVE' RETURNING id`;
     if (!row) throw new OperationError("UNAUTHENTICATED", 401);
     return this.getProfile(userId);
   }
@@ -232,11 +232,14 @@ export class PostgresOperationsRepository {
   async adminStatus(userId: string) {
     const [admin] = await this.sql<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
     if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
-    const now = this.clock.now(); const date = now.toISOString().slice(0, 10);
+    const now = this.clock.now(); const nowIso = now.toISOString(); const date = nowIso.slice(0, 10);
+    // postgres.js 参数必须传 ISO 字符串而非 Date 实例：Next.js 运行时对全局 Date 做了插桩，
+    // postgres.js 的 instanceof Date 类型推断失效，Date 参数会抛 ERR_INVALID_ARG_TYPE。
+    const staleBefore = new Date(now.getTime() - 600000).toISOString();
     const [budget] = await this.sql<Array<{ generalUsed: number; settlementUsed: number }>>`SELECT (static_used+prematch_odds_used+live_used)::int AS "generalUsed",settlement_used::int AS "settlementUsed" FROM supplier.request_budgets WHERE billing_day=${date}::date`;
-    const [cache] = await this.sql<Array<{ freshMatches: number; staleMatches: number; unavailableMatches: number; oldestDataAsOf: DbTimestamp | null }>>`SELECT COUNT(*) FILTER (WHERE status='OPEN' AND data_as_of>=${new Date(now.getTime()-600000)})::int AS "freshMatches",COUNT(*) FILTER (WHERE status='OPEN' AND data_as_of<${new Date(now.getTime()-600000)})::int AS "staleMatches",COUNT(*) FILTER (WHERE status='DATA_UNAVAILABLE')::int AS "unavailableMatches",MIN(data_as_of) AS "oldestDataAsOf" FROM supplier.markets`;
+    const [cache] = await this.sql<Array<{ freshMatches: number; staleMatches: number; unavailableMatches: number; oldestDataAsOf: DbTimestamp | null }>>`SELECT COUNT(*) FILTER (WHERE status='OPEN' AND data_as_of>=${staleBefore}::timestamptz)::int AS "freshMatches",COUNT(*) FILTER (WHERE status='OPEN' AND data_as_of<${staleBefore}::timestamptz)::int AS "staleMatches",COUNT(*) FILTER (WHERE status='DATA_UNAVAILABLE')::int AS "unavailableMatches",MIN(data_as_of) AS "oldestDataAsOf" FROM supplier.markets`;
     const [settlement] = await this.sql<Array<{ pending: number }>>`SELECT COUNT(*) FILTER (WHERE status='PENDING')::int AS pending FROM prediction.tickets`;
-    const [jobs] = await this.sql<Array<{ queued: number; running: number; failed: number; maxLagSeconds: number }>>`SELECT COUNT(*) FILTER (WHERE status='QUEUED')::int AS queued,COUNT(*) FILTER (WHERE status='RUNNING')::int AS running,COUNT(*) FILTER (WHERE status='FAILED')::int AS failed,COALESCE(MAX(EXTRACT(EPOCH FROM (${now}::timestamptz-available_at))) FILTER (WHERE status='QUEUED'),0)::int AS "maxLagSeconds" FROM ops.jobs`;
+    const [jobs] = await this.sql<Array<{ queued: number; running: number; failed: number; maxLagSeconds: number }>>`SELECT COUNT(*) FILTER (WHERE status='QUEUED')::int AS queued,COUNT(*) FILTER (WHERE status='RUNNING')::int AS running,COUNT(*) FILTER (WHERE status='FAILED')::int AS failed,COALESCE(MAX(EXTRACT(EPOCH FROM (${nowIso}::timestamptz-available_at))) FILTER (WHERE status='QUEUED'),0)::int AS "maxLagSeconds" FROM ops.jobs`;
     const overall = (jobs?.failed ?? 0) > 0 ? "CRITICAL" : (settlement?.pending ?? 0) > 0 || (cache?.staleMatches ?? 0) > 0 ? "DEGRADED" : "HEALTHY";
     return { generatedAt: now.toISOString(), overall, supplierBudget: { utcDate: date, limit: 95, generalUsed: budget?.generalUsed ?? 0, settlementUsed: budget?.settlementUsed ?? 0, settlementReserved: 10 }, cache: { freshMatches: cache?.freshMatches ?? 0, staleMatches: cache?.staleMatches ?? 0, unavailableMatches: cache?.unavailableMatches ?? 0, oldestDataAsOf: cache?.oldestDataAsOf ? timestampIso(cache.oldestDataAsOf) : null }, settlement: { pending: settlement?.pending ?? 0, failed: 0, oldestPendingAt: null, lastSuccessAt: null }, jobs: { queued: jobs?.queued ?? 0, running: jobs?.running ?? 0, failed: jobs?.failed ?? 0, maxLagSeconds: jobs?.maxLagSeconds ?? 0 } };
   }

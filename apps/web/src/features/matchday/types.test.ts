@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeMatch } from "./types.js";
+import { matchViewFromDetailPayload, normalizeMatch } from "./types.js";
 
 describe("normalizeMatch", () => {
   it("accepts JSON-encoded odds from a database driver without crashing the match list", () => {
@@ -95,5 +95,30 @@ describe("normalizeMatch", () => {
     expect(normalizeMatch({ ...base, result: { confirmed: false, homeScore: 2, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
     expect(normalizeMatch({ ...base, result: { confirmed: true, homeScore: -1, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
     expect(normalizeMatch({ ...base, result: { confirmed: true, homeScore: 1.5, awayScore: 1 } } as unknown as Parameters<typeof normalizeMatch>[0])?.result).toBeUndefined();
+  });
+});
+
+describe("matchViewFromDetailPayload", () => {
+  const detail = {
+    data: {
+      id: "openligadb:85182", competitionName: "世界杯", kickoffAt: "2026-07-18T21:00:00.000Z", status: "SCHEDULED",
+      homeTeam: { name: "法国" }, awayTeam: { name: "英格兰" },
+      market: { id: "openligadb:85182:bookmaker:0:market:1", marketStatus: "OPEN", dataState: "FRESH", odds: [
+        { selection: "HOME", decimalOdds: "2.05" }, { selection: "DRAW", decimalOdds: "3.30" }, { selection: "AWAY", decimalOdds: "3.55" },
+      ], trace: { marketId: 1, oddsVersion: "odds-v2" } },
+    },
+  };
+
+  it("turns the single-match endpoint envelope into a fresh MatchView for the slip", () => {
+    const view = matchViewFromDetailPayload(detail);
+    expect(view?.market).toEqual({ id: "openligadb:85182:bookmaker:0:market:1", version: "odds-v2", home: "2.05", draw: "3.30", away: "3.55" });
+    expect(view?.state).toBe("OPEN");
+  });
+
+  it("returns null for missing, non-object or empty payloads instead of throwing", () => {
+    expect(matchViewFromDetailPayload(null)).toBeNull();
+    expect(matchViewFromDetailPayload("oops")).toBeNull();
+    expect(matchViewFromDetailPayload({})).toBeNull();
+    expect(matchViewFromDetailPayload({ data: { id: "x" } })).toBeNull();
   });
 });
