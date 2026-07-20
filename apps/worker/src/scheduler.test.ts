@@ -48,7 +48,7 @@ describe("worker scheduler", () => {
       write: (entry) => logs.push(entry),
     });
     await scheduler.start();
-    expect(jobs).toEqual(["STATUS_CALIBRATE", "FIXTURES", "PREMATCH_ODDS"]);
+    expect(jobs).toEqual(["STATUS_CALIBRATE", "FIXTURES", "PREMATCH_ODDS", "LINEUPS"]);
     expect(logs).toEqual(expect.arrayContaining([expect.objectContaining({ event: "worker.job.completed", jobType: "FIXTURES" })]));
     await scheduler.stop();
   });
@@ -224,5 +224,55 @@ describe("worker scheduler", () => {
     release();
     await starting; await stopping;
     expect(order).toEqual(["supplier.close", "settlement.close"]);
+  });
+
+  it("enqueues lineup jobs for scheduled and live fixtures in kickoff order, skipping finished and cancelled", async () => {
+    const lineupCalls: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => { if (job.type === "LINEUPS") lineupCalls.push(job.payload.matchId); return { outcome: "SUCCESS", synced: 0 }; },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [
+        { id: "finished", supplierFixtureId: 1, kickoffAt: "2026-07-13T08:00:00Z", status: "FINISHED" },
+        { id: "live", supplierFixtureId: 2, kickoffAt: "2026-07-13T09:30:00Z", status: "LIVE" },
+        { id: "soon", supplierFixtureId: 3, kickoffAt: "2026-07-13T11:00:00Z", status: "SCHEDULED" },
+        { id: "later", supplierFixtureId: 4, kickoffAt: "2026-07-14T18:00:00Z", status: "SCHEDULED" },
+        { id: "cancelled", supplierFixtureId: 5, kickoffAt: "2026-07-13T12:00:00Z", status: "CANCELLED" },
+      ] },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(lineupCalls).toEqual(["live", "soon", "later"]);
+    await scheduler.stop();
+  });
+
+  it("stops the lineup batch when the shared supplier budget is exhausted", async () => {
+    const lineupCalls: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => {
+          if (job.type === "LINEUPS") { lineupCalls.push(job.payload.matchId); return { outcome: "DEFERRED", reason: "BUDGET_EXHAUSTED", retryAt: "2026-07-14T00:00:00.000Z" }; }
+          return { outcome: "SUCCESS", synced: 0 };
+        },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [
+        { id: "a", supplierFixtureId: 1, kickoffAt: "2026-07-13T11:00:00Z", status: "SCHEDULED" },
+        { id: "b", supplierFixtureId: 2, kickoffAt: "2026-07-13T12:00:00Z", status: "SCHEDULED" },
+      ] },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(lineupCalls).toEqual(["a"]);
+    await scheduler.stop();
   });
 });
