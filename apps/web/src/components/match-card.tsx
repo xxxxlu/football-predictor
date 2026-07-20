@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { MatchView } from "../features/matchday/types";
 import { matchAvailability } from "../features/matchday/match-filters";
 import { StatusBanner } from "./status-banner";
@@ -71,6 +72,9 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
         {match.stale && match.market && <div className="mt-4"><StatusBanner kind="stale" timestamp={match.dataAsOf} /></div>}
         {!match.stale && match.state === "CLOSED" && <div className="mt-4"><StatusBanner kind="closed" /></div>}
         {(!match.market || !match.stale) && ["PAUSED", "DATA_UNAVAILABLE"].includes(match.state) && <div className="mt-4"><StatusBanner kind="unavailable" /></div>}
+        <Link href={`/matches/${encodeURIComponent(match.id)}`} className="mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-[var(--field)] hover:underline" aria-label={`查看 ${match.homeTeam} 对 ${match.awayTeam} 的阵容与详情`}>
+          <SoccerBall className="size-3.5" />查看阵容与详情
+        </Link>
         {action && (
           <details className="mt-5 border-t rule pt-4">
             <summary className="flex cursor-pointer items-center gap-2 font-bold text-[var(--field)]">

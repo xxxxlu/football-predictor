@@ -269,3 +269,120 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
     radial-gradient(60% 40% at 80% 10%, rgb(214 248 74 / 8%), transparent 60%),
     radial-gradient(50% 50% at 10% 90%, rgb(23 107 77 / 14%), transparent 60%);
 }
+
+/* ============================================================
+   Lineup map — two half-pitches (away on top, home at the bottom)
+   built on .pitch-panel. Pure CSS; no motion of its own, so the
+   global prefers-reduced-motion reset already covers it.
+   ============================================================ */
+.lineup-pitch {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  min-height: 32rem;
+  padding: clamp(1rem, 3vw, 2rem) clamp(.75rem, 2vw, 1.5rem);
+  overflow: hidden;
+}
+.lineup-pitch-empty { min-height: 18rem; }
+
+.lineup-half {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-evenly;
+  gap: .5rem;
+}
+/* Home defends the bottom edge: reverse so its GK sits at the base and the attack pushes to the halfway line. */
+.lineup-half-home { flex-direction: column-reverse; }
+
+.lineup-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 4.25rem;
+  padding-left: 2.4rem;
+}
+.lineup-row-label {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 2.1rem;
+  transform: translateY(-50%);
+  text-align: center;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: rgb(255 255 255 / 55%);
+}
+/* Equal 1fr columns (one per player) always sum to the row width, so a line of 1–5 players
+   can never wrap or overflow the pitch, however narrow the screen. */
+.lineup-row-players {
+  flex: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  align-items: start;
+  justify-items: center;
+  gap: .35rem;
+}
+.lineup-marker {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .3rem;
+  width: 100%;
+  min-width: 0;
+  max-width: 4.5rem;
+}
+.lineup-disc {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* Capped at its column width so the disc can never overflow and push its neighbours. */
+  width: min(2.5rem, 100%);
+  aspect-ratio: 1;
+  border-radius: var(--ball-radius);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 2px rgb(255 255 255 / 70%), 0 3px 8px rgb(0 0 0 / 35%);
+}
+.lineup-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.lineup-number {
+  z-index: 1;
+  font-weight: 800;
+  font-size: .9rem;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  text-shadow: 0 1px 2px rgb(0 0 0 / 55%);
+}
+/* With a photo, the number shrinks to a corner chip so the face stays visible. */
+.lineup-disc[data-photo="true"] .lineup-number {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 2;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 3px;
+  display: grid;
+  place-items: center;
+  font-size: .6rem;
+  border-radius: var(--ball-radius);
+  background: rgb(0 0 0 / 78%);
+  box-shadow: 0 0 0 1.5px rgb(255 255 255 / 70%);
+}
+.lineup-name {
+  max-width: 100%;
+  font-size: .7rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  color: #fff;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 65%);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+.lineup-halfway { display: grid; place-items: center; padding: .1rem 0; }
+.lineup-half-empty { margin: auto; color: rgb(255 255 255 / 70%); font-size: .8rem; }
