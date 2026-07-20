@@ -47,6 +47,75 @@ describe("supplier cache persistence helpers", () => {
     });
   });
 
+  it("maps a stored lineup snapshot back to the domain shape", async () => {
+    const sql = (async () => [{
+      fixtureId: "openligadb:7001", supplierFixtureId: "7001", status: "CONFIRMED",
+      dataAsOf: "2026-07-19T18:30:00.000Z", capturedAt: "2026-07-19T18:30:01.000Z",
+      home: JSON.stringify({ teamId: 10, name: "英格兰", logoUrl: null, primaryColor: null, formation: "4-3-3", coach: null, players: [] }),
+      away: { teamId: 20, name: "阿根廷", logoUrl: null, primaryColor: null, formation: null, coach: null, players: [] },
+    }]) as unknown as import("postgres").Sql;
+
+    await expect(new PostgresMatchSnapshotRepository(sql).getLineup("openligadb:7001")).resolves.toMatchObject({
+      fixtureId: "openligadb:7001",
+      supplierFixtureId: 7001,
+      status: "CONFIRMED",
+      dataAsOf: "2026-07-19T18:30:00.000Z",
+      capturedAt: "2026-07-19T18:30:01.000Z",
+      home: { teamId: 10, name: "英格兰", formation: "4-3-3" },
+      away: { teamId: 20, name: "阿根廷" },
+    });
+  });
+
+  it("returns null instead of a partially corrupt lineup row", async () => {
+    const sql = (async () => [{
+      fixtureId: "openligadb:7001", supplierFixtureId: "7001", status: "CONFIRMED",
+      dataAsOf: "2026-07-19T18:30:00.000Z", capturedAt: "2026-07-19T18:30:01.000Z",
+      home: "not-json",
+      away: { teamId: 20, name: "阿根廷", logoUrl: null, primaryColor: null, formation: null, coach: null, players: [] },
+    }]) as unknown as import("postgres").Sql;
+
+    await expect(new PostgresMatchSnapshotRepository(sql).getLineup("openligadb:7001")).resolves.toBeNull();
+  });
+
+  it("returns null when a lineup row is valid JSON but a player record is corrupt", async () => {
+    const sql = (async () => [{
+      fixtureId: "openligadb:7001", supplierFixtureId: "7001", status: "CONFIRMED",
+      dataAsOf: "2026-07-19T18:30:00.000Z", capturedAt: "2026-07-19T18:30:01.000Z",
+      home: JSON.stringify({
+        teamId: 10, name: "英格兰", logoUrl: null, primaryColor: null, formation: "4-3-3", coach: null,
+        players: [{ id: 1001, name: "英格兰一号", number: 1, position: "GOALIE", positionRaw: null, grid: null, photoUrl: null, starter: "yes", status: "STARTING" }],
+      }),
+      away: { teamId: 20, name: "阿根廷", logoUrl: null, primaryColor: null, formation: null, coach: null, players: [] },
+    }]) as unknown as import("postgres").Sql;
+
+    await expect(new PostgresMatchSnapshotRepository(sql).getLineup("openligadb:7001")).resolves.toBeNull();
+  });
+
+  it("guards lineup upserts so a stale capture cannot overwrite newer data", async () => {
+    const statements: string[] = [];
+    const values: unknown[][] = [];
+    const sql = ((strings: TemplateStringsArray, ...params: unknown[]) => {
+      statements.push(strings.join("$"));
+      values.push(params);
+      return Promise.resolve([]);
+    }) as unknown as import("postgres").Sql;
+    const clock = { now: () => new Date("2026-07-19T18:31:00.000Z") };
+
+    await new PostgresMatchSnapshotRepository(sql, clock).saveLineup({
+      fixtureId: "openligadb:7001", supplierFixtureId: 7001, status: "CONFIRMED",
+      dataAsOf: "2026-07-19T18:30:00.000Z", capturedAt: "2026-07-19T18:30:01.000Z",
+      home: { teamId: 10, name: "英格兰", logoUrl: null, primaryColor: null, formation: "4-3-3", coach: null, players: [] },
+      away: { teamId: 20, name: "阿根廷", logoUrl: null, primaryColor: null, formation: null, coach: null, players: [] },
+    });
+
+    expect(statements[0]).toContain("INSERT INTO supplier.lineup_snapshots");
+    expect(statements[0]).toContain("ON CONFLICT (fixture_id) DO UPDATE");
+    expect(statements[0]).toContain("WHERE EXCLUDED.captured_at >= supplier.lineup_snapshots.captured_at");
+    // 时间戳一律以 ISO 字符串进 postgres.js，避免 drizzle 改写 serializer 后裸 Date 崩溃
+    expect(values[0]).toContain("2026-07-19T18:31:00.000Z");
+    expect(values[0]?.every((param) => !(param instanceof Date))).toBe(true);
+  });
+
   it("builds a stable market identity from supplier trace fields", () => {
     expect(marketCacheId("api-football:101", 8, 1)).toBe("api-football:101:bookmaker:8:market:1");
   });
