@@ -6,6 +6,9 @@ describe("production security headers", () => {
     const headers = Object.fromEntries(securityHeaders(true).map(({ key, value }) => [key, value]));
     expect(headers["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
     expect(headers["Content-Security-Policy"]).not.toContain("'unsafe-eval'");
+    // Player photos / team logos load from the supplier CDN; nothing else may be framed or connected off-origin.
+    expect(headers["Content-Security-Policy"]).toContain("img-src 'self' data: blob: https://media.api-sports.io");
+    expect(headers["Content-Security-Policy"]).toContain("default-src 'self'");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
     expect(headers["Permissions-Policy"]).toContain("payment=()");
     expect(headers["Strict-Transport-Security"]).toContain("max-age=31536000");
