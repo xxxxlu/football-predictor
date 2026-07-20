@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { ApiFootballClient } from "./index.js";
 
 describe("API-FOOTBALL adapter", () => {
+  it("maps fixture lineups, grid positions, team colors and player photos", async () => {
+    let requestedUrl = "";
+    const client = new ApiFootballClient({ apiKey: "secret", now: () => new Date("2026-07-13T10:00:00Z"), fetcher: async (input) => {
+      requestedUrl = String(input);
+      return Response.json({ errors: [], response: [
+        { team: { id: 10, name: "Home", logo: "https://media.api-sports.io/football/teams/10.png", colors: { player: { primary: "ff0000" } } }, formation: "4-3-3", coach: { name: "Coach A" }, startXI: [{ player: { id: 1, name: "Keeper", number: 1, pos: "G", grid: "1:1", photo: "https://media.api-sports.io/football/players/1.png" } }], substitutes: [{ player: { id: 2, name: "Bench", number: 12, pos: "D" } }] },
+        { team: { id: 20, name: "Away" }, formation: "3-4-2-1", startXI: [{ player: { id: 3, name: "Forward", number: 9, pos: "F", grid: "1:1" } }], substitutes: [] },
+      ] });
+    } });
+    const result = await client.fetchLineups({ fixtureId: 101 });
+    expect(requestedUrl).toBe("https://v3.football.api-sports.io/fixtures/lineups?fixture=101");
+    expect(result.data).toMatchObject({ status: "CONFIRMED", home: { formation: "4-3-3", primaryColor: "#ff0000" }, away: { formation: "3-4-2-1" } });
+    expect(result.data?.home.players[0]).toMatchObject({ position: "GK", starter: true, grid: "1:1", photoUrl: "https://media.api-sports.io/football/players/1.png" });
+    expect(result.data?.home.players[1]).toMatchObject({ position: "DEF", status: "BENCH" });
+  });
   it("maps fixture snapshots and reports quota response headers", async () => {
     const requests: Request[] = [];
     const fetcher: typeof fetch = async (input, init) => {
