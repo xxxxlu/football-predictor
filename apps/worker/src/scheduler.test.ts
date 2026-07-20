@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { LineupSnapshot } from "@football-predictor/domain";
 import { createWorkerScheduler, type SchedulerTimerPort } from "./scheduler.js";
+import { createSupplierWorkerComposition } from "./supplier/composition.js";
 
 class FakeTimers implements SchedulerTimerPort {
   readonly callbacks: Array<() => void> = [];
@@ -274,5 +276,69 @@ describe("worker scheduler", () => {
     await scheduler.start();
     expect(lineupCalls).toEqual(["a"]);
     await scheduler.stop();
+  });
+
+  it("does not re-fetch a distant fixture's lineup when the scheduler runs twice across a restart", async () => {
+    const claimStore = new Map<string, number>();
+    let lineupFetches = 0;
+    const now = new Date("2026-07-13T10:00:00Z");
+    const distantFixture = { id: "api-football:501", supplierFixtureId: 501, kickoffAt: "2026-07-16T12:00:00Z", status: "SCHEDULED" as const, oddsDataAsOf: "2026-07-13T09:59:00Z" };
+    const lineup: LineupSnapshot = {
+      fixtureId: "api-football:501", supplierFixtureId: 501, status: "CONFIRMED",
+      dataAsOf: "2026-07-13T09:45:00Z", capturedAt: "2026-07-13T09:45:00Z",
+      home: { teamId: 1, name: "主队", logoUrl: null, primaryColor: null, formation: "4-3-3", coach: null, players: [] },
+      away: { teamId: 2, name: "客队", logoUrl: null, primaryColor: null, formation: "4-4-2", coach: null, players: [] },
+    };
+    // A fresh composition each run models a worker restart: in-memory state resets, but the durable
+    // external_sync_claims store (claimStore) survives, so the second boot must not re-hit the supplier.
+    const runScheduler = async () => {
+      const composition = createSupplierWorkerComposition({
+        clock: { now: () => now },
+        client: {
+          fetchFixtures: async () => ({ data: [], quota: {} }),
+          fetchPrematchOdds: async () => ({ data: null, quota: {} }),
+          fetchLive: async () => ({ data: null, quota: {} }),
+          fetchLineups: async () => { lineupFetches += 1; return { data: lineup, quota: {} }; },
+          fetchStatus: async () => ({ supplierCurrent: 0, supplierLimit: 100 }),
+        },
+        persistence: {
+          budget: {
+            consume: async () => ({ allowed: true, snapshot: { remaining: 90, protectedRemaining: 10, usedByCategory: { LIVE: 0 } } }),
+            reconcile: async () => ({ remaining: 90, protectedRemaining: 10, usedByCategory: { LIVE: 0 } }),
+          },
+          repository: {
+            saveFixtures: async () => undefined,
+            saveOdds: async () => undefined,
+            saveLive: async () => undefined,
+            setSyncState: async () => undefined,
+            getFixture: async () => ({ id: "api-football:501", supplierFixtureId: 501, status: "SCHEDULED", kickoffAt: "2026-07-16T12:00:00Z" }),
+            getLineup: async () => null,
+            saveLineup: async () => undefined,
+            claimExternalSync: async (key, at, minimumIntervalMs) => {
+              const previous = claimStore.get(key);
+              if (previous !== undefined && at.getTime() - previous < minimumIntervalMs) return false;
+              claimStore.set(key, at.getTime());
+              return true;
+            },
+          },
+          close: async () => undefined,
+        },
+      });
+      const scheduler = createWorkerScheduler({
+        config: schedulerConfig(),
+        clock: { now: () => now }, timers: new FakeTimers(),
+        supplier: composition,
+        settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+        fixtures: { listFixtures: async () => [distantFixture] },
+        write: () => undefined,
+      });
+      await scheduler.start();
+      await scheduler.stop();
+    };
+
+    await runScheduler();
+    expect(lineupFetches).toBe(1);
+    await runScheduler();
+    expect(lineupFetches).toBe(1);
   });
 });
