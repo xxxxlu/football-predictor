@@ -17,6 +17,8 @@ import {
   type SyncState,
 } from "@football-predictor/domain";
 
+export * from "./lineups.js";
+
 export interface MatchSnapshotRepository {
   saveFixtures(fixtures: FixtureSnapshot[]): Promise<void>;
   saveOdds(odds: OddsSnapshot): Promise<void>;
@@ -26,6 +28,8 @@ export interface MatchSnapshotRepository {
   getOdds(matchId: string): Promise<OddsSnapshot | null>;
   getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null>;
   getLive(matchId: string): Promise<LiveSnapshot | null>;
+  getLineup?(matchId: string): Promise<import("@football-predictor/domain").LineupSnapshot | null>;
+  saveLineup?(snapshot: import("@football-predictor/domain").LineupSnapshot): Promise<void>;
   setSyncState(matchId: string, state: SyncState): Promise<void>;
   getSyncState(matchId: string): Promise<SyncState>;
   claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
@@ -312,6 +316,7 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   private fixtures = new Map<string, FixtureSnapshot>();
   private odds = new Map<string, OddsSnapshot>();
   private live = new Map<string, LiveSnapshot>();
+  private lineups = new Map<string, import("@football-predictor/domain").LineupSnapshot>();
   private syncStates = new Map<string, SyncState>();
   private externalSyncs = new Map<string, number>();
 
@@ -323,6 +328,8 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   async getOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${ONE_X_TWO_SUPPLIER_MARKET_ID}`) ?? null); }
   async getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${CORRECT_SCORE_SUPPLIER_MARKET_ID}`) ?? null); }
   async getLive(matchId: string): Promise<LiveSnapshot | null> { return structuredClone(this.live.get(matchId) ?? null); }
+  async saveLineup(snapshot: import("@football-predictor/domain").LineupSnapshot): Promise<void> { this.lineups.set(snapshot.fixtureId, structuredClone(snapshot)); }
+  async getLineup(matchId: string): Promise<import("@football-predictor/domain").LineupSnapshot | null> { return structuredClone(this.lineups.get(matchId) ?? null); }
   async setSyncState(matchId: string, state: SyncState): Promise<void> { this.syncStates.set(matchId, state); }
   async getSyncState(matchId: string): Promise<SyncState> { return this.syncStates.get(matchId) ?? "IDLE"; }
   async claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean> {
@@ -417,8 +424,8 @@ export class MatchCacheReader {
   constructor(input: { repository: MatchSnapshotRepository; now?: () => Date }) { this.repository = input.repository; this.now = input.now ?? (() => new Date()); }
 
   private async viewFor(fixture: FixtureSnapshot): Promise<MatchView> {
-    const [odds, correctScoreOdds, live, syncState] = await Promise.all([this.repository.getOdds(fixture.id), this.repository.getCorrectScoreOdds(fixture.id), this.repository.getLive(fixture.id), this.repository.getSyncState(fixture.id)]);
-    return createMatchView({ now: this.now(), fixture, odds, correctScoreOdds, live, syncState, sourceVerified: syncState !== "FAILED", budgetAvailable: syncState !== "PAUSED" });
+    const [odds, correctScoreOdds, live, lineup, syncState] = await Promise.all([this.repository.getOdds(fixture.id), this.repository.getCorrectScoreOdds(fixture.id), this.repository.getLive(fixture.id), this.repository.getLineup?.(fixture.id) ?? Promise.resolve(null), this.repository.getSyncState(fixture.id)]);
+    return createMatchView({ now: this.now(), fixture, odds, correctScoreOdds, live, lineup, syncState, sourceVerified: syncState !== "FAILED", budgetAvailable: syncState !== "PAUSED" });
   }
 
   async get(matchId: string): Promise<{ view: MatchView; etag: string }> {
