@@ -25,10 +25,13 @@ function setup(overrides: {
   client?: Partial<SupplierClientPort>;
   fixtureRecord?: Pick<FixtureSnapshot, "id" | "supplierFixtureId" | "status" | "kickoffAt"> | null;
   lineupData?: LineupSnapshot | null;
+  claimStore?: Map<string, number>;
 } = {}) {
   const events: string[] = [];
   const states: string[] = [];
   const saved = { fixtures: [] as unknown[], odds: [] as unknown[], live: [] as unknown[], lineups: [] as unknown[] };
+  // Mirrors the durable external_sync_claims semantics; shared across setups to model a worker restart.
+  const claims = overrides.claimStore ?? new Map<string, number>();
   const budget: SupplierBudgetPort = {
     consume: async () => {
       events.push("budget.consume");
@@ -46,6 +49,13 @@ function setup(overrides: {
     getFixture: async () => { events.push("repository.getFixture"); return overrides.fixtureRecord === undefined ? lineupFixture : overrides.fixtureRecord; },
     getLineup: async () => { events.push("repository.getLineup"); return null; },
     saveLineup: async (value) => { events.push("repository.lineup"); saved.lineups.push(value); },
+    claimExternalSync: async (key, at, minimumIntervalMs) => {
+      events.push("repository.claim");
+      const previous = claims.get(key);
+      if (previous !== undefined && at.getTime() - previous < minimumIntervalMs) return false;
+      claims.set(key, at.getTime());
+      return true;
+    },
     setSyncState: async (_matchId, state) => { states.push(state); },
   };
   const defaults: SupplierClientPort = {
@@ -140,7 +150,7 @@ describe("supplier worker job handler", () => {
     const result = await handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
 
     expect(result).toEqual({ outcome: "SUCCESS", synced: 1, nextRunAt: "2026-07-14T00:05:00.000Z" });
-    expect(events).toEqual(["repository.getFixture", "budget.consume", "repository.getLineup", "client.lineups", "repository.lineup", "budget.reconcile:92"]);
+    expect(events).toEqual(["repository.getFixture", "repository.claim", "budget.consume", "repository.getLineup", "client.lineups", "repository.lineup", "budget.reconcile:92"]);
     expect(saved.lineups).toEqual([lineupSnapshot]);
   });
 
@@ -150,7 +160,7 @@ describe("supplier worker job handler", () => {
     const result = await handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
 
     expect(result).toEqual({ outcome: "PENDING", reason: "LINEUP_PENDING", nextRunAt: "2026-07-14T00:05:00.000Z" });
-    expect(events).toEqual(["repository.getFixture", "budget.consume", "repository.getLineup", "client.lineups", "budget.reconcile:92"]);
+    expect(events).toEqual(["repository.getFixture", "repository.claim", "budget.consume", "repository.getLineup", "client.lineups", "budget.reconcile:92"]);
     expect(saved.lineups).toEqual([]);
   });
 
@@ -169,7 +179,7 @@ describe("supplier worker job handler", () => {
     const result = await handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
 
     expect(result).toEqual({ outcome: "DEFERRED", reason: "BUDGET_EXHAUSTED", retryAt: "2026-07-14T00:00:00.000Z" });
-    expect(events).toEqual(["repository.getFixture", "budget.consume"]);
+    expect(events).toEqual(["repository.getFixture", "repository.claim", "budget.consume"]);
     expect(saved.lineups).toEqual([]);
   });
 
@@ -180,5 +190,27 @@ describe("supplier worker job handler", () => {
 
     expect(result).toEqual({ outcome: "RETRY", reason: "SUPPLIER_FAILURE", retryAt: "2026-07-13T23:52:00.000Z", nextAttempt: 3 });
     expect(saved.lineups).toEqual([]);
+  });
+
+  it("does not re-fetch a distant fixture within its interval, even after a restart clears in-memory state", async () => {
+    const farFixture: Pick<FixtureSnapshot, "id" | "supplierFixtureId" | "status" | "kickoffAt"> = {
+      id: "api-football:101", supplierFixtureId: 101, status: "SCHEDULED", kickoffAt: "2026-07-20T00:00:00.000Z",
+    };
+    const claimStore = new Map<string, number>();
+    let fetchCount = 0;
+    const countingClient: Partial<SupplierClientPort> = {
+      fetchLineups: async () => { fetchCount += 1; return { data: lineupSnapshot, quota: {} }; },
+    };
+
+    const first = setup({ client: countingClient, claimStore, fixtureRecord: farFixture });
+    const firstResult = await first.handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
+    expect(firstResult).toMatchObject({ outcome: "SUCCESS", synced: 1 });
+    expect(fetchCount).toBe(1);
+
+    // A fresh handler (worker restart) shares only the durable claim store — the far fixture is not due yet.
+    const second = setup({ client: countingClient, claimStore, fixtureRecord: farFixture });
+    const secondResult = await second.handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
+    expect(secondResult).toMatchObject({ outcome: "SUCCESS", synced: 0 });
+    expect(fetchCount).toBe(1);
   });
 });

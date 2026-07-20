@@ -63,6 +63,7 @@ describe("supplier worker composition", () => {
           getFixture: async () => ({ id: "api-football:101", supplierFixtureId: 101, status: "LIVE", kickoffAt: "2026-07-13T09:00:00Z" }),
           getLineup: async () => null,
           saveLineup: async (snapshot) => { savedLineups.push(snapshot); },
+          claimExternalSync: async () => true,
         },
         close: async () => undefined,
       },

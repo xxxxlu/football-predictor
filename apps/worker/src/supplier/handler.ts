@@ -39,6 +39,8 @@ export interface MatchSnapshotRepositoryPort<Fixture = unknown, Odds = unknown, 
   getFixture?(matchId: string): Promise<Pick<FixtureSnapshot, "id" | "supplierFixtureId" | "status" | "kickoffAt"> | null>;
   getLineup?(matchId: string): Promise<LineupSnapshot | null>;
   saveLineup?(snapshot: LineupSnapshot): Promise<void>;
+  /** Durable "attempted at" claim (external_sync_claims.last_attempt_at); true when the interval has elapsed. */
+  claimExternalSync?(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
   setSyncState(matchId: string, state: "IDLE" | "SYNCING" | "PAUSED" | "FAILED"): Promise<void>;
 }
 
@@ -161,12 +163,20 @@ export function createSupplierJobHandler<Fixture, Odds, Live>(dependencies: Hand
           const getFixture = dependencies.repository.getFixture;
           const getLineup = dependencies.repository.getLineup;
           const saveLineup = dependencies.repository.saveLineup;
-          if (!fetchLineups || !getFixture || !getLineup || !saveLineup) throw new Error("Lineups are not configured");
+          const claimAttempt = dependencies.repository.claimExternalSync;
+          if (!fetchLineups || !getFixture || !getLineup || !saveLineup || !claimAttempt) throw new Error("Lineups are not configured");
           const fixture = await getFixture(job.payload.matchId);
           // Finished/cancelled (or an already-purged fixture) never refresh; skip without spending budget.
           if (!fixture) return { outcome: "SUCCESS", synced: 0 };
           const decision = lineupRefreshDecision({ fixture, now });
           if (!decision.due) return { outcome: "SUCCESS", synced: 0 };
+          const nextRunAt = new Date(now.getTime() + decision.intervalMs).toISOString();
+          // Durable per-fixture attempt gate (external_sync_claims.last_attempt_at): the recorded
+          // last-attempt time survives worker restarts, so a distant fixture is not re-fetched on every
+          // boot and the null/pending case is rate-limited even though it persists no snapshot.
+          if (!(await claimAttempt(`lineups:${fixture.id}`, now, decision.intervalMs))) {
+            return { outcome: "SUCCESS", synced: 0, nextRunAt };
+          }
           const budget = await charge(dependencies, "STATIC", now);
           if (!budget.allowed) return budget.result;
           let quota: SupplierQuota = {};
@@ -182,7 +192,6 @@ export function createSupplierJobHandler<Fixture, Odds, Live>(dependencies: Hand
           // LineupSyncService keeps the prior cache when the supplier has not published a lineup yet.
           await new LineupSyncService({ repository: { getLineup, saveLineup }, gateway, now: () => now }).refresh({ fixture });
           await reconcileQuota(dependencies, now, quota, budget.snapshot);
-          const nextRunAt = new Date(now.getTime() + decision.intervalMs).toISOString();
           if (!published) return { outcome: "PENDING", reason: "LINEUP_PENDING", nextRunAt };
           return { outcome: "SUCCESS", synced: 1, nextRunAt };
         }
