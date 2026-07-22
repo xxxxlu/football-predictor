@@ -7,23 +7,39 @@ import {
   type SettlementApplicationPort,
   type SettlementCandidatePort,
 } from "./handler.js";
+import { createF1SettlementJobHandler, type F1SettlementCandidatePort } from "./f1-handler.js";
 
 export function createSettlementWorkerComposition(input: {
   candidates: SettlementCandidatePort;
+  f1Candidates?: F1SettlementCandidatePort;
   settlement: SettlementApplicationPort;
   close(): Promise<void>;
 }) {
   const handler = createSettlementJobHandler(input);
   const retry = createSettlementRetryService(input);
+  const f1 = input.f1Candidates
+    ? createF1SettlementJobHandler({ candidates: input.f1Candidates, settlement: input.settlement })
+    : null;
   let closed = false;
   return {
-    scan(limit: number) {
+    async scan(limit: number) {
       if (closed) return Promise.reject(new Error("Settlement composition is closed"));
-      return handler.scan({ limit });
+      const football = await handler.scan({ limit });
+      if (!f1) return football;
+      const formula1 = await f1.scan({ limit });
+      return {
+        outcome: football.outcome === "RETRY" || formula1.outcome === "RETRY" ? "RETRY" as const : "SUCCESS" as const,
+        processed: football.processed + formula1.processed,
+        held: football.held + formula1.held,
+        failedTicketIds: [...football.failedTicketIds, ...formula1.failedTicketIds],
+      };
     },
-    retry(ticketId: string) {
+    async retry(ticketId: string) {
       if (closed) return Promise.reject(new Error("Settlement composition is closed"));
-      return retry.retry(ticketId);
+      const result = await retry.retry(ticketId);
+      // A ticket unknown to the football candidate source may be an F1 ticket.
+      if (result.outcome === "NOT_FOUND" && f1) return f1.retry(ticketId);
+      return result;
     },
     async close() {
       if (closed) return;
@@ -43,5 +59,10 @@ export function createPostgresSettlementWorkerComposition(input: {
   const ids = input.ids ?? { next: () => randomUUID() };
   const persistence = (input.createPersistence ?? createSettlementPersistence)(input.databaseUrl);
   const settlement = new SettlementService({ transaction: persistence.transaction as SettlementTransactionPort, clock, ids });
-  return createSettlementWorkerComposition({ candidates: persistence.candidates, settlement, close: persistence.close });
+  return createSettlementWorkerComposition({
+    candidates: persistence.candidates,
+    ...(persistence.f1Candidates ? { f1Candidates: persistence.f1Candidates } : {}),
+    settlement,
+    close: persistence.close,
+  });
 }

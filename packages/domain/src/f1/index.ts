@@ -4,3 +4,5 @@ export * from "./selections.js";
 export * from "./results.js";
 export * from "./h2h-odds.js";
 export * from "./season-2026.js";
+export * from "./settlement.js";
+export * from "./result-entry.js";

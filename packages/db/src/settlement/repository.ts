@@ -70,8 +70,10 @@ export class PostgresSettlementTransactionPort implements SettlementTransactionP
       if (locked.length === 0) throw new SettlementError("TICKET_NOT_FOUND");
       const transaction: SettlementTransaction = {
         findOperation: async (key) => {
-          const [row] = await tx<Array<{ receipt: SettlementOperationReceipt }>>`SELECT receipt FROM prediction.settlement_operations
+          const [row] = await tx<Array<{ receipt: SettlementOperationReceipt | string }>>`SELECT receipt FROM prediction.settlement_operations
             WHERE ticket_id=${key.ticketId} AND settlement_version=${key.settlementVersion} AND operation=${key.operation} LIMIT 1`;
+          // Rows written before the ::text::jsonb fix hold a double-encoded JSON string.
+          if (typeof row?.receipt === "string") return JSON.parse(row.receipt) as SettlementOperationReceipt;
           return row?.receipt ?? null;
         },
         getState: async (ticketId) => {
@@ -109,7 +111,7 @@ export class PostgresSettlementTransactionPort implements SettlementTransactionP
       VALUES (${write.ledger.id},${ticket.roomId},${ticket.userId},${write.ledger.type},${write.record.grossReturnPoints},${`settle:${write.scope.ticketId}:${write.scope.settlementVersion}`},${write.ledger.id},${new Date(write.ledger.occurredAt)},${write.ledger.availableDeltaPoints},${write.ledger.frozenDeltaPoints},${write.scope.ticketId},${write.ledger.correctionDebtDeltaPoints},${write.scope.settlementVersion},null)`;
     await tx`UPDATE prediction.tickets SET status='SETTLED',active_settlement_id=${write.record.id} WHERE id=${write.scope.ticketId}`;
     await tx`INSERT INTO prediction.settlement_operations (ticket_id,settlement_version,operation,receipt,created_at)
-      VALUES (${write.scope.ticketId},${write.scope.settlementVersion},'SETTLE',CAST(${JSON.stringify(write.receipt)} AS jsonb),${new Date(write.record.settledAt)})`;
+      VALUES (${write.scope.ticketId},${write.scope.settlementVersion},'SETTLE',${JSON.stringify(write.receipt)}::text::jsonb,${new Date(write.record.settledAt)})`;
     return write.receipt;
   }
 
@@ -130,7 +132,7 @@ export class PostgresSettlementTransactionPort implements SettlementTransactionP
       VALUES (${write.ledger.id},${ticket.roomId},${ticket.userId},${write.ledger.type},0,${`reverse:${write.scope.ticketId}:${write.scope.settlementVersion}`},${write.ledger.id},${new Date(write.ledger.occurredAt)},${write.ledger.availableDeltaPoints},${write.ledger.frozenDeltaPoints},${write.scope.ticketId},${write.ledger.correctionDebtDeltaPoints},${write.scope.settlementVersion},${write.ledger.reversesLedgerId})`;
     await tx`UPDATE prediction.tickets SET status='PENDING',active_settlement_id=null WHERE id=${write.scope.ticketId}`;
     await tx`INSERT INTO prediction.settlement_operations (ticket_id,settlement_version,operation,receipt,created_at)
-      VALUES (${write.scope.ticketId},${write.scope.settlementVersion},'REVERSAL',CAST(${JSON.stringify(write.receipt)} AS jsonb),${new Date(write.receipt.reversedAt)})`;
+      VALUES (${write.scope.ticketId},${write.scope.settlementVersion},'REVERSAL',${JSON.stringify(write.receipt)}::text::jsonb,${new Date(write.receipt.reversedAt)})`;
     return write.receipt;
   }
 }
