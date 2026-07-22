@@ -18,7 +18,9 @@
     "build": "pnpm build:packages && pnpm --filter @football-predictor/worker build && pnpm --filter @football-predictor/web build",
     "cloudbase:prepare-package": "node scripts/cloudbase-packaging.mjs",
     "verify:workspace": "node --test scripts/workspace-structure.test.mjs",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "test:e2e": "pnpm --filter @football-predictor/web test:e2e",
+    "test:perf": "node scripts/perf-smoke.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
