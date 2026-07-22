@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
-import { formatSelectionLabel } from "./selection-label";
+import { formatEventTitle, formatSelectionLabel } from "./selection-label";
 import type { ApiEnvelope, ApiFailure } from "./types";
 
 type TicketStatus = "FROZEN" | "WON" | "LOST" | "VOID";
@@ -112,7 +112,7 @@ function PredictionRow({ record }: { record: TicketRecord }) {
     <li className="surface p-4 sm:p-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="display text-lg font-bold">{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</h3>
+          <h3 className="display text-lg font-bold">{record.matchId.startsWith("f1:") ? formatEventTitle(record) : <>{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</>}</h3>
           <p className="mt-1 text-xs text-[var(--muted)]">开赛 <time dateTime={record.kickoffAt}>{new Date(record.kickoffAt).toLocaleString("zh-CN")}</time> · 提交于 <time dateTime={record.submittedAt}>{new Date(record.submittedAt).toLocaleString("zh-CN")}</time></p>
         </div>
         <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${statusChipClass(record.status)}`}>{statusLabel[record.status]}</span>

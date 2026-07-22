@@ -124,6 +124,75 @@ export class DrizzleF1Repository {
   async setMarketStatus(sessionId: string, status: "OPEN" | "CLOSED" | "SETTLED" | "CANCELLED", now: Date): Promise<void> {
     await this.db.update(f1Markets).set({ status, updatedAt: now }).where(eq(f1Markets.sessionId, sessionId));
   }
+
+  /** Read model for the session page: session + weekend, the active entry list with
+   *  team identity, and every market with its current immutable odds version. */
+  async getSessionDetail(sessionId: string): Promise<F1SessionDetail | null> {
+    const [row] = await this.db.select({ session: f1Sessions, weekend: f1RaceWeekends }).from(f1Sessions)
+      .innerJoin(f1RaceWeekends, eq(f1RaceWeekends.id, f1Sessions.weekendId))
+      .where(eq(f1Sessions.id, sessionId)).limit(1);
+    if (!row) return null;
+    const drivers = await this.db.select({
+      code: f1Drivers.code,
+      number: f1Drivers.number,
+      name: f1Drivers.name,
+      constructorKey: f1Drivers.constructorKey,
+      constructorName: f1Constructors.name,
+      color: f1Constructors.color,
+      seasonPoints: f1Drivers.seasonPoints,
+    }).from(f1Drivers)
+      .innerJoin(f1Constructors, eq(f1Constructors.key, f1Drivers.constructorKey))
+      .where(eq(f1Drivers.active, true));
+    const markets = await this.db.select({
+      id: f1Markets.id,
+      kind: f1Markets.kind,
+      status: f1Markets.status,
+      version: f1MarketOdds.version,
+      dataAsOf: f1MarketOdds.dataAsOf,
+      outcomes: f1MarketOdds.outcomes,
+    }).from(f1Markets)
+      .innerJoin(f1MarketOdds, and(eq(f1MarketOdds.marketId, f1Markets.id), eq(f1MarketOdds.version, f1Markets.currentVersion)))
+      .where(eq(f1Markets.sessionId, sessionId));
+    return {
+      session: mapSession(row.session),
+      weekend: {
+        id: row.weekend.id,
+        season: row.weekend.season,
+        round: row.weekend.round,
+        name: row.weekend.name,
+        circuitKey: row.weekend.circuitKey,
+        isSprintWeekend: row.weekend.isSprintWeekend,
+      },
+      drivers: drivers.sort((a, b) => b.seasonPoints - a.seasonPoints || a.number - b.number),
+      markets: markets.map((market) => ({
+        id: market.id,
+        kind: market.kind as F1MarketKind,
+        status: market.status,
+        version: market.version,
+        dataAsOf: market.dataAsOf.toISOString(),
+        outcomes: decodeRawOutcomes(market.kind as F1MarketKind, market.outcomes),
+      })),
+    };
+  }
+}
+
+export interface F1SessionDetail {
+  session: F1Session;
+  weekend: { id: string; season: number; round: number; name: string; circuitKey: string; isSprintWeekend: boolean };
+  drivers: Array<{ code: string; number: number; name: string; constructorKey: string; constructorName: string; color: string; seasonPoints: number }>;
+  markets: Array<{ id: string; kind: F1MarketKind; status: string; version: string; dataAsOf: string; outcomes: Array<{ selection: string; decimalOdds: string }> }>;
+}
+
+function decodeRawOutcomes(kind: F1MarketKind, value: unknown): Array<{ selection: string; decimalOdds: string }> {
+  const decoded = typeof value === "string" ? safeParseJson(value) : value;
+  if (!Array.isArray(decoded)) return [];
+  return decoded.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const outcome = candidate as { selection?: unknown; decimalOdds?: unknown };
+    if (typeof outcome.selection !== "string" || typeof outcome.decimalOdds !== "string") return [];
+    if (parseF1Selection(kind, outcome.selection) === null) return [];
+    return [{ selection: outcome.selection, decimalOdds: outcome.decimalOdds }];
+  });
 }
 
 /** MarketSnapshotPort over the f1 schema: resolves canonical `f1:<sessionId>:<KIND>`

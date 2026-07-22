@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { formatEventTitle } from "@/features/matchday/selection-label";
 import { toTicketHistoryView, type TicketHistoryRecord, type TicketStatus } from "./room-ticket-history";
 
 const statusLabels: Record<TicketStatus, string> = { FROZEN: "待结算", WON: "命中", LOST: "未命中", VOID: "取消 / 走盘" };
@@ -61,7 +62,7 @@ export function RoomTicketHistoryView({ roomId, isOwner, initialPostMatchTicketV
 function TicketRow({ record }: { record: TicketHistoryRecord }) {
   const view = toTicketHistoryView(record);
   return <li className="rounded-xl border border-[var(--line)] p-4">
-    <div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{view.ownerLabel}</p><h3 className="mt-1 text-lg font-bold">{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</h3><p className="mt-1 text-xs text-[var(--muted)]">开赛 {new Date(record.kickoffAt).toLocaleString("zh-CN")}{view.submittedAt ? ` · 提交 ${new Date(view.submittedAt).toLocaleString("zh-CN")}` : ""}</p></div><div className="text-right"><span className="rounded-full bg-[rgb(23_107_77/10%)] px-3 py-1 text-xs font-bold text-[var(--field-dark)]">{statusLabels[record.status]}</span><p className="mt-2 text-xs text-[var(--muted)]">{view.disclosure}</p></div></div>
+    <div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{view.ownerLabel}</p><h3 className="mt-1 text-lg font-bold">{record.matchId.startsWith("f1:") ? formatEventTitle(record) : <>{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</>}</h3><p className="mt-1 text-xs text-[var(--muted)]">开赛 {new Date(record.kickoffAt).toLocaleString("zh-CN")}{view.submittedAt ? ` · 提交 ${new Date(view.submittedAt).toLocaleString("zh-CN")}` : ""}</p></div><div className="text-right"><span className="rounded-full bg-[rgb(23_107_77/10%)] px-3 py-1 text-xs font-bold text-[var(--field-dark)]">{statusLabels[record.status]}</span><p className="mt-2 text-xs text-[var(--muted)]">{view.disclosure}</p></div></div>
     <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-4 sm:grid-cols-4"><Fact label="判断" value={view.selection ?? "未公开"}/><Fact label="投入积分" value={view.stake ?? "未公开"}/><Fact label="确认倍率" value={view.odds ?? "未公开"}/><Fact label={record.status === "FROZEN" ? "状态" : "净积分"} value={record.status === "FROZEN" ? "等待比赛结果" : view.netPoints ?? "未公开"}/></dl>
   </li>;
 }
