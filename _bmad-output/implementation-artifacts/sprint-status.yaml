@@ -77,6 +77,6 @@ development_status:
   8-4-generate-private-safe-share-card: backlog  # 生成隐私安全的战绩分享卡
   epic-8-retrospective: optional
   epic-9: in-progress
-  9-1-extend-rooms-to-post-world-cup-competitions: in-progress  # 多赛事配置、同步与筛选已实现；待真实供应商密钥完成数据预热验收
+  9-1-extend-rooms-to-post-world-cup-competitions: review  # pending final CI evidence（合并前保持此状态，boss 2026-07-22）；多赛事配置、同步与筛选已实现，待真实供应商密钥完成数据预热验收，CI 出结果后再定 done
   9-2-build-cross-competition-history: done  # 跨赛事长期档案已完成，房间余额仍严格独立
   epic-9-retrospective: optional
