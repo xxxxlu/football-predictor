@@ -7,7 +7,8 @@ const bodySchema = z.object({
   matchId: z.string().min(1),
   marketId: z.union([z.string().min(1), z.number().int()]).transform(String),
   marketVersion: z.string().min(1),
-  selection: z.string().regex(/^(?:HOME|DRAW|AWAY|OTHER|\d{1,2}-\d{1,2})$/),
+  // Football (1X2 / correct score) or encoded F1 selections; domain validates the exact candidate set.
+  selection: z.string().regex(/^(?:HOME|DRAW|AWAY|OTHER|\d{1,2}-\d{1,2}|DRV:[A-Z][A-Z0-9]{1,3}|PODIUM:[A-Z][A-Z0-9]{1,3}:(?:YES|NO)|POD3:[A-Z][A-Z0-9]{1,3}-[A-Z][A-Z0-9]{1,3}-[A-Z][A-Z0-9]{1,3}|H2H:[A-Z][A-Z0-9]{1,3}>[A-Z][A-Z0-9]{1,3})$/),
   stakePoints: z.union([z.string().regex(/^\d+$/), z.number().int()]).transform(Number),
   acceptedOdds: z.string().regex(/^(?:0|[1-9]\d*)(?:\.\d+)?$/),
 });
