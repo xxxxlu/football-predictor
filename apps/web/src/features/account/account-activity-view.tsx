@@ -4,7 +4,8 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { RoomFilter } from "@/components/room-filter";
-import type { ApiEnvelope, ApiFailure, BalanceView, OddsSelection } from "@/features/matchday/types";
+import type { ApiEnvelope, ApiFailure, BalanceView } from "@/features/matchday/types";
+import { formatEventTitle, formatSelectionLabel } from "@/features/matchday/selection-label";
 import { useRoomData } from "@/features/operations/use-room-data";
 import { accountTicketSummary, ownTickets, signedPoints, type AccountTicket } from "./account-activity";
 
@@ -13,7 +14,6 @@ type LedgerEntry = {
   createdAt: string; availableDelta: string; frozenDelta: string; debtDelta?: string; explanation: string;
 };
 
-const selectionLabel: Record<OddsSelection, string> = { HOME: "主胜", DRAW: "平局", AWAY: "客胜" };
 const ticketLabel: Record<AccountTicket["status"], string> = { FROZEN: "待结算", WON: "已命中", LOST: "未命中", VOID: "已退回" };
 const ledgerLabel: Record<LedgerEntry["type"], string> = { FREEZE: "预测投入", SETTLE: "赛果结算", VOID: "退回积分", REVERSAL: "结算冲正", RE_SETTLE: "重新结算", DEBT_OFFSET: "债务抵扣", GRANT: "积分发放" };
 
@@ -93,7 +93,7 @@ function BalanceMetric({ label, value, note, emphasis = false }: { label: string
 
 function TicketRow({ ticket }: { ticket: AccountTicket }) {
   const pending = ticket.status === "FROZEN";
-  return <li className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><strong>{ticket.homeTeam} 对 {ticket.awayTeam}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${pending ? "bg-[var(--floodlight)] text-[var(--ink)]" : ticket.status === "WON" ? "bg-[var(--field)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{ticketLabel[ticket.status]}</span></div><p className="mt-1 text-xs text-[var(--muted)]">{ticket.selection ? selectionLabel[ticket.selection] : "封盘前保密"} · 投入 {ticket.stakePoints || "—"} · 倍率 {ticket.confirmedOdds || "—"}</p></div><div className="sm:text-right"><p className="tabular text-sm font-bold">{pending ? `冻结 ${ticket.stakePoints || "—"}` : `净变化 ${signedPoints(ticket.netPoints)}`}</p><time dateTime={ticket.submittedAt} className="mt-1 block text-[10px] text-[var(--muted)]">{new Date(ticket.submittedAt).toLocaleString("zh-CN")}</time></div></li>;
+  return <li className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><strong>{formatEventTitle({ matchId: ticket.matchId, homeTeam: ticket.homeTeam, awayTeam: ticket.awayTeam })}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${pending ? "bg-[var(--floodlight)] text-[var(--ink)]" : ticket.status === "WON" ? "bg-[var(--field)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{ticketLabel[ticket.status]}</span></div><p className="mt-1 text-xs text-[var(--muted)]">{ticket.selection ? formatSelectionLabel(ticket.selection) : "封盘前保密"} · 投入 {ticket.stakePoints || "—"} · 倍率 {ticket.confirmedOdds || "—"}</p></div><div className="sm:text-right"><p className="tabular text-sm font-bold">{pending ? `冻结 ${ticket.stakePoints || "—"}` : `净变化 ${signedPoints(ticket.netPoints)}`}</p><time dateTime={ticket.submittedAt} className="mt-1 block text-[10px] text-[var(--muted)]">{new Date(ticket.submittedAt).toLocaleString("zh-CN")}</time></div></li>;
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {

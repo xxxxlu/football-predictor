@@ -1,10 +1,12 @@
 export type AccountTicket = {
   ticketId: string;
+  matchId?: string;
   homeTeam: string;
   awayTeam: string;
   submittedAt: string;
   owner: { isCurrentUser: boolean };
-  selection?: "HOME" | "DRAW" | "AWAY";
+  /** 1X2、比分或编码后的 F1 选择串；用 formatSelectionLabel 渲染。 */
+  selection?: string;
   stakePoints?: string;
   confirmedOdds?: string;
   status: "FROZEN" | "WON" | "LOST" | "VOID";
