@@ -82,15 +82,6 @@ export function TeamCrest({ name, className = "size-9 text-sm" }: { name: string
   );
 }
 
-/** Bobbing-ball loader with pitch shadow. Motion is disabled under prefers-reduced-motion. */
-export function PitchLoader({ label = "加载中", className = "" }: { label?: string; className?: string }) {
-  return (
-    <div role="status" aria-live="polite" className={`flex flex-col items-center justify-center gap-4 py-12 text-center ${className}`}>
-      <span className="relative block h-12 w-12">
-        <SoccerBall className="ball-bob absolute inset-0 h-12 w-12" />
-        <span className="ball-shadow absolute -bottom-1 left-1/2 block h-1.5 w-8 -translate-x-1/2 rounded-full bg-[var(--ink)]" />
-      </span>
-      <span className="eyebrow">{label}</span>
-    </div>
-  );
-}
+/** Loading indicator — delegates to the brand-neutral PULSE line loader (§17.1:
+    写实足球图标不再作为 Loading 的默认答案). Name kept for existing call sites. */
+export { PulseLoader as PitchLoader } from "./pulse";

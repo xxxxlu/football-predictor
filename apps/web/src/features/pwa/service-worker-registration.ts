@@ -20,6 +20,6 @@ export async function unregisterServiceWorker(): Promise<void> {
   await Promise.all(registrations.map((registration) => registration.unregister()));
   if ("caches" in window) {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith("matchday-ledger-shell-")).map((key) => caches.delete(key)));
+    await Promise.all(keys.filter((key) => key.startsWith("pulse-shell-") || key.startsWith("matchday-ledger-shell-")).map((key) => caches.delete(key)));
   }
 }
