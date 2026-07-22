@@ -176,10 +176,13 @@ claude-opus-4-8 (星期五 / dev-story)
 - `scripts/perf-smoke.mjs`（G5）
 - `apps/web/src/features/auth/auth-error-messages.ts`（post-review i18n 修复：错误码→中文纯解析器）
 - `apps/web/src/features/auth/auth-error-messages.test.ts`（post-review：错误码契约单测，本地 vitest 2/2 绿）
+- `packages/db/src/identity/repository.test.ts`（CI run1 后：重复注册唯一冲突映射回归，4 例，本地 vitest 绿）
 
 **修改**
 - `apps/web/src/features/auth/auth-form.tsx`（post-review i18n 修复：改走 `authErrorMessage`，移除误键 map 与英文 `error.message` 兜底泄漏）
 - `apps/web/tests/e2e/registration-recovery.spec.ts`（post-review：重复用户名用例补断本地化文案）
+- `packages/db/src/identity/repository.ts`（CI run1 后：`isUniqueViolation` 沿 `.cause` 链 + 消息探测，修重复注册 500→409）
+- `apps/web/tests/e2e/accessibility.spec.ts`（CI run1 后：goto `networkidle` + 扫描 context-destroyed 重试，修 KickoffLoader 竞态）
 - `apps/worker/src/supplier/handler.test.ts`（G4：追加 NFR42 零消耗回归用例）
 - `apps/web/package.json`（+`@playwright/test`、`@axe-core/playwright` devDep；+`test:e2e` 脚本）
 - `package.json`（+`test:e2e`、`test:perf` 脚本）
@@ -210,3 +213,14 @@ _(bmad-code-review 2026-07-22；3 层并行对抗评审：Blind Hunter（仅 dif
 - [x] [Review][Defer] `invite-join-room` 手工 `newContext` 将来 un-fixme 且中途失败会泄漏 context（当前 fixme 无影响，un-fixme 时改 try/finally 或 fixture）；perf-smoke `SERVER_PID` 捕获的是 pnpm 包装进程而非 next（ephemeral runner 无害）、非数字 env 会 NaN（仅误配置）。
 
 **已驳回误报 (dismiss，5 项)**：① budget-replay 端口字面量漏 lineup/getFixture/claim 成员会破 typecheck——**假**，handler 端口这些成员为可选（`handler.ts:31,39-43`），全量 typecheck 实跑=0；② `totalFetches()==95` 的耦合是 bug——**假**，handler 的 RESULTS 分支走 `fetchFixtures`（`handler.ts:123-129`），实跑通过；③ 保护额度包含边界 off-by-one——域码（`supplier-budget/index.ts:83,87,90`）+ 实跑证伪；④ perf-smoke `/` 用 `redirect:manual` 会误报——`/` 实为 200 非重定向（Edge Case Hunter 证实）；⑤ 选择器唯一性 / `setup(claimStore)` / CI env 完整性 / 路由可达性——Edge Case Hunter 逐一对源码证实无误。
+
+### CI 实证 (PR #1, run 29897407739, 2026-07-22)
+
+**`verify` 作业全绿**：lint / typecheck / `pnpm test`（含 auth i18n 契约测试）/ build / 迁移冒烟幂等。i18n 解析器由单测证明正确。
+
+**`e2e` 作业红**（`continue-on-error`，故 run 整体仍 success）：16 用例 = **3 真实通过**（注册成功 / 恢复轮换 / 超管匿名守卫）+ **7 `test.fixme` 跳过** + **6 失败**。6 失败均非 i18n 映射问题，分两类，本轮全部修复：
+
+- [x] **a11y 5 条（脚手架时序，非真实违规）**：axe `analyze()` 报 `page.evaluate: Execution context was destroyed ... because of a navigation`；失败截图显示页面停在 **KickoffLoader「KICK OFF」开屏**——扫描撞上开屏→内容跳转、根本没跑完，不是页面真有 serious/critical 违规（正是上方 line 207 defer 预警的 KickoffLoader 竞态被 CI 证实）。**修复**：`accessibility.spec.ts` goto 改 `waitUntil:"networkidle"`，并加 `analyzeAccessibility()` 在 context-destroyed 时等 networkidle 后重试（真实违规仍作为结果触发断言失败，不被吞）。
+- [x] **重复用户名 1 条 = 真·后端 bug（E2E 门禁首次即逮住）**：失败截图（attempt+retry 各一张）错误框显示通用兜底「暂时无法完成，请稍后重试。」而非 `USERNAME_UNAVAILABLE` 的中文 → 说明 API 对重复注册返回**未映射码（`INTERNAL_ERROR` 500）而非 409**。根因：`repository.ts` 的 `isUniqueViolation` 只查顶层 `error.code==="23505"`；drizzle-orm 0.45.2 包裹查询错误（真实 PG code 落在 `.cause`）时漏判 → 原始错误重抛 → `handlers.ts:99` 返回 500。**修复**：`isUniqueViolation` 改为沿 `.cause` 链探测 + 消息兜底（`duplicate key value violates unique constraint`），重复注册遂返回 409 `USERNAME_UNAVAILABLE`，前端显示「这个用户名已被使用，请换一个。」。`DrizzleIdentityRepository` 此前**零测试**、`verify` 的 domain 服务测试用 mock repo 未覆盖真实错误检测→bug 潜伏至今；补 `repository.test.ts` 4 例锁定顶层码/包裹码/消息/非唯一错误，本地 vitest 绿。
+
+三项修复本地全绿（新增/改动共 6 单测通过 + db&web typecheck + web lint）；随本提交 push 触发 **CI run 2** 实证浏览器 E2E。**7.5 仍 `review`**，待 run 2 的 e2e 结果再定 `done`。

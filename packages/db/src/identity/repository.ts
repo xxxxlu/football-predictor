@@ -181,6 +181,23 @@ function mapAccount(user: typeof identityUsers.$inferSelect, acceptedRulesVersio
   return { ...user, acceptedRulesVersion, acceptedRulesAt };
 }
 
-function isUniqueViolation(error: unknown) {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "23505";
+// Detect a Postgres unique-constraint violation (SQLSTATE 23505). The raw postgres.js error carries
+// `.code`, but depending on the driver/ORM the error can be WRAPPED (the real error on `.cause` with a
+// generic outer message), so a top-level `.code` check silently misses it and the duplicate surfaces as
+// a 500 instead of a friendly 409. Walk the cause chain and fall back to the message text so a duplicate
+// is caught regardless of how the driver wraps it. Regression-tested in repository.test.ts.
+function isUniqueViolation(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current !== null && current !== undefined && depth < 5; depth++) {
+    if (typeof current !== "object") break;
+    const candidate = current as { code?: unknown; message?: unknown; cause?: unknown };
+    if (candidate.code === "23505") return true;
+    if (
+      typeof candidate.message === "string" &&
+      candidate.message.includes("duplicate key value violates unique constraint")
+    ) {
+      return true;
+    }
+    current = candidate.cause;
+  }
+  return false;
 }

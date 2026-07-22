@@ -20,17 +20,36 @@ const ANONYMOUS_ROUTES = [
   { path: "/terms", name: "terms" },
 ];
 
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"];
+
+// axe runs via page.evaluate; if the page navigates (e.g. the KickoffLoader splash → content swap)
+// exactly while it runs, Playwright throws "Execution context was destroyed". That is a harness race,
+// not an accessibility result, so retry after letting the page settle. Genuine violations still come
+// back as results and fail the assertion in the test below.
+async function analyzeAccessibility(page: import("@playwright/test").Page) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      return await new AxeBuilder({ page }).withTags(WCAG_TAGS).analyze();
+    } catch (error) {
+      lastError = error;
+      if (!String(error).includes("Execution context was destroyed")) throw error;
+      await page.waitForLoadState("networkidle").catch(() => {});
+      await page.waitForTimeout(750);
+    }
+  }
+  throw lastError;
+}
+
 for (const route of ANONYMOUS_ROUTES) {
   test(`no serious or critical a11y violations: ${route.name} (${route.path})`, async ({ page }) => {
-    // goto defaults to waitUntil:"load"; these are server-rendered pages, so the DOM is fully present
-    // for axe to scan. Deliberately NOT gating on a specific element (e.g. h1) so the scan never
-    // false-fails on a page whose structure differs — a missing heading/landmark is itself something
-    // axe reports as a violation rather than something the harness should crash on.
-    await page.goto(route.path, { waitUntil: "load" });
+    // Wait for the network to settle so the KickoffLoader splash has swapped to the real page before we
+    // scan (see analyzeAccessibility for the mid-navigation retry). Deliberately NOT gating on a specific
+    // element so the scan never false-passes on a page whose structure differs — a missing heading or
+    // landmark is a violation axe should report, not something the harness should skip.
+    await page.goto(route.path, { waitUntil: "networkidle" });
 
-    const results = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"])
-      .analyze();
+    const results = await analyzeAccessibility(page);
 
     const blocking = results.violations.filter(
       (violation) => violation.impact === "serious" || violation.impact === "critical",
