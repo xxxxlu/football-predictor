@@ -7,3 +7,4 @@ export * from "./predictions/ticket-submission.js";
 export * from "./settlement/settlement.js";
 export * from "./competition/index.js";
 export * from "./supplier-budget/index.js";
+export * from "./f1/index.js";

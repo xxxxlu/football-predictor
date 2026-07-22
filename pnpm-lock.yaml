@@ -118,7 +118,11 @@ importers:
         specifier: ^4.0.0
         version: 4.4.3
 
-  packages/contracts: {}
+  packages/contracts:
+    dependencies:
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
 
   packages/db:
     dependencies:

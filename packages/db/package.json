@@ -15,7 +15,8 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty false",
     "migrate": "node scripts/migrate.mjs",
-    "seed:super-admins": "node scripts/seed-super-admins.mjs"
+    "seed:super-admins": "node scripts/seed-super-admins.mjs",
+    "seed:f1-2026": "node scripts/seed-f1-2026.mjs"
   },
   "dependencies": {
     "@football-predictor/domain": "workspace:*",

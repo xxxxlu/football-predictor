@@ -1,0 +1,212 @@
+import { and, asc, eq } from "drizzle-orm";
+import {
+  F1_SUPPLIER,
+  F1_SUPPLIER_MARKET_IDS,
+  parseF1MarketId,
+  parseF1Selection,
+  f1FixtureId,
+  type F1Constructor,
+  type F1Driver,
+  type F1MarketKind,
+  type F1RaceWeekend,
+  type F1Session,
+  type F1SessionKind,
+  type F1SessionState,
+  type MarketForSubmission,
+  type PredictionSelection,
+} from "@football-predictor/domain";
+import type { IdentityDatabase } from "../identity/repository.js";
+import type { MarketSnapshotPort } from "../predictions/repository.js";
+import { f1Constructors, f1Drivers, f1MarketOdds, f1Markets, f1RaceWeekends, f1Sessions } from "./schema.js";
+
+export interface F1WeekendUpsert {
+  id: string;
+  season: number;
+  round: number;
+  name: string;
+  circuitKey: string;
+  isSprintWeekend: boolean;
+  sessions: Array<{ id: string; kind: F1SessionKind; startsAt: string }>;
+}
+
+export interface F1OddsPublish {
+  sessionId: string;
+  kind: F1MarketKind;
+  version: string;
+  dataAsOf: string;
+  outcomes: Array<{ selection: string; decimalOdds: string }>;
+  now: Date;
+}
+
+export class DrizzleF1Repository {
+  constructor(private readonly db: IdentityDatabase) {}
+
+  async upsertEntryList(input: { constructors: readonly F1Constructor[]; drivers: readonly F1Driver[]; now: Date }): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      for (const constructor of input.constructors) {
+        await tx.insert(f1Constructors)
+          .values({ key: constructor.key, name: constructor.name, color: constructor.color, updatedAt: input.now })
+          .onConflictDoUpdate({ target: f1Constructors.key, set: { name: constructor.name, color: constructor.color, updatedAt: input.now } });
+      }
+      for (const driver of input.drivers) {
+        await tx.insert(f1Drivers)
+          .values({ code: driver.code, number: driver.number, name: driver.name, constructorKey: driver.constructorKey, active: driver.active, updatedAt: input.now })
+          .onConflictDoUpdate({
+            target: f1Drivers.code,
+            set: { number: driver.number, name: driver.name, constructorKey: driver.constructorKey, active: driver.active, updatedAt: input.now },
+          });
+      }
+    });
+  }
+
+  async upsertWeekend(input: F1WeekendUpsert, now: Date): Promise<void> {
+    await this.db.transaction(async (tx) => {
+      const [weekend] = await tx.insert(f1RaceWeekends)
+        .values({ id: input.id, season: input.season, round: input.round, name: input.name, circuitKey: input.circuitKey, isSprintWeekend: input.isSprintWeekend, createdAt: now, updatedAt: now })
+        .onConflictDoUpdate({
+          target: [f1RaceWeekends.season, f1RaceWeekends.round],
+          set: { name: input.name, circuitKey: input.circuitKey, isSprintWeekend: input.isSprintWeekend, updatedAt: now },
+        })
+        .returning({ id: f1RaceWeekends.id });
+      if (!weekend) throw new Error("F1 weekend upsert returned no row");
+      for (const session of input.sessions) {
+        await tx.insert(f1Sessions)
+          .values({ id: session.id, weekendId: weekend.id, kind: session.kind, startsAt: new Date(session.startsAt), createdAt: now, updatedAt: now })
+          .onConflictDoUpdate({
+            target: [f1Sessions.weekendId, f1Sessions.kind],
+            set: { startsAt: new Date(session.startsAt), updatedAt: now },
+          });
+      }
+    });
+  }
+
+  async listWeekends(season: number): Promise<F1RaceWeekend[]> {
+    const rows = await this.db.select().from(f1RaceWeekends)
+      .where(eq(f1RaceWeekends.season, season)).orderBy(asc(f1RaceWeekends.round));
+    if (rows.length === 0) return [];
+    const sessions = await this.db.select().from(f1Sessions)
+      .innerJoin(f1RaceWeekends, eq(f1RaceWeekends.id, f1Sessions.weekendId))
+      .where(eq(f1RaceWeekends.season, season)).orderBy(asc(f1Sessions.startsAt));
+    return rows.map((weekend) => ({
+      id: weekend.id,
+      season: weekend.season,
+      round: weekend.round,
+      name: weekend.name,
+      circuitKey: weekend.circuitKey,
+      isSprintWeekend: weekend.isSprintWeekend,
+      sessions: sessions.filter((row) => row.sessions.weekendId === weekend.id).map((row) => mapSession(row.sessions)),
+    }));
+  }
+
+  async getSession(sessionId: string): Promise<F1Session | null> {
+    const [row] = await this.db.select().from(f1Sessions).where(eq(f1Sessions.id, sessionId)).limit(1);
+    return row ? mapSession(row) : null;
+  }
+
+  async setSessionState(sessionId: string, state: F1SessionState, now: Date): Promise<void> {
+    await this.db.update(f1Sessions).set({ state, updatedAt: now }).where(eq(f1Sessions.id, sessionId));
+  }
+
+  /** Publishes a new immutable odds version for one session market and points the
+   *  market at it. The market row is created on first publish. */
+  async publishMarketOdds(input: F1OddsPublish): Promise<void> {
+    const marketId = `f1:${input.sessionId}:${input.kind}`;
+    await this.db.transaction(async (tx) => {
+      await tx.insert(f1Markets)
+        .values({ id: marketId, sessionId: input.sessionId, kind: input.kind, status: "OPEN", currentVersion: null, updatedAt: input.now })
+        .onConflictDoNothing({ target: f1Markets.id });
+      await tx.insert(f1MarketOdds)
+        .values({ marketId, version: input.version, dataAsOf: new Date(input.dataAsOf), outcomes: input.outcomes, createdAt: input.now });
+      await tx.update(f1Markets).set({ currentVersion: input.version, updatedAt: input.now }).where(eq(f1Markets.id, marketId));
+    });
+  }
+
+  async setMarketStatus(sessionId: string, status: "OPEN" | "CLOSED" | "SETTLED" | "CANCELLED", now: Date): Promise<void> {
+    await this.db.update(f1Markets).set({ status, updatedAt: now }).where(eq(f1Markets.sessionId, sessionId));
+  }
+}
+
+/** MarketSnapshotPort over the f1 schema: resolves canonical `f1:<sessionId>:<KIND>`
+ *  ids to the platform's current immutable odds version. Mirrors the football
+ *  supplier adapter's OPEN/CLOSED/DATA_UNAVAILABLE mapping. */
+export class F1MarketSnapshotAdapter implements MarketSnapshotPort {
+  constructor(private readonly db: IdentityDatabase) {}
+
+  async getMarket(marketId: string, transaction: IdentityDatabase = this.db): Promise<MarketForSubmission | null> {
+    const parsed = parseF1MarketId(marketId);
+    if (!parsed) return null;
+    const [row] = await transaction.select({
+      marketId: f1Markets.id,
+      sessionId: f1Markets.sessionId,
+      kind: f1Markets.kind,
+      marketStatus: f1Markets.status,
+      sessionState: f1Sessions.state,
+      startsAt: f1Sessions.startsAt,
+      version: f1MarketOdds.version,
+      dataAsOf: f1MarketOdds.dataAsOf,
+      outcomes: f1MarketOdds.outcomes,
+    }).from(f1Markets)
+      .innerJoin(f1Sessions, eq(f1Sessions.id, f1Markets.sessionId))
+      .innerJoin(f1MarketOdds, and(eq(f1MarketOdds.marketId, f1Markets.id), eq(f1MarketOdds.version, f1Markets.currentVersion)))
+      .where(eq(f1Markets.id, marketId))
+      .limit(1)
+      .for("share");
+    if (!row) return null;
+    const kind = row.kind as F1MarketKind;
+    const open = row.marketStatus === "OPEN" && row.sessionState === "UPCOMING";
+    return {
+      id: row.marketId,
+      fixtureId: f1FixtureId(row.sessionId),
+      status: open ? "OPEN" : "CLOSED",
+      kickoffAt: row.startsAt.toISOString(),
+      snapshot: {
+        version: row.version,
+        dataAsOf: row.dataAsOf.toISOString(),
+        supplier: F1_SUPPLIER,
+        supplierFixtureId: 0,
+        bookmakerId: 0,
+        marketId: F1_SUPPLIER_MARKET_IDS[kind],
+        outcomes: decodeOutcomes(kind, row.outcomes),
+        sourceVerified: true,
+      },
+    };
+  }
+}
+
+/** Routes market lookups by id namespace so football and F1 submissions share one
+ *  TicketSubmissionService: `f1:*` → the F1 adapter, everything else → football. */
+export class SportDispatchingSnapshotAdapter implements MarketSnapshotPort {
+  constructor(private readonly football: MarketSnapshotPort, private readonly f1: MarketSnapshotPort) {}
+  getMarket(marketId: string, transaction?: IdentityDatabase): Promise<MarketForSubmission | null> {
+    return marketId.startsWith("f1:") ? this.f1.getMarket(marketId, transaction) : this.football.getMarket(marketId, transaction);
+  }
+}
+
+function decodeOutcomes(kind: F1MarketKind, value: unknown): MarketForSubmission["snapshot"]["outcomes"] {
+  const decoded = typeof value === "string" ? safeParseJson(value) : value;
+  if (!Array.isArray(decoded)) return [];
+  return decoded.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const outcome = candidate as { selection?: unknown; decimalOdds?: unknown };
+    if (typeof outcome.selection !== "string" || typeof outcome.decimalOdds !== "string") return [];
+    if (parseF1Selection(kind, outcome.selection) === null) return [];
+    return [{ selection: outcome.selection as PredictionSelection, decimalOdds: outcome.decimalOdds }];
+  });
+}
+
+function safeParseJson(value: string): unknown {
+  try { return JSON.parse(value); }
+  catch { return value; }
+}
+
+function mapSession(row: typeof f1Sessions.$inferSelect): F1Session {
+  return {
+    id: row.id,
+    weekendId: row.weekendId,
+    kind: row.kind as F1SessionKind,
+    startsAt: row.startsAt.toISOString(),
+    state: row.state as F1SessionState,
+    resultVersion: row.resultVersion,
+    resultConfirmed: row.resultConfirmed,
+  };
+}
