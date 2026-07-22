@@ -64,13 +64,12 @@ jobs:
       - run: pnpm build
 
   e2e:
-    # SCAFFOLDING (Story 7.5 gates G1/G2/G5): main-journey Playwright E2E + axe a11y scan + perf smoke.
-    # Non-blocking (continue-on-error) until verified green in CI. Once the real main-journey specs pass
-    # here, remove continue-on-error to make them a blocking release gate. test.fixme placeholders skip
-    # automatically and never report false green.
+    # Story 7.5 gates G1/G2/G5: main-journey Playwright E2E + axe a11y scan + perf smoke.
+    # BLOCKING release gate — verified green in CI (PR #1 run 3, 2026-07-22: 8 passed / 7 skipped).
+    # The 4 authenticated journeys remain test.fixme (production Secure-cookie session blocker) and skip
+    # automatically without reporting false green; un-fixme them once that blocker is addressed.
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    continue-on-error: true
     services:
       postgres:
         image: postgres:18-bookworm
@@ -121,9 +120,9 @@ jobs:
           retention-days: 14
           if-no-files-found: ignore
       - name: Performance smoke (non-blocking tripwire)
-        # Runs even if the E2E step failed (the expected scaffolding state): job-level continue-on-error
-        # does NOT make later steps run after a failed step, so without this the smoke would be skipped
-        # exactly when E2E is not yet green. Its own failures stay non-blocking via `|| echo`.
+        # if: always() so a failing E2E build still produces perf-smoke output for diagnosis instead of
+        # skipping it. The smoke itself stays non-blocking via `|| echo` (it is a loose tripwire, not a
+        # NFR1 assertion); only the E2E + axe step above is the blocking gate.
         if: always()
         run: |
           pnpm --filter @football-predictor/web exec next start -p 3001 &

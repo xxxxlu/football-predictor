@@ -1,6 +1,6 @@
 # Story 7.5: 执行发布质量与恢复门禁
 
-Status: review — Scaffolding complete; browser execution pending CI evidence
+Status: done — scaffolding-first iteration complete, CI run 3 green (verify + e2e as a blocking gate). NOT part of this iteration's done (documented gaps below): 4 authenticated journeys remain test.fixme (production Secure-cookie blocker), plus backup/restore drill, NFR4/NFR1/NFR21, and a11y on authenticated pages.
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -223,4 +223,10 @@ _(bmad-code-review 2026-07-22；3 层并行对抗评审：Blind Hunter（仅 dif
 - [x] **a11y 5 条（脚手架时序，非真实违规）**：axe `analyze()` 报 `page.evaluate: Execution context was destroyed ... because of a navigation`；失败截图显示页面停在 **KickoffLoader「KICK OFF」开屏**——扫描撞上开屏→内容跳转、根本没跑完，不是页面真有 serious/critical 违规（正是上方 line 207 defer 预警的 KickoffLoader 竞态被 CI 证实）。**修复**：`accessibility.spec.ts` goto 改 `waitUntil:"networkidle"`，并加 `analyzeAccessibility()` 在 context-destroyed 时等 networkidle 后重试（真实违规仍作为结果触发断言失败，不被吞）。
 - [x] **重复用户名 1 条 = 真·后端 bug（E2E 门禁首次即逮住）**：失败截图（attempt+retry 各一张）错误框显示通用兜底「暂时无法完成，请稍后重试。」而非 `USERNAME_UNAVAILABLE` 的中文 → 说明 API 对重复注册返回**未映射码（`INTERNAL_ERROR` 500）而非 409**。根因：`repository.ts` 的 `isUniqueViolation` 只查顶层 `error.code==="23505"`；drizzle-orm 0.45.2 包裹查询错误（真实 PG code 落在 `.cause`）时漏判 → 原始错误重抛 → `handlers.ts:99` 返回 500。**修复**：`isUniqueViolation` 改为沿 `.cause` 链探测 + 消息兜底（`duplicate key value violates unique constraint`），重复注册遂返回 409 `USERNAME_UNAVAILABLE`，前端显示「这个用户名已被使用，请换一个。」。`DrizzleIdentityRepository` 此前**零测试**、`verify` 的 domain 服务测试用 mock repo 未覆盖真实错误检测→bug 潜伏至今；补 `repository.test.ts` 4 例锁定顶层码/包裹码/消息/非唯一错误，本地 vitest 绿。
 
-三项修复本地全绿（新增/改动共 6 单测通过 + db&web typecheck + web lint）；随本提交 push 触发 **CI run 2** 实证浏览器 E2E。**7.5 仍 `review`**，待 run 2 的 e2e 结果再定 `done`。
+三项修复本地全绿（新增/改动共 6 单测通过 + db&web typecheck + web lint）。
+
+**CI run 2（`7b00556`+`c9310b3`）**：verify 绿；e2e = 8 passed / 7 skipped / **1 failed** —— 重复用户名转绿（后端 409 修复经浏览器端到端确认，前端显示「这个用户名已被使用，请换一个。」）、a11y login/register/recover/terms 转绿，唯 landing `/` a11y 因动画页永不 idle、撞 `waitUntil:networkidle` 的 30s 导航超时（非真实违规、扫描未跑）。**修法**：`gotoForScan` 改 `domcontentloaded` + 有界 4s networkidle 兜底，扫描重试改用定长延时（commit `ee0b6ed`）。
+
+**CI run 3（`ee0b6ed`）全绿**：verify + e2e 均 `success`；e2e = **8 passed / 7 `test.fixme` skipped / 1 flaky（重试通过，为动画 landing a11y，重试逻辑吸收）** + perf smoke 绿。
+
+**收口（boss 2026-07-22 拍板）**：**7.5 → `done`**（限本次 scaffolding-first 迭代范围：G1-G5 + CI 已交付且 CI 实证全绿）；**去掉 e2e job 的 `continue-on-error`，转为阻塞发布门**（`ci.yml`）。7.3 保持 `in-progress`。**仍显式登记未做（非本迭代 done 范畴）**：4 条认证旅程 `test.fixme`（生产 Secure-cookie 会话阻塞）、备份/恢复演练、NFR4 20 并发、NFR1 现场性能、NFR21 全量安全扫描、a11y 认证页。
