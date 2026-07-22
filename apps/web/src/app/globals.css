@@ -90,7 +90,8 @@ body {
   font-family: var(--font-sans);
   text-rendering: optimizeLegibility;
 }
-a { color: inherit; }
+/* 放在 base 层，让链接上的文字颜色 utility 能正常覆盖继承色。 */
+@layer base { a { color: inherit; } }
 button, input { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
