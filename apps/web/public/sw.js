@@ -1,6 +1,7 @@
-/*看球账本 Service Worker：只读缓存，不实现后台同步或写请求重放。*/
-const CACHE_PREFIX = "matchday-ledger-shell-";
-const CACHE_VERSION = "v2";
+/*PULSE Service Worker：只读缓存，不实现后台同步或写请求重放。*/
+const CACHE_PREFIX = "pulse-shell-";
+const LEGACY_CACHE_PREFIX = "matchday-ledger-shell-";
+const CACHE_VERSION = "v1";
 const CACHE_NAME = `${CACHE_PREFIX}${CACHE_VERSION}`;
 const OFFLINE_URL = "/offline.html";
 const PRECACHE_URLS = [
@@ -17,14 +18,14 @@ self.addEventListener("install", (event) => {
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
   if (event.data?.type === "CLEAR_READONLY_CACHES") {
-    event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX)).map((key) => caches.delete(key)))));
+    event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) || key.startsWith(LEGACY_CACHE_PREFIX)).map((key) => caches.delete(key)))));
   }
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME).map((key) => caches.delete(key)));
+    await Promise.all(keys.filter((key) => (key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME) || key.startsWith(LEGACY_CACHE_PREFIX)).map((key) => caches.delete(key)));
     await self.clients.claim();
   })());
 });

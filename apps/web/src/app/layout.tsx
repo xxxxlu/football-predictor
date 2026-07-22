@@ -3,12 +3,12 @@ import { ServiceWorkerRegister } from "@/features/pwa/service-worker-register";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: { default: "football", template: "%s · football" },
-  description: "和朋友用虚拟积分记录足球判断。无现金、不可兑换。",
-  applicationName: "football",
+  title: { default: "PULSE SPORTS CLUB", template: "%s · PULSE" },
+  description: "每一刻，都有判断。足球、F1，和朋友一起预测，用虚拟积分留下每一次判断。无现金、不可兑换。",
+  applicationName: "PULSE",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#F4F0E6" };
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0a0b0b" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

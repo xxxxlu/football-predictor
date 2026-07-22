@@ -2,7 +2,8 @@ import Link from "next/link";
 import type { MatchView } from "../features/matchday/types";
 import { matchAvailability } from "../features/matchday/match-filters";
 import { StatusBanner } from "./status-banner";
-import { SoccerBall, TeamCrest } from "./football";
+import { TeamCrest } from "./football";
+import { SportGlyph } from "./pulse";
 
 export function MatchCard({ match, action }: { match: MatchView; action?: React.ReactNode }) {
   const kickoff = new Date(match.kickoffAt);
@@ -23,7 +24,7 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
     <article className="surface field-accent overflow-hidden rounded-xl">
       <header className="flex items-center justify-between gap-3 border-b rule px-4 py-3">
         <span className="league-pill min-w-0">
-          <SoccerBall className="size-3.5 shrink-0" />
+          <SportGlyph sport="FOOTBALL" className="size-3.5 shrink-0" />
           <span className="truncate">{match.competitionName}</span>
         </span>
         <span className={`inline-flex shrink-0 items-center gap-1.5 text-xs font-bold ${statusTone}`}>
@@ -72,13 +73,13 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
         {match.stale && match.market && <div className="mt-4"><StatusBanner kind="stale" timestamp={match.dataAsOf} /></div>}
         {!match.stale && match.state === "CLOSED" && <div className="mt-4"><StatusBanner kind="closed" /></div>}
         {(!match.market || !match.stale) && ["PAUSED", "DATA_UNAVAILABLE"].includes(match.state) && <div className="mt-4"><StatusBanner kind="unavailable" /></div>}
-        <Link href={`/matches/${encodeURIComponent(match.id)}`} className="mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-[var(--field)] hover:underline" aria-label={`查看 ${match.homeTeam} 对 ${match.awayTeam} 的阵容与详情`}>
-          <SoccerBall className="size-3.5" />查看阵容与详情
+        <Link href={`/matches/${encodeURIComponent(match.id)}`} className="link-arrow mt-4 inline-flex min-h-11 items-center gap-1.5 text-sm font-bold text-[var(--field)] hover:underline" aria-label={`查看 ${match.homeTeam} 对 ${match.awayTeam} 的阵容与详情`}>
+          查看阵容与详情<span className="arrow">→</span>
         </Link>
         {action && (
           <details className="mt-5 border-t rule pt-4">
             <summary className="flex cursor-pointer items-center gap-2 font-bold text-[var(--field)]">
-              <SoccerBall className="size-4" />填写本场判断
+              <SportGlyph sport="FOOTBALL" className="size-4" />填写本场判断
             </summary>
             <div className="mt-5">{action}</div>
           </details>

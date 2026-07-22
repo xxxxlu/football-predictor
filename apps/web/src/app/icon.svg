@@ -1,21 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="football">
-  <rect width="64" height="64" rx="14" fill="#176B4D"/>
-  <g transform="translate(32 32) scale(0.7) translate(-32 -32)">
-    <circle cx="32" cy="32" r="27" fill="#FBFAF6" stroke="#101D33" stroke-width="2.6"/>
-    <path d="M32 20.5 43 28.5 38.8 41.5 25.2 41.5 21 28.5Z" fill="#101D33"/>
-    <g stroke="#101D33" stroke-width="2.4" stroke-linecap="round">
-      <path d="M32 20.5V8.6"/>
-      <path d="m43 28.5 10.4-4.2"/>
-      <path d="m38.8 41.5 7.9 10.4"/>
-      <path d="m25.2 41.5-7.9 10.4"/>
-      <path d="M21 28.5 10.6 24.3"/>
-    </g>
-    <g fill="#101D33">
-      <circle cx="32" cy="7.4" r="2.2"/>
-      <circle cx="55.4" cy="23.6" r="2.2"/>
-      <circle cx="47.4" cy="53" r="2.2"/>
-      <circle cx="16.6" cy="53" r="2.2"/>
-      <circle cx="8.6" cy="23.6" r="2.2"/>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="PULSE">
+  <rect width="100" height="100" rx="22" fill="#FF3B20"/>
+  <g transform="skewX(-11) translate(16 0)">
+    <path d="M24 82 L24 18 L52 18 C68 18 76 27 76 39 C76 51 68 60 52 60 L38 60 L38 82 Z M38 32 L50 32 C57 32 62 33 62 39 C62 45 57 46 49 46 L38 46 Z" fill="#0A0B0B" fill-rule="evenodd"/>
   </g>
 </svg>

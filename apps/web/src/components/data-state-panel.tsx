@@ -1,4 +1,5 @@
-import { SoccerBall, Whistle, ShieldLock } from "./football";
+import { Whistle, ShieldLock } from "./football";
+import { PulseLine } from "./pulse";
 
 function FixtureSkeleton() {
   return (
@@ -38,12 +39,16 @@ export function DataStatePanel({ state, title, description, action }: { state: "
     ? <ShieldLock className="size-6 text-[var(--muted)]" />
     : state === "error"
       ? <Whistle className="size-6 text-[var(--coral)]" />
-      : <SoccerBall className="size-8" />;
+      : null;
   return (
     <section role={state === "error" ? "alert" : "status"} className="surface rounded-xl p-8 text-center">
-      <span aria-hidden="true" className="mx-auto grid size-16 place-items-center rounded-full" style={{ background: "rgb(23 107 77 / 8%)" }}>
-        {icon}
-      </span>
+      {icon ? (
+        <span aria-hidden="true" className="mx-auto grid size-16 place-items-center rounded-full" style={{ background: "rgb(184 23 13 / 8%)" }}>
+          {icon}
+        </span>
+      ) : (
+        <PulseLine state="ambient" className="mx-auto h-7 w-40" />
+      )}
       <h2 className="display mt-4 text-2xl font-bold">{title}</h2>
       <p className="mx-auto mt-2 max-w-lg text-sm leading-6 text-[var(--muted)]">{description}</p>
       {action && <div className="mt-5">{action}</div>}
