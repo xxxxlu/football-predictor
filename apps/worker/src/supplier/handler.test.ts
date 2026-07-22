@@ -213,4 +213,26 @@ describe("supplier worker job handler", () => {
     expect(secondResult).toMatchObject({ outcome: "SUCCESS", synced: 0 });
     expect(fetchCount).toBe(1);
   });
+
+  // Story 7.5 / NFR42 gate G4 — regression guarding commit 80fb694's durable claimExternalSync gate.
+  // Distinct from the fetch-count assertion above: this locks in that a throttled refresh spends ZERO
+  // budget and makes ZERO supplier call, so ordinary lineup polling can never erode the daily cap.
+  it("spends zero budget and calls no supplier when the durable claim gate throttles a repeat refresh (NFR42)", async () => {
+    const claimStore = new Map<string, number>();
+
+    const first = setup({ claimStore });
+    const firstResult = await first.handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
+    expect(firstResult).toMatchObject({ outcome: "SUCCESS", synced: 1 });
+    expect(first.events).toContain("budget.consume");
+    expect(first.events).toContain("client.lineups");
+
+    // Fresh handler = simulated worker restart; only the durable claim store carries over. The interval
+    // has not elapsed, so the gate returns BEFORE charging budget or touching the supplier.
+    const second = setup({ claimStore });
+    const secondResult = await second.handler.run({ type: "LINEUPS", attempt: 0, payload: { fixtureId: 101, matchId: "api-football:101" } });
+    expect(secondResult).toMatchObject({ outcome: "SUCCESS", synced: 0 });
+    expect(second.events).toEqual(["repository.getFixture", "repository.claim"]);
+    expect(second.events).not.toContain("budget.consume");
+    expect(second.events).not.toContain("client.lineups");
+  });
 });
