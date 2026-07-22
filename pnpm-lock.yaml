@@ -29,6 +29,9 @@ importers:
       '@football-predictor/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@football-predictor/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@football-predictor/db':
         specifier: workspace:*
         version: link:../../packages/db

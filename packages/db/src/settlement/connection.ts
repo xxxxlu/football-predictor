@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { PostgresF1SettlementCandidateRepository } from "../f1/settlement.js";
 import { PostgresSettlementCandidateRepository, PostgresSettlementTransactionPort } from "./repository.js";
 
 export function createSettlementPersistence(databaseUrl: string) {
@@ -6,6 +7,7 @@ export function createSettlementPersistence(databaseUrl: string) {
   return {
     transaction: new PostgresSettlementTransactionPort(sql),
     candidates: new PostgresSettlementCandidateRepository(sql),
+    f1Candidates: new PostgresF1SettlementCandidateRepository(sql),
     close: () => sql.end(),
   };
 }
