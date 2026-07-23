@@ -6,8 +6,8 @@ import { expect, test } from "@playwright/test";
 // — critically — it never depends on a persisted session cookie. Registration returns a one-time
 // recovery code (HTTP 201) WITHOUT logging the user in, and account recovery only needs the username +
 // recovery code. That means these specs pass under both `next dev` and the production `next start`
-// server used by the CI e2e job (the `Secure`-cookie trap in NOTE below only affects authenticated
-// journeys, which is why Journeys 2–5 are test.fixme).
+// server used by the CI e2e job regardless of session-cookie behaviour. (The session cookie's Secure
+// flag now keys on APP_ENV, so the authenticated Journeys 2–5 run for real in CI too.)
 //
 // The only external dependency is a migrated Postgres, which the CI e2e job provisions. Local browser
 // execution is environment-blocked in the dev sandbox (no app startup / browser download) — these run
@@ -24,11 +24,18 @@ const ROTATED_PASSWORD = "Passw0rd-e2e-02";
 
 async function submitRegistration(page: import("@playwright/test").Page, username: string, password: string): Promise<void> {
   await page.goto("/register");
+  // Let hydration land: on the production server React can remount the form after
+  // Playwright already typed into the SSR DOM, wiping the earliest-filled field.
+  await page.waitForLoadState("networkidle").catch(() => {});
   await expect(page.getByRole("button", { name: "创建账户" })).toBeVisible();
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(password);
   await page.locator('input[name="ageConfirmed"]').check();
   await page.locator('input[name="nonCashTermsAccepted"]').check();
+  // Verify the fills survived hydration; refill anything a remount wiped.
+  for (const [label, value] of [["用户名", username], ["密码", password]] as const) {
+    if ((await page.getByLabel(label).inputValue()) !== value) await page.getByLabel(label).fill(value);
+  }
   await page.getByRole("button", { name: "创建账户" }).click();
 }
 
@@ -81,9 +88,13 @@ test("recovers an account with its recovery code and rotates the code", async ({
 
   // Recover: username + recovery code + a new password. No session required.
   await page.goto("/recover");
+  await page.waitForLoadState("networkidle").catch(() => {});
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("恢复码").fill(firstCode);
   await page.getByLabel("新密码").fill(ROTATED_PASSWORD);
+  for (const [label, value] of [["用户名", username], ["恢复码", firstCode], ["新密码", ROTATED_PASSWORD]] as const) {
+    if ((await page.getByLabel(label).inputValue()) !== value) await page.getByLabel(label).fill(value);
+  }
   await page.getByRole("button", { name: "重置密码并轮换恢复码" }).click();
 
   // Recovery re-issues a NEW one-time code (the old one is rotated out).

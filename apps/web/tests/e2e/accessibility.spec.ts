@@ -7,11 +7,10 @@ import { analyzeAccessibility, blockingViolations, gotoForScan } from "./support
 // serious- or critical-impact violation. These routes render without a session or seed, so the scan
 // is deterministic under both dev and the CI production server.
 //
-// SCOPE NOTE: this covers the anonymous surface only (auth + legal + landing). Authenticated
-// football surfaces (room, match detail, admin) are covered once Journeys 2–5 leave test.fixme —
-// tracked as a documented gap in the Story 7.5 Dev Agent Record. The authenticated F1 surfaces have
-// their own scan in f1-accessibility.spec.ts (runs against `next dev`, self-skips under the CI
-// Secure-cookie trap). axe is not a substitute for manual WCAG audit; it catches machine-detectable
+// SCOPE NOTE: this covers the anonymous surface only (auth + legal + landing). The authenticated
+// journeys exercise their surfaces in their own specs (invite-join-room, closing-race,
+// host-operations, super-admin-exception), and the authenticated F1 surfaces have a dedicated scan
+// in f1-accessibility.spec.ts. axe is not a substitute for manual WCAG audit; it catches machine-detectable
 // violations, which is what this gate asserts. Scan/retry mechanics live in ./support/axe-scan.ts.
 
 const ANONYMOUS_ROUTES = [

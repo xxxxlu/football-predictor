@@ -1,59 +1,96 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type BrowserContext, type Locator, type Page } from "@playwright/test";
+import { createLoggedInActor, createRoomViaApi } from "./support/actors";
 
 // Story 7.5 gate G1 — Journey 3: 封盘竞态 (market closes / odds change between view and submit).
 //
-// test.fixme: highest-setup journey. Recorded as a documented gap in the Story 7.5 Dev Agent Record.
-// Needs, beyond a session (see the Secure-cookie note in invite-join-room.spec.ts):
-//   - A room the actor belongs to (ACTIVE status) containing at least one predictable fixture, i.e. a
-//     supplier-sourced match with a verifiable odds snapshot and a kickoff still in the future.
-//   - A way to force the race outcome. There is no UI to push a match to "about to close", so the
-//     supported approaches are: (a) seed a fixture at a controlled close boundary via the worker /
-//     direct DB insert, or (b) intercept POST /api/v1/rooms/<roomId>/tickets with page.route(...) and
-//     return the 409 error envelope, asserting the UI reaction. (b) is the lighter scaffold and is
-//     sketched below.
-//
-// The body captures the REAL assertions for the three server outcomes. Skipped, not faked.
+// Requires the seeded football fixture from `pnpm db:seed:e2e` (E2E 联队 vs E2E 城队, SCHEDULED,
+// kickoff in the future, OPEN 1X2 market with a verifiable odds snapshot). The two race outcomes are
+// forced by intercepting POST …/tickets with the real 409 envelopes; the success case submits a REAL
+// ticket end-to-end (odds version + snapshot verification included). A missing seed makes these
+// tests FAIL loudly, not skip — a broken seed step must not read as green.
 
-test.fixme("shows a no-charge banner when the market closes before submit (MARKET_CLOSED)", async ({ page }) => {
-  // Precondition: authenticated, inside an ACTIVE room with a predictable fixture rendered.
-  // Intercept the ticket submission and force MARKET_CLOSED.
-  await page.route("**/api/v1/rooms/*/tickets", async (route) => {
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({ error: { code: "MARKET_CLOSED", message: "比赛已经封盘" } }),
-    });
+const SEEDED_HOME_TEAM = "E2E 联队";
+
+test.describe.configure({ mode: "serial" });
+
+test.describe("closing race: MARKET_CLOSED / ODDS_CHANGED / success", () => {
+  let context: BrowserContext;
+  let page: Page;
+  let roomId = "";
+
+  /** Open the room's matchday list, expand the seeded fixture's slip disclosure, return the card. */
+  async function openSeededCard(): Promise<Locator> {
+    await page.goto(`/rooms/${roomId}`);
+    const card = page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first();
+    await expect(card, "seeded fixture rendered in the room matchday list (run `pnpm db:seed:e2e`)").toBeVisible();
+    // The prediction slip sits behind a <details> disclosure on the card.
+    await card.getByText("填写本场判断").click();
+    await expect(card.getByRole("button", { name: "确认最新倍率并提交" })).toBeVisible();
+    return card;
+  }
+
+  test.beforeAll(async ({ browser, baseURL }) => {
+    context = await browser.newContext();
+    page = await context.newPage();
+    await createLoggedInActor(page, "race");
+    const room = await createRoomViaApi(page, baseURL, "E2E 封盘竞态房");
+    roomId = room.roomId;
   });
 
-  await page.getByRole("button", { name: "主胜" }).click();
-  await page.getByLabel("投入积分").fill("500");
-  await page.getByRole("button", { name: "确认最新倍率并提交" }).click();
-
-  await expect(page.getByText("未提交")).toBeVisible();
-  await expect(page.getByText("比赛已经封盘，本次提交未扣分。")).toBeVisible();
-});
-
-test.fixme("re-fetches and asks for reconfirmation when odds change (ODDS_CHANGED)", async ({ page }) => {
-  await page.route("**/api/v1/rooms/*/tickets", async (route) => {
-    await route.fulfill({
-      status: 409,
-      contentType: "application/json",
-      body: JSON.stringify({ error: { code: "ODDS_CHANGED", message: "odds changed" } }),
-    });
+  test.afterAll(async () => {
+    await context?.close();
   });
 
-  await page.getByRole("button", { name: "主胜" }).click();
-  await page.getByLabel("投入积分").fill("500");
-  await page.getByRole("button", { name: "确认最新倍率并提交" }).click();
+  test("shows a no-charge banner when the market closes before submit (MARKET_CLOSED)", async () => {
+    await page.route("**/api/v1/rooms/*/tickets", async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "MARKET_CLOSED", message: "比赛已经封盘" } }),
+      });
+    });
+    try {
+      const card = await openSeededCard();
+      await card.getByRole("button", { name: /主胜/ }).click();
+      await card.getByLabel("投入积分").fill("500");
+      await card.getByRole("button", { name: "确认最新倍率并提交" }).click();
 
-  await expect(page.getByText("积分倍率已经变化，已为你更新为最新倍率，请确认后再次提交。")).toBeVisible();
-});
+      await expect(card.getByText("未提交")).toBeVisible();
+      await expect(card.getByText("比赛已经封盘，本次提交未扣分。")).toBeVisible();
+    } finally {
+      await page.unroute("**/api/v1/rooms/*/tickets");
+    }
+  });
 
-test.fixme("records the prediction and returns a ticket number on success", async ({ page }) => {
-  // No route interception: a genuinely OPEN fixture with a verifiable snapshot.
-  await page.getByRole("button", { name: "主胜" }).click();
-  await page.getByLabel("投入积分").fill("500");
-  await page.getByRole("button", { name: "确认最新倍率并提交" }).click();
+  test("re-fetches and asks for reconfirmation when odds change (ODDS_CHANGED)", async () => {
+    await page.route("**/api/v1/rooms/*/tickets", async (route) => {
+      await route.fulfill({
+        status: 409,
+        contentType: "application/json",
+        body: JSON.stringify({ error: { code: "ODDS_CHANGED", message: "odds changed" } }),
+      });
+    }, { times: 1 });
+    try {
+      const card = await openSeededCard();
+      await card.getByRole("button", { name: /主胜/ }).click();
+      await card.getByLabel("投入积分").fill("500");
+      await card.getByRole("button", { name: "确认最新倍率并提交" }).click();
 
-  await expect(page.getByText("判断已记录")).toBeVisible();
+      // The slip re-fetches the latest odds and asks the user to confirm again — no charge.
+      await expect(card.getByText("积分倍率已经变化，已为你更新为最新倍率，请确认后再次提交。")).toBeVisible();
+    } finally {
+      await page.unroute("**/api/v1/rooms/*/tickets");
+    }
+  });
+
+  test("records the prediction and returns a ticket number on success", async () => {
+    // No interception: a genuinely OPEN fixture with a verifiable snapshot, real POST, real ledger freeze.
+    const card = await openSeededCard();
+    await card.getByRole("button", { name: /主胜/ }).click();
+    await card.getByLabel("投入积分").fill("500");
+    await card.getByRole("button", { name: "确认最新倍率并提交" }).click();
+
+    await expect(card.getByText("判断已记录")).toBeVisible();
+    await expect(card.getByText(/票号：/)).toBeVisible();
+  });
 });

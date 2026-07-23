@@ -1,4 +1,5 @@
 import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { createLoggedInActor } from "./support/actors";
 import { analyzeAccessibility, blockingViolations, gotoForScan } from "./support/axe-scan";
 
 // P1-3 — automated axe scan over the authenticated F1 surfaces:
@@ -7,18 +8,13 @@ import { analyzeAccessibility, blockingViolations, gotoForScan } from "./support
 //   3. /matches/f1/<sessionId>?roomId=… with the F1 Prediction Slip engaged
 //   4. /rooms/<roomId> after an F1 ticket exists (成员投入记录 with an F1 row)
 //
-// These journeys need a persisting session, so they run REAL against `next dev`
-// (or any server where fp_session survives) and self-skip — loudly, with the
-// reason in the report — under the CI production-server Secure-cookie trap that
-// also keeps Journeys 2–5 at test.fixme. A skip is reported as skipped, never
-// as a pass. Detail/slip/room scans additionally need seeded F1 weekends
-// (`pnpm db:seed:f1-2026`) and skip with that instruction when the DB is bare.
-
-const VALID_PASSWORD = "Passw0rd-e2e-f1-a11y";
-
-function uniqueUsername(prefix: string): string {
-  return `${prefix}${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
-}
+// These journeys need a persisting session. The session cookie's Secure flag
+// keys on APP_ENV, so they run REAL against `next dev` and against the CI
+// production build (APP_ENV=test); a server that still drops the cookie makes
+// the suite self-skip loudly, with the reason in the report — skipped, never a
+// false pass. Detail/slip/room scans additionally need seeded F1 weekends
+// (`pnpm db:seed:f1-2026`, CI seeds them) and skip with that instruction when
+// the DB is bare.
 
 async function expectNoBlockingViolations(page: Page, surface: string) {
   const results = await analyzeAccessibility(page);
@@ -45,23 +41,10 @@ test.describe("F1 surfaces accessibility", () => {
     context = await browser.newContext();
     page = await context.newPage();
 
-    // Register a fresh actor through the real UI, then log in.
-    const username = uniqueUsername("e2ef1axe");
-    await page.goto("/register");
-    await page.getByLabel("用户名").fill(username);
-    await page.getByLabel("密码").fill(VALID_PASSWORD);
-    await page.locator('input[name="ageConfirmed"]').check();
-    await page.locator('input[name="nonCashTermsAccepted"]').check();
-    await page.getByRole("button", { name: "创建账户" }).click();
-    await expect(page.getByText("账户已准备好")).toBeVisible();
-
-    await page.goto("/login");
-    await page.getByLabel("用户名").fill(username);
-    await page.getByLabel("密码").fill(VALID_PASSWORD);
-    await page.getByRole("button", { name: "登录" }).click();
-    // Login success replaces the URL (router.replace to returnTo/home); wait for it
-    // so the session probe below cannot race the login fetch.
-    await page.waitForURL((url) => !url.pathname.startsWith("/login"), { timeout: 15_000 }).catch(() => {});
+    // Register a fresh actor through the real UI, then log in (hydration-stabilized
+    // shared helper — also waits out the post-login router.replace so the session
+    // probe below cannot race the login fetch).
+    await createLoggedInActor(page, "e2ef1axe").catch(() => {});
 
     // Session probe: 200 proves the cookie persisted; 401 is the Secure-cookie trap.
     const weekendsResponse = await page.request.get("/api/v1/f1/weekends");
