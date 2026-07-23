@@ -17,12 +17,19 @@ function cachesAvailable(): boolean {
   return typeof window !== "undefined" && "caches" in window;
 }
 
-/** Delete every private cache and offline draft (logout, or ownership change). */
+/** Delete every private cache and offline draft (logout, or ownership change).
+ *  Swept in bounded passes: a service-worker write already in flight can pass its
+ *  owner check before the purge and land after it, resurrecting the cache — the
+ *  re-check catches that (observed as a one-attempt CI flake of the logout spec). */
 export async function purgePrivateCaches(): Promise<void> {
   purgeOfflineDrafts();
   if (!cachesAvailable()) return;
-  const keys = await window.caches.keys();
-  await Promise.all(keys.filter((key) => key.startsWith(PRIVATE_CACHE_PREFIX)).map((key) => window.caches.delete(key)));
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const keys = (await window.caches.keys()).filter((key) => key.startsWith(PRIVATE_CACHE_PREFIX));
+    if (keys.length === 0 && attempt > 0) return;
+    await Promise.all(keys.map((key) => window.caches.delete(key)));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 /** Bind the private cache to the authenticated user: purge it when the owner changed,

@@ -29,6 +29,12 @@ test.describe("offline resync and draft revalidation (7.3b)", () => {
   };
 
   const draftKeys = () => page.evaluate(() => Object.keys(window.localStorage).filter((key) => key.startsWith("pulse-draft-v1:")));
+  // The SW writes cache entries in waitUntil, AFTER the response is delivered — wait for
+  // the navigation HTML to actually land before cutting the network, or the offline
+  // reopen races the write and falls back to offline.html.
+  const awaitNavCached = (id: string) => page.waitForFunction(async (rid) => {
+    return Boolean(await caches.match(`/rooms/${rid}`, { cacheName: "pulse-private-v1" }));
+  }, id, { timeout: 15_000 });
   const roomApiCachedAt = () => page.evaluate(async (id) => {
     const cached = await caches.match(`/api/v1/rooms/${id}`, { cacheName: "pulse-private-v1" });
     return cached?.headers.get("x-pulse-cached-at") ?? null;
@@ -77,6 +83,7 @@ test.describe("offline resync and draft revalidation (7.3b)", () => {
     await page.goto(`/rooms/${roomId}`);
     await expect(page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first()).toBeVisible();
     await page.waitForLoadState("networkidle").catch(() => {});
+    await awaitNavCached(roomId);
   });
 
   test.afterAll(async () => {
@@ -147,6 +154,7 @@ test.describe("offline resync and draft revalidation (7.3b)", () => {
     await page.goto(`/rooms/${room.roomId}`);
     await expect(page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first()).toBeVisible();
     await page.waitForLoadState("networkidle").catch(() => {});
+    await awaitNavCached(room.roomId);
 
     await context.setOffline(true);
     try {

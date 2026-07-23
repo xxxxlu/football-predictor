@@ -50,8 +50,13 @@ test.describe("offline read-only (7.3a)", () => {
     });
     await page.goto(`/rooms/${roomId}`);
     await expect(page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first()).toBeVisible();
-    // Let the in-flight fetches finish so their responses land in the cache.
+    // Let the in-flight fetches finish so their responses land in the cache — and wait
+    // for the navigation HTML itself: the SW writes it in waitUntil AFTER responding,
+    // so cutting the network too early races the write and serves offline.html.
     await page.waitForLoadState("networkidle").catch(() => {});
+    await page.waitForFunction(async (rid) => {
+      return Boolean(await caches.match(`/rooms/${rid}`, { cacheName: "pulse-private-v1" }));
+    }, roomId, { timeout: 15_000 });
   });
 
   test.afterAll(async () => {
