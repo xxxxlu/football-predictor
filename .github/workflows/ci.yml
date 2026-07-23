@@ -130,10 +130,11 @@ jobs:
           path: apps/web/playwright-report/
           retention-days: 14
           if-no-files-found: ignore
-      - name: Performance smoke (non-blocking tripwire)
-        # if: always() so a failing E2E build still produces perf-smoke output for diagnosis instead of
-        # skipping it. The smoke itself stays non-blocking via `|| echo` (it is a loose tripwire, not a
-        # NFR1 assertion); only the E2E + axe step above is the blocking gate.
+      - name: Performance smoke (blocking tripwire)
+        # if: always() so a failing E2E step still produces perf-smoke output for diagnosis instead of
+        # skipping it. BLOCKING since 7.3a wrapped: exceeding the (deliberately generous) p95 ceiling or
+        # an erroring endpoint fails the job. Still a smoke tripwire, not an NFR1/NFR4 load assertion —
+        # those remain documented gaps.
         if: always()
         run: |
           pnpm --filter @football-predictor/web exec next start -p 3001 &
@@ -142,5 +143,7 @@ jobs:
             if curl -sf http://127.0.0.1:3001/api/health/live >/dev/null 2>&1; then break; fi
             sleep 2
           done
-          node scripts/perf-smoke.mjs http://127.0.0.1:3001 || echo "perf smoke reported issues (non-blocking)"
+          STATUS=0
+          node scripts/perf-smoke.mjs http://127.0.0.1:3001 || STATUS=$?
           kill "$SERVER_PID" 2>/dev/null || true
+          exit "$STATUS"
