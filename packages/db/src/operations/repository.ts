@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@football-predictor/domain";
 
 export class OperationError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); this.name = "OperationError"; }
@@ -179,19 +180,33 @@ export class PostgresOperationsRepository {
   async submissionStatus(roomId: string, userId: string) {
     await this.assertMember(roomId, userId, true);
     const [room] = await this.sql<Array<{ name: string }>>`SELECT name FROM room.rooms WHERE id=${roomId} LIMIT 1`;
-    const rows = await this.sql<Array<{ matchId: string; homeTeam: string; awayTeam: string; kickoffAt: DbTimestamp; matchStatus: string; userId: string; displayName: string; submitted: boolean }>>`
-      SELECT f.id AS "matchId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",f.status AS "matchStatus",
+    // Sport-neutral wall: football fixtures and F1 sessions project through the
+    // same domain allowlist. Only the submitted EXISTS boolean leaves the data
+    // layer — selections, stakes and odds are never selected here.
+    type RawRow = { eventId: string; homeTeam: string; awayTeam: string; startsAt: DbTimestamp; lifecycleState: string; userId: string; displayName: string; submitted: boolean };
+    const football = await this.sql<RawRow[]>`
+      SELECT f.id AS "eventId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "startsAt",f.status AS "lifecycleState",
         m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
         EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id=f.id) AS submitted
       FROM supplier.fixtures f CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
       WHERE m.room_id=${roomId} ORDER BY f.kickoff_at,m.joined_at LIMIT 500`;
-    const fixtures = new Map<string, { matchId: string; homeTeam: string; awayTeam: string; kickoffAt: string; status: "OPEN" | "CLOSED" | "FINISHED"; members: Array<{ userId: string; displayName: string; submitted: boolean }> }>();
-    for (const row of rows) {
-      let fixture = fixtures.get(row.matchId);
-      if (!fixture) { fixture = { matchId: row.matchId, homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoffAt: timestampIso(row.kickoffAt), status: row.matchStatus === "FINISHED" ? "FINISHED" : this.clock.now() >= timestampDate(row.kickoffAt) ? "CLOSED" : "OPEN", members: [] }; fixtures.set(row.matchId, fixture); }
-      fixture.members.push({ userId: row.userId, displayName: row.displayName, submitted: row.submitted });
-    }
-    return { roomId, roomName: room?.name ?? "", viewerRole: "room_owner" as const, fixtures: [...fixtures.values()] };
+    const formula1 = await this.sql<RawRow[]>`
+      SELECT 'f1:'||fs.id::text AS "eventId",fw.name AS "homeTeam",fs.kind AS "awayTeam",fs.starts_at AS "startsAt",fs.state AS "lifecycleState",
+        m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
+        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id='f1:'||fs.id::text) AS submitted
+      FROM f1.sessions fs JOIN f1.race_weekends fw ON fw.id=fs.weekend_id
+      CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
+      WHERE m.room_id=${roomId} ORDER BY fs.starts_at,m.joined_at LIMIT 500`;
+    const toDomainRow = (sport: SubmissionSport) => (row: RawRow): SubmissionStatusRow => ({
+      sport, eventId: row.eventId, homeTeam: row.homeTeam, awayTeam: row.awayTeam,
+      startsAt: timestampIso(row.startsAt), lifecycleState: row.lifecycleState,
+      userId: row.userId, displayName: row.displayName, submitted: row.submitted,
+    });
+    const fixtures = projectSubmissionBoard(
+      [...football.map(toDomainRow("FOOTBALL")), ...formula1.map(toDomainRow("FORMULA_1"))],
+      this.clock.now(),
+    );
+    return { roomId, roomName: room?.name ?? "", viewerRole: "room_owner" as const, fixtures };
   }
 
   async ticketHistory(roomId: string, userId: string) {
