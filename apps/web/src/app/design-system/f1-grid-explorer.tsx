@@ -23,7 +23,7 @@ export function F1GridExplorer() {
     </div>
     <div className="pd-driver-gallery pd-driver-gallery--interactive">
       {drivers.map((driver) => { const logo = teamLogo(driver.team); return <article className="pd-media-tile pd-media-tile--driver pd-driver-card" key={driver.slug}>
-        <div className="pd-driver-photo"><Image src={`${driver.localPath}?v=${manifest.generatedAt}`} alt={driver.name} width={driver.width} height={driver.height} sizes="(max-width: 767px) 50vw, 25vw" /><code>{String(driver.number).padStart(2, "0")}</code>{logo ? <Image className="pd-driver-team-logo" src={logo} alt={`${driver.team} logo`} width={120} height={60} /> : null}</div>
+        <div className="pd-driver-photo"><Image src={driver.localPath} alt={driver.name} width={driver.width} height={driver.height} sizes="(max-width: 767px) 50vw, 25vw" /><code>{String(driver.number).padStart(2, "0")}</code>{logo ? <Image className="pd-driver-team-logo" src={logo} alt={`${driver.team} logo`} width={120} height={60} /> : null}</div>
         <div className="pd-media-tile-copy"><span><b>{driver.name}</b><small>{driver.team}</small></span><span className="pd-driver-status">READY · GRID</span></div>
       </article>; })}
     </div>

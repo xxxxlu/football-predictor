@@ -69,7 +69,8 @@ export default function F1AssetsPage() {
         <div className="pd-car-gallery">
           {manifest.cars.map((car) => (
             <article className="pd-media-tile pd-media-tile--car" key={car.slug}>
-              <Image src={`${car.localPath}?v=${manifest.generatedAt}`} alt={`${car.team} ${car.chassis}`} width={car.width} height={car.height} sizes="(max-width: 767px) 100vw, 50vw" />
+              {/* 本地静态资源不能带 query（next/image 未配置 images.localPatterns 时 `?v=` 直接使 next build 预渲染失败） */}
+              <Image src={car.localPath} alt={`${car.team} ${car.chassis}`} width={car.width} height={car.height} sizes="(max-width: 767px) 100vw, 50vw" />
               <div className="pd-media-tile-copy">
                 <span><b>{car.chassis}</b><small>{car.team}</small></span>
                 {car.source === "user-provided" ? <span className="pd-slip-meta">LOCAL ASSET · 待补充署名</span> : <a href={car.sourcePage} target="_blank" rel="noreferrer">{car.license} · SOURCE ↗</a>}
