@@ -60,19 +60,37 @@ async function cacheSuccessfulResponse(request, response) {
   return response;
 }
 
+/*读取 owner 标记原文（缺失返回 null）。标记体由页面侧写入（private-cache.ts），
+  含 owner + 每次绑定唯一的 epoch —— SW 只做原文比较，不解析。*/
+async function readOwnerEpoch() {
+  const marker = await caches.match(OWNER_MARKER_PATH, { cacheName: PRIVATE_CACHE_NAME });
+  return marker ? await marker.text() : null;
+}
+
 /*写入私有缓存时盖上时间戳，离线回放时页面据此展示 dataAsOf。
   注意用 request.url 作 key：Cache.put() 拒绝 mode 为 navigate 的 Request 对象。*/
 async function putPrivate(request, response) {
   if (!response.ok || response.type === "opaque") return;
   /*只有登录侧绑定过 owner 才写入（caches.match 探测不会创建缓存）：
     登出 purge 之后标记消失，匿名流量（登录页及其 prefetch）不会把私有缓存复活。*/
-  const owner = await caches.match(OWNER_MARKER_PATH, { cacheName: PRIVATE_CACHE_NAME });
-  if (!owner) return;
+  const epochBefore = await readOwnerEpoch();
+  if (epochBefore === null) return;
   const headers = new Headers(response.headers);
   headers.set("x-pulse-cached-at", new Date().toISOString());
   const body = await response.clone().blob();
   const cache = await caches.open(PRIVATE_CACHE_NAME);
   await cache.put(request.url, new Response(body, { status: response.status, statusText: response.statusText, headers }));
+  /*epoch 复核：写入期间发生了登出 purge（标记消失）或换绑（epoch 变化）时，
+    这次写入自弃 —— 彻底关闭 in-flight 写复活/串入私有缓存的窗口。*/
+  const epochAfter = await readOwnerEpoch();
+  if (epochAfter === null) {
+    await caches.delete(PRIVATE_CACHE_NAME);
+    return;
+  }
+  if (epochAfter !== epochBefore) {
+    await cache.delete(request.url);
+    return;
+  }
   /*FIFO 淘汰，owner 标记永不参与淘汰。*/
   const keys = (await cache.keys()).filter((key) => new URL(key.url).pathname !== OWNER_MARKER_PATH);
   if (keys.length > PRIVATE_CACHE_MAX_ENTRIES) {
