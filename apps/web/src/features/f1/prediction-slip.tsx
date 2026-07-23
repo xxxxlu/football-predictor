@@ -146,9 +146,10 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
             <span className="flex items-center gap-2">
               <i aria-hidden className="h-4 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
               <span className="min-w-0 flex-1 truncate">{code}</span>
-              <span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span>
+              <span className="tabular text-xs font-black">{outcome.decimalOdds}</span>
             </span>
-            {driver && <span className={`mt-0.5 block truncate text-[10px] font-normal ${selection === outcome.selection ? "opacity-80" : "text-[var(--muted)]"}`}>{driver.name}</span>}
+            {/* 选中态不做透明度弱化：白字压在品牌红上，opacity-80 会跌破 4.5:1 对比度 */}
+            {driver && <span className={`mt-0.5 block truncate text-[10px] font-normal ${selection === outcome.selection ? "" : "text-[var(--muted)]"}`}>{driver.name}</span>}
           </button>;
         })}
       </div>
@@ -163,7 +164,7 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
           const parsed = /^PODIUM:(.+):(YES|NO)$/.exec(outcome.selection);
           const label = parsed ? `${parsed[1]} ${parsed[2] === "YES" ? "登台" : "不登台"}` : outcome.selection;
           return <button key={outcome.selection} type="button" aria-pressed={selection === outcome.selection} onClick={() => onSelect(outcome.selection)} className={buttonClass(selection === outcome.selection)}>
-            <span className="flex items-center justify-between gap-2"><span className="truncate">{label}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></span>
+            <span className="flex items-center justify-between gap-2"><span className="truncate">{label}</span><span className="tabular text-xs font-black">{outcome.decimalOdds}</span></span>
           </button>;
         })}
       </div>
@@ -178,7 +179,7 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
           const parsed = /^POD3:(.+)-(.+)-(.+)$/.exec(outcome.selection);
           const label = parsed ? `${parsed[1]} → ${parsed[2]} → ${parsed[3]}` : outcome.selection;
           return <button key={outcome.selection} type="button" aria-pressed={selection === outcome.selection} onClick={() => onSelect(outcome.selection)} className={buttonClass(selection === outcome.selection)}>
-            <span className="flex items-center justify-between gap-2"><span className="tabular truncate">{label}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></span>
+            <span className="flex items-center justify-between gap-2"><span className="tabular truncate">{label}</span><span className="tabular text-xs font-black">{outcome.decimalOdds}</span></span>
           </button>;
         })}
       </div>
@@ -196,7 +197,7 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
           <span className="flex items-center gap-2">
             <i aria-hidden className="h-4 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
             <span className="min-w-0 flex-1 truncate">{label}</span>
-            <span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span>
+            <span className="tabular text-xs font-black">{outcome.decimalOdds}</span>
           </span>
         </button>;
       })}
