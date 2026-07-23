@@ -1,7 +1,8 @@
 "use client";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { OddsButton } from "@/components/odds-button";
 import { StatusMessage } from "@/components/status-message";
+import { discardOfflineDraft, loadOfflineDraft, revalidateDraft, saveOfflineDraft, type DraftVerdict, type OfflineDraft } from "@/features/pwa/offline-draft";
 import { useOnlineStatus } from "@/features/pwa/offline-status";
 import { scoreChipLabel } from "./selection-label";
 import { matchViewFromDetailPayload } from "./types";
@@ -54,9 +55,51 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
     return active?.decimalOdds && Number.isFinite(amount * value) ? (amount * value).toFixed(2) : "—";
   }, [stake, active]);
 
-  // 7.3a：离线是只读模式 —— 提交入口直接禁用，而不是等 POST 失败。
+  // 7.3a：离线禁提交；7.3b：离线仍可继续构建判断（存为本地草稿），只有提交被禁。
   const online = useOnlineStatus();
-  const unavailable = current.state !== "OPEN" || !active?.id || !online;
+  const closed = current.state !== "OPEN";
+  const unavailable = closed || !active?.id || !online;
+
+  // 7.3b —— 离线草稿：离线时把当前选择随手保存；回网重载后恢复，但必须重新验证
+  // （倍率/盘口版本/开赛状态任何一项变化都要求重选或明确丢弃），且永不自动提交。
+  const [draft, setDraft] = useState<OfflineDraft | null>(null);
+  const [draftVerdict, setDraftVerdict] = useState<DraftVerdict | null>(null);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (online || !active?.id || !active.selection || !active.decimalOdds || !stake) return;
+    saveOfflineDraft({ v: 1, roomId, eventKey: match.id, marketId: String(active.id), marketVersion: active.version, selection: active.selection, decimalOdds: active.decimalOdds, stakePoints: stake, savedAt: new Date().toISOString() });
+  }, [online, active, stake, roomId, match.id]);
+
+  useEffect(() => {
+    if (!online || restoredRef.current) return;
+    restoredRef.current = true;
+    // 微任务回调里恢复：localStorage 是外部系统，且避免 effect 内同步 setState 级联渲染。
+    queueMicrotask(() => {
+      const stored = loadOfflineDraft(roomId, match.id);
+      if (!stored) return;
+      const target = correctScore && String(correctScore.id) === stored.marketId
+        ? { kind: "CS" as MarketKind, id: correctScore.id, version: correctScore.version, odds: correctScore.outcomes.find((outcome) => outcome.selection === stored.selection)?.decimalOdds }
+        : oneXTwo && String(oneXTwo.id) === stored.marketId
+          ? { kind: "1X2" as MarketKind, id: oneXTwo.id, version: oneXTwo.version, odds: (["HOME", "DRAW", "AWAY"] as const).some((value) => value === stored.selection) ? ({ HOME: oneXTwo.home, DRAW: oneXTwo.draw, AWAY: oneXTwo.away })[stored.selection as OddsSelection] : undefined }
+          : undefined;
+      const verdict = revalidateDraft(stored, { open: current.state === "OPEN", marketId: target?.id, marketVersion: target?.version, decimalOdds: target?.odds });
+      if (verdict === "UNCHANGED" && target) {
+        setMarket(target.kind);
+        if (target.kind === "CS") setScoreSelection(stored.selection);
+        else setSelection(stored.selection as OddsSelection);
+        setStake(stored.stakePoints);
+      }
+      setDraft(stored);
+      setDraftVerdict(verdict);
+    });
+  }, [online, roomId, match.id, correctScore, oneXTwo, current.state]);
+
+  function clearDraft() {
+    discardOfflineDraft(roomId, match.id);
+    setDraft(null);
+    setDraftVerdict(null);
+  }
 
   async function refreshOdds() {
     try {
@@ -89,6 +132,10 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
         setError(ticketErrors[code] || result.error?.message || "提交失败，本次积分未发生变化。"); return;
       }
       setReceipt(result.data?.ticketId || "已记录");
+      // 选中态已被消费：清掉它，避免之后离线时把已提交的判断又存成草稿。
+      setSelection(undefined);
+      setScoreSelection(undefined);
+      clearDraft();
       onAccepted?.();
     } catch { setError("网络连接失败。系统不会离线排队，本次积分未发生变化。"); }
     finally { setPending(false); }
@@ -98,11 +145,20 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
     {canBuyScore && <div className="grid grid-cols-2 gap-2">{([["1X2", "胜平负"], ["CS", "买比分"]] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={market === value} onClick={() => { setMarket(value); setError(""); setReceipt(""); }} className={`min-h-10 rounded-full border-2 px-4 text-sm font-bold transition ${market === value ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}>{label}</button>)}</div>}
 
     {market === "CS" && correctScore
-      ? <fieldset disabled={unavailable || pending}><legend className="mb-2 text-sm font-bold">选择最终比分（主队 : 客队）</legend><div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{correctScore.outcomes.map((outcome) => <button key={outcome.selection} type="button" aria-pressed={scoreSelection === outcome.selection} onClick={() => setScoreSelection(outcome.selection)} className={`flex min-h-14 flex-col items-center justify-center rounded-lg border-2 px-1 text-sm font-bold transition ${scoreSelection === outcome.selection ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}><span>{scoreChipLabel(outcome.selection)}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></button>)}</div></fieldset>
-      : <fieldset disabled={unavailable || pending}><legend className="mb-2 text-sm font-bold">选择你的判断</legend><div className="grid grid-cols-3 gap-2"><OddsButton selection="HOME" label="主胜" odds={oneXTwo?.home || "—"} selected={selection === "HOME"} onSelect={setSelection}/><OddsButton selection="DRAW" label="平局" odds={oneXTwo?.draw || "—"} selected={selection === "DRAW"} onSelect={setSelection}/><OddsButton selection="AWAY" label="客胜" odds={oneXTwo?.away || "—"} selected={selection === "AWAY"} onSelect={setSelection}/></div></fieldset>}
+      ? <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold">选择最终比分（主队 : 客队）</legend><div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{correctScore.outcomes.map((outcome) => <button key={outcome.selection} type="button" aria-pressed={scoreSelection === outcome.selection} onClick={() => setScoreSelection(outcome.selection)} className={`flex min-h-14 flex-col items-center justify-center rounded-lg border-2 px-1 text-sm font-bold transition ${scoreSelection === outcome.selection ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}><span>{scoreChipLabel(outcome.selection)}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></button>)}</div></fieldset>
+      : <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold">选择你的判断</legend><div className="grid grid-cols-3 gap-2"><OddsButton selection="HOME" label="主胜" odds={oneXTwo?.home || "—"} selected={selection === "HOME"} onSelect={setSelection}/><OddsButton selection="DRAW" label="平局" odds={oneXTwo?.draw || "—"} selected={selection === "DRAW"} onSelect={setSelection}/><OddsButton selection="AWAY" label="客胜" odds={oneXTwo?.away || "—"} selected={selection === "AWAY"} onSelect={setSelection}/></div></fieldset>}
 
-    <div><label htmlFor={`stake-${match.id}`} className="mb-2 block text-sm font-bold">投入积分</label><input id={`stake-${match.id}`} disabled={unavailable || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={event => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular"/><div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map(value => <button key={value} disabled={unavailable || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>)}</div></div>
+    <div><label htmlFor={`stake-${match.id}`} className="mb-2 block text-sm font-bold">投入积分</label><input id={`stake-${match.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={event => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular"/><div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map(value => <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>)}</div></div>
     <div className="flex justify-between border-y rule py-3 text-sm"><span className="text-[var(--muted)]">预计返还（含投入）</span><strong className="tabular">{projected}</strong></div>
+    {draft && draftVerdict && <StatusMessage tone={draftVerdict === "UNCHANGED" ? "info" : "error"} title={draftVerdict === "UNCHANGED" ? "已恢复离线草稿" : "离线草稿需要处理"}>
+      <span className="block">
+        {draftVerdict === "UNCHANGED" && "离线时保存的判断已恢复。系统不会自动提交，请确认最新倍率后手动提交。"}
+        {draftVerdict === "ODDS_CHANGED" && `离线期间积分倍率已变化（草稿倍率 ${draft.decimalOdds}），请按最新倍率重新选择，或丢弃这份草稿。`}
+        {draftVerdict === "MARKET_CHANGED" && "离线期间盘口已更换，这份草稿无法提交，请重新选择或丢弃。"}
+        {draftVerdict === "EVENT_CLOSED" && "比赛已封盘，这份离线草稿无法提交，请丢弃。"}
+      </span>
+      <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--field)] hover:text-[var(--field)]">丢弃草稿</button>
+    </StatusMessage>}
     {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
     {receipt && <StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage>}
     <button disabled={unavailable || pending || !active?.selection || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">{pending ? "正在复核倍率与封盘状态…" : !online ? "离线中，提交已禁用" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}</button>

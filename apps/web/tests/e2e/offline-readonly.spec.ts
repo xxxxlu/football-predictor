@@ -83,8 +83,10 @@ test.describe("offline read-only (7.3a)", () => {
     }
 
     // Reconnect: the app revalidates by reloading — nothing is queued or replayed.
+    // The reload fires ~1.2s after reconnect; wait for the NEXT load event (the
+    // current document's load state would resolve immediately, pre-reload).
     await expect(page.getByText("网络已恢复，正在重新同步最新数据…")).toBeVisible();
-    await page.waitForLoadState("load");
+    await page.waitForEvent("load", { timeout: 15_000 });
     await expect(page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first()).toBeVisible({ timeout: 15_000 });
   });
 

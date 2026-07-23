@@ -68,7 +68,7 @@ development_status:
   epic-7: in-progress
   7-1-implement-responsive-shell-and-design-system: done  # 实现响应式应用外壳与设计系统
   7-2-install-and-update-pwa: done  # 安装和更新 PWA
-  7-3-support-offline-read-only-and-resync: in-progress  # 7.3a 离线只读已落地（已访问页回放+dataAsOf+禁提交+登出/换人清私有缓存+回网 reload 重验，e2e 实证）；7.3b 恢复同步/过期草稿重验未做
+  7-3-support-offline-read-only-and-resync: review  # 7.3a 离线只读（已访问页回放+dataAsOf+禁提交+登出/换人清私有缓存，e2e 实证）+ 7.3b 重同步与草稿重验（回网重拉刷新 dataAsOf；离线草稿本地保存、恢复后永不自动提交；倍率/盘口版本/开赛状态变化要求重选或明确丢弃；草稿随 owner 纪律清除不串账号；e2e 覆盖回网/过期草稿/赔率变化/切换账号/重复恢复）均已落地；转 done 等 CI 证据 + boss 拍板
   7-4-make-core-flows-accessible: done  # 完成无障碍核心流程
   7-5-execute-release-quality-gates: done  # done（boss 2026-07-22 拍板；CI 实证后收口）。CI run 3 全绿(verify + e2e：8 passed/7 skipped)，e2e job 已去 continue-on-error 转为阻塞发布门。dev-story + code-review 完成(scaffolding-first,2026-07-22)：G1 六条E2E(注册恢复+a11y两条真实+超管匿名守卫；邀请/封盘/房主/超管四条 test.fixme 真占位)/G2 axe/G3 预算回放/G4 worker去重(本地 vitest 15/15,两 reviewer 独立重跑确认)/G5 perf冒烟 全接 CI；typecheck+lint 绿。code-review：3 层对抗评审 0 Critical/High、6 项诚实约束满足；应用 2 patch(重复用户名 E2E 断言/CI perf-smoke 加 if:always)；1 真实 i18n bug(认证错误码映射)已修=auth-error-messages.ts 契约解析器(9 码全映射+中文兜底,不再泄漏英文 message)+co-located 契约单测(2/2 绿)+auth-form.tsx 改走解析器。CI run 1 又抓出真实后端 bug(重复注册 500→409：drizzle 0.45.2 包裹错误链，isUniqueViolation 仅查顶层 .code)已修+补 repository.test.ts(4/4)；run 2 修 a11y networkidle 超时+KickoffLoader 竞态。分支 feature/lineup-db-persistence 已 push、PR #1，未合并 main。显式缺口(非本 story done 范畴)=4 条认证旅程 test.fixme(next start 生产 Secure cookie 断认证)+备份恢复演练+NFR4 20并发+NFR1 现场性能+NFR21 全量安全扫描+a11y 认证页
   epic-7-retrospective: optional
