@@ -1,4 +1,5 @@
 import type postgres from "postgres";
+import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@football-predictor/domain";
 
 export class OperationError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); this.name = "OperationError"; }
@@ -147,17 +148,21 @@ export class PostgresOperationsRepository {
   async accountHistory(userId: string) {
     const rows = await this.sql<CrossCompetitionHistoryRow[]>`
       SELECT t.id AS "ticketId",t.room_id AS "roomId",r.name AS "roomName",t.fixture_id AS "fixtureId",
-        f.competition_id::text AS "competitionId",f.competition_name AS "competitionName",f.season,
-        f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",
+        COALESCE(f.competition_id::text,'f1') AS "competitionId",COALESCE(f.competition_name,'FORMULA 1') AS "competitionName",
+        COALESCE(f.season,fw.season) AS "season",
+        COALESCE(f.home_team_name,fw.name) AS "homeTeam",COALESCE(f.away_team_name,fs.kind) AS "awayTeam",
+        COALESCE(f.kickoff_at,fs.starts_at) AS "kickoffAt",
         l.selection,t.stake_points::text AS "stakePoints",s.outcome,s.gross_return_points::text AS "grossReturnPoints",
         s.settlement_version AS "settlementVersion",s.settled_at AS "settledAt",e.id AS "ledgerId",e.audit_id AS "auditId"
       FROM prediction.tickets t
       JOIN prediction.settlements s ON s.id=t.active_settlement_id AND s.status='ACTIVE'
       JOIN ledger.entries e ON e.id=s.ledger_id AND e.ticket_id=t.id AND e.settlement_version=s.settlement_version
       JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
-      JOIN supplier.fixtures f ON f.id=t.fixture_id
+      LEFT JOIN supplier.fixtures f ON f.id=t.fixture_id
+      LEFT JOIN f1.sessions fs ON t.fixture_id='f1:'||fs.id::text
+      LEFT JOIN f1.race_weekends fw ON fw.id=fs.weekend_id
       JOIN room.rooms r ON r.id=t.room_id
-      WHERE t.user_id=${userId}
+      WHERE t.user_id=${userId} AND (f.id IS NOT NULL OR fs.id IS NOT NULL)
       ORDER BY s.settled_at DESC,t.id DESC LIMIT 500`;
     return projectCrossCompetitionHistory(rows);
   }
@@ -175,31 +180,53 @@ export class PostgresOperationsRepository {
   async submissionStatus(roomId: string, userId: string) {
     await this.assertMember(roomId, userId, true);
     const [room] = await this.sql<Array<{ name: string }>>`SELECT name FROM room.rooms WHERE id=${roomId} LIMIT 1`;
-    const rows = await this.sql<Array<{ matchId: string; homeTeam: string; awayTeam: string; kickoffAt: DbTimestamp; matchStatus: string; userId: string; displayName: string; submitted: boolean }>>`
-      SELECT f.id AS "matchId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",f.status AS "matchStatus",
+    // Sport-neutral wall: football fixtures and F1 sessions project through the
+    // same domain allowlist. Only the submitted EXISTS boolean leaves the data
+    // layer — selections, stakes and odds are never selected here.
+    type RawRow = { eventId: string; homeTeam: string; awayTeam: string; startsAt: DbTimestamp; lifecycleState: string; userId: string; displayName: string; submitted: boolean };
+    const football = await this.sql<RawRow[]>`
+      SELECT f.id AS "eventId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "startsAt",f.status AS "lifecycleState",
         m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
         EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id=f.id) AS submitted
       FROM supplier.fixtures f CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
       WHERE m.room_id=${roomId} ORDER BY f.kickoff_at,m.joined_at LIMIT 500`;
-    const fixtures = new Map<string, { matchId: string; homeTeam: string; awayTeam: string; kickoffAt: string; status: "OPEN" | "CLOSED" | "FINISHED"; members: Array<{ userId: string; displayName: string; submitted: boolean }> }>();
-    for (const row of rows) {
-      let fixture = fixtures.get(row.matchId);
-      if (!fixture) { fixture = { matchId: row.matchId, homeTeam: row.homeTeam, awayTeam: row.awayTeam, kickoffAt: timestampIso(row.kickoffAt), status: row.matchStatus === "FINISHED" ? "FINISHED" : this.clock.now() >= timestampDate(row.kickoffAt) ? "CLOSED" : "OPEN", members: [] }; fixtures.set(row.matchId, fixture); }
-      fixture.members.push({ userId: row.userId, displayName: row.displayName, submitted: row.submitted });
-    }
-    return { roomId, roomName: room?.name ?? "", viewerRole: "room_owner" as const, fixtures: [...fixtures.values()] };
+    const formula1 = await this.sql<RawRow[]>`
+      SELECT 'f1:'||fs.id::text AS "eventId",fw.name AS "homeTeam",fs.kind AS "awayTeam",fs.starts_at AS "startsAt",fs.state AS "lifecycleState",
+        m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
+        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id='f1:'||fs.id::text) AS submitted
+      FROM f1.sessions fs JOIN f1.race_weekends fw ON fw.id=fs.weekend_id
+      CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
+      WHERE m.room_id=${roomId} ORDER BY fs.starts_at,m.joined_at LIMIT 500`;
+    const toDomainRow = (sport: SubmissionSport) => (row: RawRow): SubmissionStatusRow => ({
+      sport, eventId: row.eventId, homeTeam: row.homeTeam, awayTeam: row.awayTeam,
+      startsAt: timestampIso(row.startsAt), lifecycleState: row.lifecycleState,
+      userId: row.userId, displayName: row.displayName, submitted: row.submitted,
+    });
+    const fixtures = projectSubmissionBoard(
+      [...football.map(toDomainRow("FOOTBALL")), ...formula1.map(toDomainRow("FORMULA_1"))],
+      this.clock.now(),
+    );
+    return { roomId, roomName: room?.name ?? "", viewerRole: "room_owner" as const, fixtures };
   }
 
   async ticketHistory(roomId: string, userId: string) {
     const membership = await this.assertMember(roomId, userId);
+    // F1 tickets have no supplier fixture; their event context comes from the f1
+    // schema (weekend name as "home", session kind as "away", session start as kickoff).
     const rows = await this.sql<TicketHistoryRow[]>`
-      SELECT t.id AS "ticketId",t.fixture_id AS "matchId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "kickoffAt",f.status AS "matchStatus",
+      SELECT t.id AS "ticketId",t.fixture_id AS "matchId",
+        COALESCE(f.home_team_name,fw.name) AS "homeTeam",COALESCE(f.away_team_name,fs.kind) AS "awayTeam",
+        COALESCE(f.kickoff_at,fs.starts_at) AS "kickoffAt",
+        COALESCE(f.status,CASE fs.state WHEN 'FINISHED' THEN 'FINISHED' WHEN 'CANCELLED' THEN 'CANCELLED' ELSE 'SCHEDULED' END) AS "matchStatus",
         t.created_at AS "submittedAt",t.user_id AS "ownerUserId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
         l.selection,l.decimal_odds AS "confirmedOdds",t.stake_points::text AS "stakePoints",t.status AS "ticketStatus",s.outcome,
         s.gross_return_points::text AS "grossReturnPoints",s.settlement_version AS "settlementVersion"
       FROM prediction.tickets t JOIN prediction.legs l ON l.ticket_id=t.id AND l.leg_number=1
-      JOIN supplier.fixtures f ON f.id=t.fixture_id JOIN identity.users u ON u.id=t.user_id LEFT JOIN prediction.settlements s ON s.id=t.active_settlement_id
-      WHERE t.room_id=${roomId} ORDER BY t.created_at DESC LIMIT 200`;
+      LEFT JOIN supplier.fixtures f ON f.id=t.fixture_id
+      LEFT JOIN f1.sessions fs ON t.fixture_id='f1:'||fs.id::text
+      LEFT JOIN f1.race_weekends fw ON fw.id=fs.weekend_id
+      JOIN identity.users u ON u.id=t.user_id LEFT JOIN prediction.settlements s ON s.id=t.active_settlement_id
+      WHERE t.room_id=${roomId} AND (f.id IS NOT NULL OR fs.id IS NOT NULL) ORDER BY t.created_at DESC LIMIT 200`;
     const settings = { preMatchStakeVisible: membership.preMatchStakeVisible, postMatchTicketVisible: membership.postMatchTicketVisible };
     return rows.map((row) => redactTicketHistory(row, userId, this.clock.now(), settings));
   }

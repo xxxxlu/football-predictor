@@ -19,7 +19,8 @@ export function securityHeaders(production: boolean): Header[] {
     "form-action 'self'",
     `script-src ${scriptSrc.join(" ")}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // media.api-sports.io serves API-Football player photos and team logos; everything else stays same-origin.
+    "img-src 'self' data: blob: https://media.api-sports.io",
     "font-src 'self' data:",
     `connect-src ${connectSrc.join(" ")}`,
     "worker-src 'self' blob:",

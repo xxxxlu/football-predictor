@@ -82,6 +82,14 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
 
     <RoomTicketHistoryView roomId={roomId} isOwner={detail.isOwner} initialPostMatchTicketVisible={detail.postMatchTicketVisible}/>
     <section aria-labelledby="room-matches-title"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="room-matches-title" className="display text-2xl font-bold">本房间比赛</h2><button type="button" onClick={reportRoom} disabled={reporting} className="inline-flex min-h-10 items-center justify-center rounded-full border-2 border-[var(--coral)] px-4 text-sm font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-50">{reporting ? "正在提交…" : "举报此房间"}</button></div>{reportMessage && <div className="mb-4"><StatusMessage tone={reportMessage.includes("已提交") ? "success" : "error"} title={reportMessage}/></div>}<MatchList roomId={roomId} interactive={detail.status === "ACTIVE"} advanced={detail.tier === "ADVANCED"}/></section>
+
+    <section aria-labelledby="room-f1-title" className="surface flex flex-wrap items-center justify-between gap-4 p-5">
+      <div>
+        <h2 id="room-f1-title" className="display text-2xl font-bold">F1 赛程</h2>
+        <p className="mt-1 text-sm text-[var(--muted)]">在本房间投入积分预测 F1 场次：冠军、杆位、领奖台、车手对决{detail.tier === "ADVANCED" ? "、精确前三" : ""}。</p>
+      </div>
+      <Link href={`/matches/f1?roomId=${encodeURIComponent(roomId)}`} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--pulse-carbon)] px-5 font-bold text-[var(--pulse-ivory)] no-underline transition hover:brightness-125">进入 F1 赛程 →</Link>
+    </section>
   </div>;
 }
 

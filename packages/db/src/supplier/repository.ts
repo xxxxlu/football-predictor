@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID } from "@football-predictor/domain";
+import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID, type LineupPlayer, type LineupSnapshot, type LineupStatus, type TeamLineup } from "@football-predictor/domain";
 import type postgres from "postgres";
 
 export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";
@@ -80,6 +80,11 @@ type LiveRow = {
   dataAsOf: Date | string; capturedAt: Date | string; markets: LiveSnapshotRecord["markets"];
 };
 
+type LineupRow = {
+  fixtureId: string; supplierFixtureId: string; status: LineupStatus;
+  dataAsOf: Date | string; capturedAt: Date | string; home: unknown; away: unknown;
+};
+
 function isoTimestamp(value: Date | string): string {
   const date = value instanceof Date ? value : new Date(value);
   if (!Number.isFinite(date.getTime())) throw new TypeError("Invalid PostgreSQL timestamp");
@@ -126,6 +131,42 @@ function mapOdds(row: OddsRow): OddsSnapshotRecord & { productMarketId: string }
     capturedAt: isoTimestamp(row.capturedAt),
     outcomes: parseOutcomes(row.outcomes),
   };
+}
+
+const PLAYER_POSITIONS = new Set(["GK", "DEF", "MID", "FWD", "UNKNOWN"]);
+const PLAYER_STATUSES = new Set(["STARTING", "BENCH", "SUBBED_ON", "SUBBED_OFF"]);
+
+function isStringOrNull(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
+function isLineupPlayer(value: unknown): value is LineupPlayer {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const player = value as Record<string, unknown>;
+  return Number.isSafeInteger(player.id)
+    && typeof player.name === "string" && player.name.length > 0
+    && (player.number === null || Number.isSafeInteger(player.number))
+    && typeof player.position === "string" && PLAYER_POSITIONS.has(player.position)
+    && isStringOrNull(player.positionRaw)
+    && isStringOrNull(player.grid)
+    && isStringOrNull(player.photoUrl)
+    && typeof player.starter === "boolean"
+    && typeof player.status === "string" && PLAYER_STATUSES.has(player.status);
+}
+
+function parseTeamLineup(value: unknown): TeamLineup | null {
+  let candidate = value;
+  if (typeof candidate === "string") {
+    try { candidate = JSON.parse(candidate); }
+    catch { return null; }
+  }
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) return null;
+  const team = candidate as Record<string, unknown>;
+  if (!Number.isSafeInteger(team.teamId)) return null;
+  if (typeof team.name !== "string" || team.name.length === 0) return null;
+  if (!isStringOrNull(team.logoUrl) || !isStringOrNull(team.primaryColor) || !isStringOrNull(team.formation) || !isStringOrNull(team.coach)) return null;
+  if (!Array.isArray(team.players) || !team.players.every(isLineupPlayer)) return null;
+  return candidate as TeamLineup;
 }
 
 function parseOutcomes(value: unknown): OddsSnapshotRecord["outcomes"] {
@@ -196,6 +237,36 @@ export class PostgresMatchSnapshotRepository {
         away_score=EXCLUDED.away_score,minute=EXCLUDED.minute,data_as_of=EXCLUDED.data_as_of,captured_at=EXCLUDED.captured_at,
         markets=EXCLUDED.markets,etag=EXCLUDED.etag,updated_at=EXCLUDED.updated_at
       WHERE EXCLUDED.captured_at >= supplier.live_snapshots.captured_at`;
+  }
+
+  async saveLineup(snapshot: LineupSnapshot): Promise<void> {
+    const etag = cacheEtag(snapshot);
+    await this.sql`INSERT INTO supplier.lineup_snapshots
+      (fixture_id,supplier_fixture_id,status,data_as_of,captured_at,home,away,etag,updated_at)
+      VALUES (${snapshot.fixtureId},${snapshot.supplierFixtureId},${snapshot.status},${snapshot.dataAsOf},${snapshot.capturedAt},CAST(${JSON.stringify(snapshot.home)} AS jsonb),CAST(${JSON.stringify(snapshot.away)} AS jsonb),${etag},${this.clock.now().toISOString()})
+      ON CONFLICT (fixture_id) DO UPDATE SET supplier_fixture_id=EXCLUDED.supplier_fixture_id,status=EXCLUDED.status,
+        data_as_of=EXCLUDED.data_as_of,captured_at=EXCLUDED.captured_at,home=EXCLUDED.home,away=EXCLUDED.away,
+        etag=EXCLUDED.etag,updated_at=EXCLUDED.updated_at
+      WHERE EXCLUDED.captured_at >= supplier.lineup_snapshots.captured_at`;
+  }
+
+  async getLineup(matchId: string): Promise<LineupSnapshot | null> {
+    const [row] = await this.sql<LineupRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",status,
+      data_as_of AS "dataAsOf",captured_at AS "capturedAt",home,away
+      FROM supplier.lineup_snapshots WHERE fixture_id=${matchId} LIMIT 1`;
+    if (!row) return null;
+    const home = parseTeamLineup(row.home);
+    const away = parseTeamLineup(row.away);
+    if (!home || !away) return null;
+    return {
+      fixtureId: row.fixtureId,
+      supplierFixtureId: Number(row.supplierFixtureId),
+      status: row.status,
+      dataAsOf: isoTimestamp(row.dataAsOf),
+      capturedAt: isoTimestamp(row.capturedAt),
+      home,
+      away,
+    };
   }
 
   async getFixture(matchId: string): Promise<FixtureSnapshotRecord | null> {

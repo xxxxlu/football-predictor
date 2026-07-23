@@ -2,14 +2,14 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "看球账本 · Matchday Ledger",
-    short_name: "看球账本",
-    description: "和朋友用虚拟积分记录足球判断。无充值、提现或兑换。",
+    name: "PULSE SPORTS CLUB · 赛事脉搏",
+    short_name: "PULSE",
+    description: "每一刻，都有判断。足球、F1，和朋友一起用虚拟积分记录体育判断。无充值、提现或兑换。",
     start_url: "/rooms",
     scope: "/",
     display: "standalone",
-    background_color: "#F4F0E6",
-    theme_color: "#F4F0E6",
+    background_color: "#0a0b0b",
+    theme_color: "#0a0b0b",
     orientation: "portrait-primary",
     categories: ["sports", "social"],
     lang: "zh-CN",
@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/app-icon-maskable.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "比赛", short_name: "比赛", url: "/matches" },
+      { name: "赛事", short_name: "赛事", url: "/matches" },
       { name: "我的房间", short_name: "房间", url: "/rooms" },
     ],
   };

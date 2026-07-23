@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
-import { formatSelectionLabel } from "../matchday/selection-label";
+import { formatEventTitle, formatSelectionLabel } from "../matchday/selection-label";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { competitionFilterOptions, filterHistoryRecords, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
 
@@ -74,7 +74,7 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div>
         <p className="text-xs font-bold text-[var(--field)]">{record.competition.name} · {record.competition.season}</p>
-        <h2 className="display mt-1 text-xl font-bold">{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</h2>
+        <h2 className="display mt-1 text-xl font-bold">{record.fixture.id.startsWith("f1:") ? formatEventTitle({ matchId: record.fixture.id, homeTeam: record.fixture.homeTeam, awayTeam: record.fixture.awayTeam }) : <>{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</>}</h2>
         <p className="mt-1 text-xs text-[var(--muted)]">房间：{record.room.name} · 结算于 <time dateTime={record.settlement.settledAt}>{new Date(record.settlement.settledAt).toLocaleString("zh-CN")}</time></p>
       </div>
       <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>

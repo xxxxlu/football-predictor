@@ -1,5 +1,6 @@
 import type { RoomTier } from "../rooms/service.js";
 import { marketKindFromSupplierMarketId } from "./markets.js";
+import { f1MarketKindFromSupplierMarketId } from "../f1/markets.js";
 
 export const MAX_TICKET_STAKE_POINTS = 20_000;
 
@@ -21,8 +22,10 @@ export class TicketSubmissionError extends Error {
 
 export type OneXTwoSelection = "HOME" | "DRAW" | "AWAY";
 export type CorrectScoreSelection = `${number}-${number}` | "OTHER";
-/** A 1X2 selection or a correct-score string; validated against the market outcomes at submission. */
-export type PredictionSelection = OneXTwoSelection | CorrectScoreSelection;
+/** Encoded F1 selection strings (see domain/f1/selections.ts for the exact grammar). */
+export type F1EncodedSelection = `DRV:${string}` | `PODIUM:${string}` | `POD3:${string}` | `H2H:${string}`;
+/** A 1X2, correct-score or F1 selection string; validated against the market outcomes at submission. */
+export type PredictionSelection = OneXTwoSelection | CorrectScoreSelection | F1EncodedSelection;
 
 export interface MarketForSubmission {
   id: string;
@@ -173,13 +176,19 @@ export class TicketSubmissionService {
       const market = await transaction.getMarket(command.marketId);
       assertMarketAvailable(market, now);
 
-      if (marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE") {
+      const f1Kind = f1MarketKindFromSupplierMarketId(market.snapshot.marketId);
+      if (f1Kind === null && marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE") {
         if ((await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
           throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");
         }
         if (await transaction.hasOpenCorrectScoreTicket(command.userId, command.roomId, market.fixtureId)) {
           throw new TicketSubmissionError("SCORE_TICKET_EXISTS");
         }
+      }
+      /* F1 exact podium keeps the same advanced-room gate as other high-odds tickets,
+         without routing through the correct-score market abstraction (§12.5). */
+      if (f1Kind === "EXACT_PODIUM" && (await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
+        throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");
       }
 
       const outcome = market.snapshot.outcomes.find((candidate) => candidate.selection === command.selection);

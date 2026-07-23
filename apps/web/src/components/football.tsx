@@ -58,10 +58,11 @@ export function Trophy({ className }: { className?: string }) {
 function crestColor(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  // Deterministic hue per team (consistent across matches, near-zero collisions),
-  // kept dark enough for legible white initials across the wheel.
+  // Deterministic hue per team (consistent across matches, near-zero collisions).
+  // Lightness 30%: the wheel's brightest hue (yellow, ~60°) still gives white
+  // initials ≥4.5:1 (axe color-contrast); at 40% the yellow-green band failed.
   const hue = hash % 360;
-  return `hsl(${hue} 52% 40%)`;
+  return `hsl(${hue} 52% 30%)`;
 }
 
 function crestInitials(name: string) {
@@ -82,15 +83,6 @@ export function TeamCrest({ name, className = "size-9 text-sm" }: { name: string
   );
 }
 
-/** Bobbing-ball loader with pitch shadow. Motion is disabled under prefers-reduced-motion. */
-export function PitchLoader({ label = "加载中", className = "" }: { label?: string; className?: string }) {
-  return (
-    <div role="status" aria-live="polite" className={`flex flex-col items-center justify-center gap-4 py-12 text-center ${className}`}>
-      <span className="relative block h-12 w-12">
-        <SoccerBall className="ball-bob absolute inset-0 h-12 w-12" />
-        <span className="ball-shadow absolute -bottom-1 left-1/2 block h-1.5 w-8 -translate-x-1/2 rounded-full bg-[var(--ink)]" />
-      </span>
-      <span className="eyebrow">{label}</span>
-    </div>
-  );
-}
+/** Loading indicator — delegates to the brand-neutral PULSE line loader (§17.1:
+    写实足球图标不再作为 Loading 的默认答案). Name kept for existing call sites. */
+export { PulseLoader as PitchLoader } from "./pulse";
