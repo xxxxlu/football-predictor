@@ -2,6 +2,7 @@
 import { FormEvent, useMemo, useState } from "react";
 import { OddsButton } from "@/components/odds-button";
 import { StatusMessage } from "@/components/status-message";
+import { useOnlineStatus } from "@/features/pwa/offline-status";
 import { scoreChipLabel } from "./selection-label";
 import { matchViewFromDetailPayload } from "./types";
 import type { ApiFailure, MatchView, OddsSelection } from "./types";
@@ -53,7 +54,9 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
     return active?.decimalOdds && Number.isFinite(amount * value) ? (amount * value).toFixed(2) : "—";
   }, [stake, active]);
 
-  const unavailable = current.state !== "OPEN" || !active?.id;
+  // 7.3a：离线是只读模式 —— 提交入口直接禁用，而不是等 POST 失败。
+  const online = useOnlineStatus();
+  const unavailable = current.state !== "OPEN" || !active?.id || !online;
 
   async function refreshOdds() {
     try {
@@ -102,7 +105,7 @@ export function PredictionSlip({ roomId, match, advanced = false, onAccepted }: 
     <div className="flex justify-between border-y rule py-3 text-sm"><span className="text-[var(--muted)]">预计返还（含投入）</span><strong className="tabular">{projected}</strong></div>
     {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
     {receipt && <StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage>}
-    <button disabled={unavailable || pending || !active?.selection || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">{pending ? "正在复核倍率与封盘状态…" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}</button>
+    <button disabled={unavailable || pending || !active?.selection || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">{pending ? "正在复核倍率与封盘状态…" : !online ? "离线中，提交已禁用" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}</button>
     <p className="text-xs leading-5 text-[var(--muted)]">投入必须为整数。服务端将复核实际开球、封盘和积分倍率；失败时不冻结积分，单张上限 20,000 分。{market === "CS" ? "买比分每场只能持有一张未结算预测。" : ""}</p>
   </form>;
 }

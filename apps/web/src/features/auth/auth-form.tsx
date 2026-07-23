@@ -3,6 +3,7 @@
 import { FormEvent, useId, useState } from "react";
 import { useRouter } from "next/navigation";
 import { StatusMessage } from "@/components/status-message";
+import { purgePrivateCaches } from "@/features/pwa/private-cache";
 import { recoveryReceiptContinueHref, safeReturnTo } from "./navigation";
 import { authErrorMessage } from "./auth-error-messages";
 
@@ -24,6 +25,8 @@ export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) 
       const result = await response.json().catch(() => ({})) as ApiError & ApiSuccess;
       if (!response.ok) { setError(authErrorMessage(result.error?.code)); return; }
       if (result.data?.recoveryCode) { setRecoveryCode(result.data.recoveryCode); return; }
+      // 7.3a：登录是账户切换点 —— 先清私有只读缓存，SessionGuard 随后为新账户重建 owner 标记。
+      if (mode === "login") await purgePrivateCaches().catch(() => {});
       router.replace(result.data?.mustChangePassword ? "/change-password" : safeReturnTo(returnTo || result.data?.redirectTo));
     } catch { setError("网络连接失败。你的账户和积分没有发生变化，请检查网络后重试。"); } finally { setPending(false); }
   }

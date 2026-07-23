@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { OfflineStatusBanner } from "@/features/pwa/offline-status";
 import { ServiceWorkerRegister } from "@/features/pwa/service-worker-register";
 import "./globals.css";
 
@@ -15,6 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="zh-CN" className="h-full antialiased">
       <body className="min-h-full">
         <a className="skip-link" href="#main-content">跳到主要内容</a>
+        <OfflineStatusBanner />
         {children}
         <ServiceWorkerRegister />
       </body>

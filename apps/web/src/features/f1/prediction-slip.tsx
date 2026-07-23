@@ -2,6 +2,7 @@
 
 import { FormEvent, useMemo, useState } from "react";
 import { StatusMessage } from "@/components/status-message";
+import { useOnlineStatus } from "@/features/pwa/offline-status";
 import {
   MARKET_KIND_LABELS,
   sessionPredictable,
@@ -45,7 +46,9 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
   const active = markets.find((market) => market.id === marketId) ?? markets[0];
   const outcome = active?.outcomes.find((candidate) => candidate.selection === selection);
   const predictable = sessionPredictable(detail.session) && interactive;
-  const unavailable = !predictable || !active || active.status !== "OPEN";
+  // 7.3a：离线是只读模式 —— 提交入口直接禁用，而不是等 POST 失败。
+  const online = useOnlineStatus();
+  const unavailable = !predictable || !active || active.status !== "OPEN" || !online;
 
   const projected = useMemo(() => {
     const amount = Number(stake), value = Number(outcome?.decimalOdds);
@@ -117,7 +120,7 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
       {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
       {receipt && <StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage>}
       <button disabled={unavailable || pending || !outcome || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">
-        {pending ? "正在复核倍率与封盘状态…" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}
+        {pending ? "正在复核倍率与封盘状态…" : !online ? "离线中，提交已禁用" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}
       </button>
       <p className="text-xs leading-5 text-[var(--muted)]">投入必须为整数，单张上限 20,000 分。服务端将复核封盘时间与倍率版本；失败时不冻结积分。{advanced ? "精确前三按 P1→P2→P3 顺序判定。" : "精确前三玩法仅在高级房间开放。"}</p>
     </form>
