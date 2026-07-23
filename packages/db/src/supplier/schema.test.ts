@@ -23,6 +23,20 @@ describe("0010 multi-source fixture identity migration", () => {
   });
 });
 
+describe("0016 lineup snapshots migration", () => {
+  it("persists the latest lineup per fixture with jsonb team payloads", async () => {
+    const migration = await readFile(new URL("../../migrations/0016_lineup_snapshots.sql", import.meta.url), "utf8");
+    expect(migration).toContain('"supplier"."lineup_snapshots"');
+    expect(migration).toContain('"fixture_id" text PRIMARY KEY REFERENCES "supplier"."fixtures"("id") ON DELETE CASCADE');
+    expect(migration).toContain('"status" text NOT NULL CHECK ("status" IN (\'CONFIRMED\', \'EXPECTED\', \'NOT_PUBLISHED\', \'UNAVAILABLE\'))');
+    expect(migration).toContain('"home" jsonb NOT NULL');
+    expect(migration).toContain('"away" jsonb NOT NULL');
+    for (const column of ["supplier_fixture_id", "data_as_of", "captured_at", "etag", "updated_at"]) {
+      expect(migration).toContain(`"${column}"`);
+    }
+  });
+});
+
 describe("0011 external supplier throttle migration", () => {
   it("persists a unique cross-instance claim before a paid-credit request", async () => {
     const migration = await readFile(new URL("../../migrations/0011_external_sync_throttle.sql", import.meta.url), "utf8");

@@ -27,7 +27,7 @@ function errorDetail(error: unknown): string {
 
 function isSupplierJobResult(value: unknown): value is SupplierJobResult {
   if (typeof value !== "object" || value === null || !("outcome" in value)) return false;
-  return value.outcome === "SUCCESS" || value.outcome === "DEFERRED" || value.outcome === "RETRY";
+  return value.outcome === "SUCCESS" || value.outcome === "PENDING" || value.outcome === "DEFERRED" || value.outcome === "RETRY";
 }
 
 export function createPersistentSupplierJobRunner(input: {
@@ -60,6 +60,13 @@ export function createPersistentSupplierJobRunner(input: {
         const finishedAt = input.clock.now();
         if (result.outcome === "SUCCESS") {
           await input.jobs.complete({ id: claim.id, status: "SUCCEEDED", finishedAt, attempt: claim.attempt, result });
+        } else if (result.outcome === "PENDING") {
+          // Not a failure: the supplier has not published a lineup yet. Re-queue at the next poll without
+          // escalating the retry attempt, and keep the prior cache untouched.
+          await input.jobs.complete({
+            id: claim.id, status: "QUEUED", finishedAt, availableAt: new Date(result.nextRunAt),
+            attempt: claim.attempt, errorCode: result.reason, result,
+          });
         } else if (result.outcome === "DEFERRED") {
           await input.jobs.complete({
             id: claim.id, status: "QUEUED", finishedAt, availableAt: new Date(result.retryAt),

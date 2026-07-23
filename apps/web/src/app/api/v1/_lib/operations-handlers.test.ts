@@ -25,4 +25,23 @@ describe("operations API permissions", () => {
     expect(response.status).toBe(200);
     expect(subject.operations.accountHistory).toHaveBeenCalledWith("user-1");
   });
+  it("serves the sport-neutral submission wall: F1 events carry only the submitted flag", async () => {
+    const subject = setup();
+    subject.operations.submissionStatus.mockResolvedValueOnce({
+      roomId: "room-1", roomName: "QA 房间", viewerRole: "room_owner",
+      fixtures: [
+        { matchId: "api-football:1", sport: "FOOTBALL", homeTeam: "法国", awayTeam: "西班牙", kickoffAt: "2026-07-24T18:00:00.000Z", status: "OPEN", members: [{ userId: "user-1", displayName: "甲", submitted: false }] },
+        { matchId: "f1:session-1", sport: "FORMULA_1", homeTeam: "HUNGARIAN GRAND PRIX", awayTeam: "QUALIFYING", kickoffAt: "2026-07-31T14:00:00.000Z", status: "OPEN", members: [{ userId: "user-1", displayName: "甲", submitted: true }] },
+      ],
+    });
+
+    const response = await subject.handlers.submissionStatus(get("/x"), "room-1");
+    expect(response.status).toBe(200);
+    expect(subject.operations.submissionStatus).toHaveBeenCalledWith("room-1", "user-1");
+    const body = await response.json() as { data: { fixtures: Array<{ matchId: string; members: Array<Record<string, unknown>> }> } };
+    const f1Event = body.data.fixtures.find((fixture) => fixture.matchId.startsWith("f1:"));
+    expect(f1Event).toBeDefined();
+    expect(f1Event?.members).toEqual([{ userId: "user-1", displayName: "甲", submitted: true }]);
+    expect(JSON.stringify(body)).not.toMatch(/selection|stake|odds/i);
+  });
 });

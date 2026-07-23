@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { LineupSnapshot } from "@football-predictor/domain";
 import { createWorkerScheduler, type SchedulerTimerPort } from "./scheduler.js";
+import { createSupplierWorkerComposition } from "./supplier/composition.js";
 
 class FakeTimers implements SchedulerTimerPort {
   readonly callbacks: Array<() => void> = [];
@@ -48,7 +50,7 @@ describe("worker scheduler", () => {
       write: (entry) => logs.push(entry),
     });
     await scheduler.start();
-    expect(jobs).toEqual(["STATUS_CALIBRATE", "FIXTURES", "PREMATCH_ODDS"]);
+    expect(jobs).toEqual(["STATUS_CALIBRATE", "FIXTURES", "PREMATCH_ODDS", "LINEUPS"]);
     expect(logs).toEqual(expect.arrayContaining([expect.objectContaining({ event: "worker.job.completed", jobType: "FIXTURES" })]));
     await scheduler.stop();
   });
@@ -224,5 +226,211 @@ describe("worker scheduler", () => {
     release();
     await starting; await stopping;
     expect(order).toEqual(["supplier.close", "settlement.close"]);
+  });
+
+  it("enqueues lineup jobs for scheduled and live fixtures in kickoff order, skipping finished and cancelled", async () => {
+    const lineupCalls: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => { if (job.type === "LINEUPS") lineupCalls.push(job.payload.matchId); return { outcome: "SUCCESS", synced: 0 }; },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [
+        { id: "finished", supplierFixtureId: 1, kickoffAt: "2026-07-13T08:00:00Z", status: "FINISHED" },
+        { id: "live", supplierFixtureId: 2, kickoffAt: "2026-07-13T09:30:00Z", status: "LIVE" },
+        { id: "soon", supplierFixtureId: 3, kickoffAt: "2026-07-13T11:00:00Z", status: "SCHEDULED" },
+        { id: "later", supplierFixtureId: 4, kickoffAt: "2026-07-14T18:00:00Z", status: "SCHEDULED" },
+        { id: "cancelled", supplierFixtureId: 5, kickoffAt: "2026-07-13T12:00:00Z", status: "CANCELLED" },
+      ] },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(lineupCalls).toEqual(["live", "soon", "later"]);
+    await scheduler.stop();
+  });
+
+  it("stops the lineup batch when the shared supplier budget is exhausted", async () => {
+    const lineupCalls: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: {
+        run: async (job) => {
+          if (job.type === "LINEUPS") { lineupCalls.push(job.payload.matchId); return { outcome: "DEFERRED", reason: "BUDGET_EXHAUSTED", retryAt: "2026-07-14T00:00:00.000Z" }; }
+          return { outcome: "SUCCESS", synced: 0 };
+        },
+        close: async () => undefined,
+      },
+      settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+      fixtures: { listFixtures: async () => [
+        { id: "a", supplierFixtureId: 1, kickoffAt: "2026-07-13T11:00:00Z", status: "SCHEDULED" },
+        { id: "b", supplierFixtureId: 2, kickoffAt: "2026-07-13T12:00:00Z", status: "SCHEDULED" },
+      ] },
+      write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(lineupCalls).toEqual(["a"]);
+    await scheduler.stop();
+  });
+
+  it("does not re-fetch a distant fixture's lineup when the scheduler runs twice across a restart", async () => {
+    const claimStore = new Map<string, number>();
+    let lineupFetches = 0;
+    const now = new Date("2026-07-13T10:00:00Z");
+    const distantFixture = { id: "api-football:501", supplierFixtureId: 501, kickoffAt: "2026-07-16T12:00:00Z", status: "SCHEDULED" as const, oddsDataAsOf: "2026-07-13T09:59:00Z" };
+    const lineup: LineupSnapshot = {
+      fixtureId: "api-football:501", supplierFixtureId: 501, status: "CONFIRMED",
+      dataAsOf: "2026-07-13T09:45:00Z", capturedAt: "2026-07-13T09:45:00Z",
+      home: { teamId: 1, name: "主队", logoUrl: null, primaryColor: null, formation: "4-3-3", coach: null, players: [] },
+      away: { teamId: 2, name: "客队", logoUrl: null, primaryColor: null, formation: "4-4-2", coach: null, players: [] },
+    };
+    // A fresh composition each run models a worker restart: in-memory state resets, but the durable
+    // external_sync_claims store (claimStore) survives, so the second boot must not re-hit the supplier.
+    const runScheduler = async () => {
+      const composition = createSupplierWorkerComposition({
+        clock: { now: () => now },
+        client: {
+          fetchFixtures: async () => ({ data: [], quota: {} }),
+          fetchPrematchOdds: async () => ({ data: null, quota: {} }),
+          fetchLive: async () => ({ data: null, quota: {} }),
+          fetchLineups: async () => { lineupFetches += 1; return { data: lineup, quota: {} }; },
+          fetchStatus: async () => ({ supplierCurrent: 0, supplierLimit: 100 }),
+        },
+        persistence: {
+          budget: {
+            consume: async () => ({ allowed: true, snapshot: { remaining: 90, protectedRemaining: 10, usedByCategory: { LIVE: 0 } } }),
+            reconcile: async () => ({ remaining: 90, protectedRemaining: 10, usedByCategory: { LIVE: 0 } }),
+          },
+          repository: {
+            saveFixtures: async () => undefined,
+            saveOdds: async () => undefined,
+            saveLive: async () => undefined,
+            setSyncState: async () => undefined,
+            getFixture: async () => ({ id: "api-football:501", supplierFixtureId: 501, status: "SCHEDULED", kickoffAt: "2026-07-16T12:00:00Z" }),
+            getLineup: async () => null,
+            saveLineup: async () => undefined,
+            claimExternalSync: async (key, at, minimumIntervalMs) => {
+              const previous = claimStore.get(key);
+              if (previous !== undefined && at.getTime() - previous < minimumIntervalMs) return false;
+              claimStore.set(key, at.getTime());
+              return true;
+            },
+          },
+          close: async () => undefined,
+        },
+      });
+      const scheduler = createWorkerScheduler({
+        config: schedulerConfig(),
+        clock: { now: () => now }, timers: new FakeTimers(),
+        supplier: composition,
+        settlement: { scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }), close: async () => undefined },
+        fixtures: { listFixtures: async () => [distantFixture] },
+        write: () => undefined,
+      });
+      await scheduler.start();
+      await scheduler.stop();
+    };
+
+    await runScheduler();
+    expect(lineupFetches).toBe(1);
+    await runScheduler();
+    expect(lineupFetches).toBe(1);
+  });
+
+  it("runs the F1 lock sweep at startup before settlement and again on the settlement interval", async () => {
+    const order: string[] = [];
+    const timers = new FakeTimers();
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: {
+        scan: async () => { order.push("settlement"); return { outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }; },
+        lockDueF1Sessions: async (limit) => { order.push(`f1-lock:${limit}`); return { outcome: "SUCCESS", locked: 0, marketsClosed: 0, skipped: 0, failedSessionIds: [] }; },
+        close: async () => undefined,
+      },
+      fixtures: { listFixtures: async () => [] }, write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(order).toEqual(["f1-lock:100", "settlement"]);
+    timers.tickAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order.filter((entry) => entry.startsWith("f1-lock"))).toHaveLength(2);
+    await scheduler.stop();
+  });
+
+  it("locks a session missed while the worker was down on the next boot's startup sweep", async () => {
+    // Durable state shared across two scheduler lifetimes; in-memory scheduler state resets.
+    const store = { state: "UPCOMING" as "UPCOMING" | "LOCKED", startsAt: "2026-07-13T12:00:00Z", openMarkets: 3 };
+    const lockedAtBoot: number[] = [];
+    const runScheduler = async (nowIso: string) => {
+      const now = new Date(nowIso);
+      const scheduler = createWorkerScheduler({
+        config: schedulerConfig(),
+        clock: { now: () => now }, timers: new FakeTimers(),
+        supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+        settlement: {
+          scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }),
+          lockDueF1Sessions: async () => {
+            const due = store.state === "UPCOMING" && new Date(store.startsAt).getTime() <= now.getTime();
+            if (due) { store.state = "LOCKED"; const closed = store.openMarkets; store.openMarkets = 0; lockedAtBoot.push(closed); }
+            return { outcome: "SUCCESS", locked: due ? 1 : 0, marketsClosed: due ? 3 : 0, skipped: 0, failedSessionIds: [] };
+          },
+          close: async () => undefined,
+        },
+        fixtures: { listFixtures: async () => [] }, write: () => undefined,
+      });
+      await scheduler.start();
+      await scheduler.stop();
+    };
+
+    await runScheduler("2026-07-13T10:00:00Z"); // before the session starts — nothing to do
+    expect(store.state).toBe("UPCOMING");
+    await runScheduler("2026-07-13T14:00:00Z"); // reboot after downtime spanning startsAt
+    expect(store.state).toBe("LOCKED");
+    expect(store.openMarkets).toBe(0);
+    await runScheduler("2026-07-13T15:00:00Z"); // a third boot is an idempotent no-op
+    expect(lockedAtBoot).toEqual([3]);
+  });
+
+  it("never runs two F1 lock sweeps concurrently: interval ticks during an in-flight sweep are skipped", async () => {
+    let sweeps = 0;
+    let release!: () => void;
+    const blocker = new Promise<void>((resolve) => { release = resolve; });
+    const skips: unknown[] = [];
+    const timers = new FakeTimers();
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: {
+        scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }),
+        lockDueF1Sessions: async () => {
+          sweeps += 1;
+          if (sweeps > 1) await blocker;
+          return { outcome: "SUCCESS", locked: 0, marketsClosed: 0, skipped: 0, failedSessionIds: [] };
+        },
+        close: async () => undefined,
+      },
+      fixtures: { listFixtures: async () => [] },
+      write: (entry) => { if (entry.event === "worker.job.skipped" && entry.jobType === "F1_SESSION_LOCK") skips.push(entry); },
+    });
+
+    await scheduler.start();
+    expect(sweeps).toBe(1);
+    timers.tickAll(); // starts sweep #2, which blocks in flight
+    await Promise.resolve();
+    timers.tickAll(); // sweep #3 must be refused re-entry while #2 is running
+    await Promise.resolve();
+    expect(sweeps).toBe(2);
+    expect(skips).toHaveLength(1);
+    release();
+    await scheduler.stop();
   });
 });

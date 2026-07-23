@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { MatchCard } from "@/components/match-card";
-import { SoccerBall } from "@/components/football";
+import { SportGlyph } from "@/components/pulse";
 import { PredictionSlip } from "./prediction-slip";
 import {
   datasetNotice,
@@ -95,9 +95,9 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
 
   return <div>
     <section className="night mb-6 flex items-start gap-3 rounded-xl px-5 py-4" aria-label="当前比赛数据说明">
-      <SoccerBall className="mt-0.5 size-5 shrink-0 text-[var(--volt)]" />
+      <SportGlyph sport="FOOTBALL" className="mt-0.5 size-5 shrink-0 text-[var(--pulse-red)]" />
       <div>
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--volt)]">当前赛程 · 2026 世界杯</p>
+        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/70">当前赛程 · 2026 世界杯</p>
         <p className="mt-1 text-sm leading-6 text-white/70">展示 2026 世界杯完整赛程，包括已结束、正在进行和未来比赛；球队、赛事名称使用中文。开球时间与赛果来自 OpenLigaDB，显示的 3.00 为平台固定虚拟积分倍率，不是博彩公司赔率。</p>
       </div>
     </section>
@@ -137,7 +137,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
             {dates.map((value) => <option key={value} value={value}>{formatDate(value)}</option>)}
           </select>
         </label>
-        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="mt-1 inline-flex min-h-11 items-center justify-center gap-2 self-end rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)]"><SoccerBall className="size-4" />刷新数据</button>
+        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="mt-1 inline-flex min-h-11 items-center justify-center gap-2 self-end rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)]">刷新数据</button>
       </div>
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t rule pt-3 text-xs text-[var(--muted)]" aria-live="polite">
         <strong className="text-[var(--ink)]">筛选命中 {summary.total} / {matches.length} 场</strong>
@@ -158,12 +158,12 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
               <h2 id={`competition-${competitionIndex}`} className="kinetic mt-1 text-[clamp(1.75rem,5vw,3rem)]">{competitionGroup.name}</h2>
             </div>
             <span className="league-pill shrink-0">{competitionGroup.dates.reduce((total, group) => total + group.matches.length, 0)} 场</span>
-            <span className="absolute -bottom-[2px] left-0 h-[3px] w-24 bg-[var(--volt-deep)]" aria-hidden="true" />
+            <span className="absolute -bottom-[2px] left-0 h-[3px] w-24 bg-[var(--pulse-red)]" aria-hidden="true" />
           </header>
           <div className="space-y-8">
             {competitionGroup.dates.map((dateGroup) => <section key={dateGroup.date} aria-label={dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}>
               <div className="mb-3 flex items-center gap-3">
-                <span className="league-pill"><SoccerBall className="size-3.5" />{dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}</span>
+                <span className="league-pill">{dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}</span>
                 <span className="text-xs text-[var(--muted)]">{dateGroup.matches.length} 场</span>
                 <span className="h-px flex-1 bg-[var(--line)]" aria-hidden="true" />
               </div>
@@ -183,7 +183,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
       </div>
       {page.hasMore && <div className="mt-10 border-t rule pt-6 text-center">
         <button type="button" onClick={() => setVisibleCount((count) => count + MATCH_BATCH_SIZE)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border-2 border-[var(--ink)] px-5 text-sm font-bold transition hover:bg-[var(--ink)] hover:text-white sm:w-auto">
-          <SoccerBall className="size-4" />再显示 {Math.min(MATCH_BATCH_SIZE, page.remaining)} 场
+          再显示 {Math.min(MATCH_BATCH_SIZE, page.remaining)} 场
         </button>
         <p className="mt-2 text-xs text-[var(--muted)]">还有 {page.remaining} 场未展示</p>
       </div>}
@@ -201,7 +201,7 @@ function formatDate(value: string) {
 
 function Empty({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {
   return <section className="surface rounded-xl p-10 text-center">
-    <span className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--field)] text-white"><SoccerBall className="size-7" /></span>
+    <span className="mx-auto mb-4 grid size-14 place-items-center rounded-full bg-[var(--pulse-carbon)] text-white"><SportGlyph sport="FOOTBALL" className="size-7" /></span>
     <p className="kinetic text-2xl">{title}</p>
     <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[var(--muted)]">{text}</p>
     {action && <div className="mt-6 flex justify-center">{action}</div>}

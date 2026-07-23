@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FixtureSnapshot, LiveSnapshot, MatchStatus, OddsSnapshot, Selection } from "@football-predictor/domain";
+import type { FixtureSnapshot, LineupSnapshot, LiveSnapshot, MatchStatus, OddsSnapshot, PlayerPosition, Selection, TeamLineup } from "@football-predictor/domain";
 
 export interface QuotaHeaders { supplierLimit?: number; supplierRemaining?: number }
 export interface SupplierResult<T> { data: T; quota: QuotaHeaders }
@@ -37,6 +37,14 @@ function selectionFrom(value: string): Selection | null {
   if (value === "Draw") return "DRAW";
   if (value === "Away") return "AWAY";
   return null;
+}
+
+function playerPosition(value: unknown): PlayerPosition {
+  if (value === "G") return "GK";
+  if (value === "D") return "DEF";
+  if (value === "M") return "MID";
+  if (value === "F") return "FWD";
+  return "UNKNOWN";
 }
 
 export class ApiFootballClient {
@@ -169,6 +177,37 @@ export class ApiFootballClient {
       },
       quota: result.quota,
     };
+  }
+
+  async fetchLineups(input: { fixtureId: number }): Promise<SupplierResult<LineupSnapshot | null>> {
+    const result = await this.get<Array<any>>("fixtures/lineups", { fixture: input.fixtureId });
+    const capturedAt = this.now().toISOString();
+    if (result.data.length < 2) return { data: null, quota: result.quota };
+    const mapTeam = (item: any): TeamLineup => {
+      const mapPlayer = (entry: any, starter: boolean): LineupSnapshot["home"]["players"][number] => ({
+        id: Number(entry?.player?.id), name: String(entry?.player?.name ?? "未知球员"),
+        number: Number.isSafeInteger(entry?.player?.number) ? entry.player.number : null,
+        position: playerPosition(entry?.player?.pos), positionRaw: typeof entry?.player?.pos === "string" ? entry.player.pos : null,
+        grid: typeof entry?.player?.grid === "string" ? entry.player.grid : null,
+        photoUrl: typeof entry?.player?.photo === "string" ? entry.player.photo : null,
+        starter, status: starter ? "STARTING" : "BENCH",
+      });
+      const team = item?.team ?? {};
+      return {
+        teamId: Number(team.id), name: String(team.name ?? "未知球队"),
+        logoUrl: typeof team.logo === "string" ? team.logo : null,
+        primaryColor: typeof team.colors?.player?.primary === "string" ? `#${team.colors.player.primary}` : null,
+        formation: typeof item?.formation === "string" ? item.formation : null,
+        coach: typeof item?.coach?.name === "string" ? item.coach.name : null,
+        players: [
+          ...(Array.isArray(item?.startXI) ? item.startXI.map((entry: any) => mapPlayer(entry, true)) : []),
+          ...(Array.isArray(item?.substitutes) ? item.substitutes.map((entry: any) => mapPlayer(entry, false)) : []),
+        ],
+      };
+    };
+    const home = mapTeam(result.data[0]);
+    const away = mapTeam(result.data[1]);
+    return { quota: result.quota, data: { fixtureId: `api-football:${input.fixtureId}`, supplierFixtureId: input.fixtureId, status: "CONFIRMED", dataAsOf: capturedAt, capturedAt, home, away } };
   }
 
   async fetchStatus(): Promise<{ supplierCurrent: number; supplierLimit: number }> {

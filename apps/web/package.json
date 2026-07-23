@@ -9,21 +9,25 @@
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "test:e2e": "playwright test",
     "predev": "pnpm --filter @football-predictor/config build"
   },
   "dependencies": {
     "@football-predictor/config": "workspace:*",
+    "@football-predictor/contracts": "workspace:*",
     "@football-predictor/db": "workspace:*",
     "@football-predictor/domain": "workspace:*",
     "@football-predictor/supplier": "workspace:*",
     "@node-rs/argon2": "2.0.2",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "postgres": "3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@playwright/test": "^1.50.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

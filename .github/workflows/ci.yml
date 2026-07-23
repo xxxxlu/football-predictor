@@ -9,6 +9,26 @@ permissions:
   contents: read
 
 jobs:
+  audit:
+    # NFR21 (dependency slice): lockfile vulnerability scan against the npm advisory DB.
+    # High/critical advisories BLOCK; the first step logs every known advisory (any severity)
+    # for visibility without failing. Not a full NFR21 security scan (no SAST/DAST/secrets) —
+    # that remains a documented gap.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Report all known advisories (non-blocking, any severity)
+        run: pnpm audit || echo "::warning::pnpm audit found advisories below the blocking threshold (see log)"
+      - name: Fail on high or critical advisories (blocking)
+        run: pnpm audit --audit-level high
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -62,3 +82,88 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build
+
+  e2e:
+    # Story 7.5 gates G1/G2/G5: main-journey Playwright E2E + axe a11y scan + perf smoke.
+    # BLOCKING release gate. The session cookie's Secure flag now keys on APP_ENV (=test here), so the
+    # authenticated journeys (invite/join, closing race, host operations, super admin, F1 axe) run for
+    # real against the production build — no test.fixme placeholders remain.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:18-bookworm
+        env:
+          POSTGRES_USER: football
+          POSTGRES_PASSWORD: football_ci
+          POSTGRES_DB: football_predictor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U football -d football_predictor_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      APP_ENV: test
+      APP_VERSION: ci
+      LOG_LEVEL: info
+      RULES_VERSION: phase-1-ci
+      DATABASE_URL: postgresql://football:football_ci@127.0.0.1:5432/football_predictor_test
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3001
+      # Throwaway credentials for this job's disposable database only — never used outside CI.
+      # The seed script and the super-admin journey (super-admin-exception.spec.ts) read the same values.
+      SUPER_ADMIN_1_USERNAME: ci_admin_one
+      SUPER_ADMIN_1_PASSWORD: Ci-Admin-One-2026!e2e
+      SUPER_ADMIN_2_USERNAME: ci_admin_two
+      SUPER_ADMIN_2_PASSWORD: Ci-Admin-Two-2026!e2e
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Apply database migrations
+        run: pnpm db:migrate
+      - name: Seed super-admins for the admin journey (blocking — journey 5 depends on it)
+        run: pnpm db:seed:super-admins
+      - name: Build packages, worker and web
+        run: pnpm build
+      # Seeds run after the build: the F1 seed imports pricing from the built domain package.
+      - name: Seed F1 2026 data (F1 axe suite + submission wall)
+        run: pnpm db:seed:f1-2026
+      - name: Seed the e2e football fixture (closing-race journey)
+        run: pnpm db:seed:e2e
+      - name: Install Playwright browser (chromium)
+        run: pnpm --filter @football-predictor/web exec playwright install --with-deps chromium
+      - name: Run main-journey E2E and axe accessibility scan
+        run: pnpm --filter @football-predictor/web test:e2e
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+      - name: Performance smoke (blocking tripwire)
+        # if: always() so a failing E2E step still produces perf-smoke output for diagnosis instead of
+        # skipping it. BLOCKING since 7.3a wrapped: exceeding the (deliberately generous) p95 ceiling or
+        # an erroring endpoint fails the job. Still a smoke tripwire, not an NFR1/NFR4 load assertion —
+        # those remain documented gaps.
+        if: always()
+        run: |
+          pnpm --filter @football-predictor/web exec next start -p 3001 &
+          SERVER_PID=$!
+          for _ in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:3001/api/health/live >/dev/null 2>&1; then break; fi
+            sleep 2
+          done
+          STATUS=0
+          node scripts/perf-smoke.mjs http://127.0.0.1:3001 || STATUS=$?
+          kill "$SERVER_PID" 2>/dev/null || true
+          exit "$STATUS"

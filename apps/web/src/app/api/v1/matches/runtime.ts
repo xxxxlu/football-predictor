@@ -2,6 +2,7 @@ import type postgres from "postgres";
 import { createHash } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
 import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
+import type { LineupSnapshot } from "@football-predictor/domain";
 import { MatchCacheReader } from "@football-predictor/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
@@ -10,11 +11,17 @@ export interface MatchReadAccess {
   assertRoomMember(roomId: string, userId: string): Promise<void>;
 }
 
+/** Read-only port over the persisted lineup cache. Reads never call an external supplier. */
+export interface LineupReadPort {
+  get(matchId: string): Promise<LineupSnapshot | null>;
+}
+
 export interface MatchApiRuntime {
   cache: {
     list(): Promise<{ views: unknown[]; etag: string }>;
     get(matchId: string): Promise<{ view: unknown; etag: string }>;
   };
+  lineup: LineupReadPort;
   access: MatchReadAccess;
   close(): Promise<void>;
 }
@@ -63,6 +70,7 @@ export function createMatchApiRuntime(input: {
   const reader = new MatchCacheReader({ repository });
   return {
     cache: new CurrentMatchCache({ reader }),
+    lineup: { get: (matchId) => repository.getLineup(matchId) },
     access: {
       authenticate: (token) => identity.authenticate(token),
       assertRoomMember: async (roomId, userId) => {

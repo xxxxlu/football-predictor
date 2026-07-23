@@ -8,6 +8,40 @@ export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";
 export type DataState = "FRESH" | "SYNCING" | "STALE" | "PAUSED" | "UNAVAILABLE";
 export type MarketStatus = "OPEN" | "DATA_UNAVAILABLE";
 export type Selection = "HOME" | "DRAW" | "AWAY";
+export type LineupStatus = "CONFIRMED" | "EXPECTED" | "NOT_PUBLISHED" | "UNAVAILABLE";
+export type PlayerPosition = "GK" | "DEF" | "MID" | "FWD" | "UNKNOWN";
+
+export interface LineupPlayer {
+  id: number;
+  name: string;
+  number: number | null;
+  position: PlayerPosition;
+  positionRaw: string | null;
+  grid: string | null;
+  photoUrl: string | null;
+  starter: boolean;
+  status: "STARTING" | "BENCH" | "SUBBED_ON" | "SUBBED_OFF";
+}
+
+export interface TeamLineup {
+  teamId: number;
+  name: string;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  formation: string | null;
+  coach: string | null;
+  players: LineupPlayer[];
+}
+
+export interface LineupSnapshot {
+  fixtureId: string;
+  supplierFixtureId: number;
+  status: LineupStatus;
+  dataAsOf: string;
+  capturedAt: string;
+  home: TeamLineup;
+  away: TeamLineup;
+}
 /** 1X2 selection or a correct-score string ("2-1" / "OTHER") carried in a market snapshot outcome. */
 export type MarketOutcomeSelection = string;
 
@@ -84,6 +118,8 @@ export interface MatchView extends Omit<FixtureSnapshot, "version" | "capturedAt
   /** Platform-fixed correct-score market when offered for this fixture; null when unavailable. */
   correctScoreMarket: MarketView | null;
   live: LiveSnapshot | null;
+  /** Cached supplier lineup; null means not published or unavailable. */
+  lineup: LineupSnapshot | null;
 }
 
 const COMPETITION_NAMES: Readonly<Record<string, string>> = {
@@ -162,6 +198,7 @@ export function createMatchView(input: {
   odds: OddsSnapshot | null;
   correctScoreOdds?: OddsSnapshot | null;
   live?: LiveSnapshot | null;
+  lineup?: LineupSnapshot | null;
   syncState: SyncState;
   sourceVerified: boolean;
   budgetAvailable: boolean;
@@ -212,5 +249,6 @@ export function createMatchView(input: {
         }
       : null,
     live: input.live ?? null,
+    lineup: input.lineup ?? null,
   };
 }

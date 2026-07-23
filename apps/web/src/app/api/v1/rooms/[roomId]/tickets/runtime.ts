@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, DrizzleTicketSubmissionPort, PostgresSupplierSnapshotAdapter } from "@football-predictor/db";
+import { createIdentityDatabase, DrizzleTicketSubmissionPort, F1MarketSnapshotAdapter, PostgresSupplierSnapshotAdapter, SportDispatchingSnapshotAdapter } from "@football-predictor/db";
 import { TicketSubmissionService } from "@football-predictor/domain";
 
 declare global { var __footballPredictorTicketSubmissionService: TicketSubmissionService | undefined; }
@@ -10,7 +10,10 @@ export function getTicketSubmissionService() {
   const config = loadIdentityConfig(process.env);
   const { db } = createIdentityDatabase(config.databaseUrl);
   globalThis.__footballPredictorTicketSubmissionService = new TicketSubmissionService({
-    transaction: new DrizzleTicketSubmissionPort(db, new PostgresSupplierSnapshotAdapter(db)),
+    transaction: new DrizzleTicketSubmissionPort(db, new SportDispatchingSnapshotAdapter(
+      new PostgresSupplierSnapshotAdapter(db),
+      new F1MarketSnapshotAdapter(db),
+    )),
     clock: { now: () => new Date() },
     ids: { next: () => randomUUID() },
   });

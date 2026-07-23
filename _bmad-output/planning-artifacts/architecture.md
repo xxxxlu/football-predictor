@@ -176,7 +176,7 @@ pnpm create next-app@latest apps/web --ts --tailwind --eslint --app --src-dir --
 - CI：install frozen lockfile → lint → typecheck → unit → integration（PostgreSQL）→ build → Playwright smoke。
 - 配置通过环境变量并由 Zod 启动时验证；`.env.example` 只含非敏感键名。
 - 日志 stdout JSON；指标至少含 HTTP latency/error、job lag/failure、supplier budget、stale matches、settlement age、ledger invariant failure。
-- 数据库每日备份和恢复演练；部署前 migration check，迁移与应用保持 expand/contract 兼容。
+- 数据库每 6 小时自动备份、保留不少于 7 天，并做恢复演练；部署前 migration check，迁移与应用保持 expand/contract 兼容。
 
 ### Implementation Sequence
 

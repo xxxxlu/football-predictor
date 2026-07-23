@@ -1,3 +1,6 @@
+import type { FixtureSnapshot, LineupSnapshot } from "@football-predictor/domain";
+import { LineupSyncService, lineupRefreshDecision, type LineupGateway } from "@football-predictor/supplier";
+
 export type SupplierRequestCategory = "STATIC" | "PREMATCH_ODDS" | "LIVE" | "SETTLEMENT";
 export type BudgetRejectionReason = "CATEGORY_EXHAUSTED" | "PROTECTED_RESERVE" | "HARD_LIMIT";
 
@@ -25,6 +28,7 @@ export interface SupplierClientPort<Fixture = unknown, Odds = unknown, Live = un
   fetchPrematchOdds(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: Odds | null; quota: SupplierQuota }>;
   fetchPrematchOddsPage?(input: { leagueId: number; season: number; date: string; bookmakerId: number; page: number }): Promise<{ data: Odds[]; quota: SupplierQuota; paging: { current: number; total: number } }>;
   fetchLive(input: { fixtureId: number; bookmakerId: number }): Promise<{ data: Live | null; quota: SupplierQuota }>;
+  fetchLineups?(input: { fixtureId: number }): Promise<{ data: LineupSnapshot | null; quota: SupplierQuota }>;
   fetchStatus(): Promise<{ supplierCurrent: number; supplierLimit: number }>;
 }
 
@@ -32,6 +36,11 @@ export interface MatchSnapshotRepositoryPort<Fixture = unknown, Odds = unknown, 
   saveFixtures(fixtures: Fixture[]): Promise<void>;
   saveOdds(odds: Odds): Promise<void>;
   saveLive(live: Live): Promise<void>;
+  getFixture?(matchId: string): Promise<Pick<FixtureSnapshot, "id" | "supplierFixtureId" | "status" | "kickoffAt"> | null>;
+  getLineup?(matchId: string): Promise<LineupSnapshot | null>;
+  saveLineup?(snapshot: LineupSnapshot): Promise<void>;
+  /** Durable "attempted at" claim (external_sync_claims.last_attempt_at); true when the interval has elapsed. */
+  claimExternalSync?(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
   setSyncState(matchId: string, state: "IDLE" | "SYNCING" | "PAUSED" | "FAILED"): Promise<void>;
 }
 
@@ -43,10 +52,12 @@ export type SupplierJob =
   | { type: "PREMATCH_ODDS"; attempt: number; payload: { fixtureId: number; matchId: string; bookmakerId: number } }
   | { type: "PREMATCH_ODDS_BATCH"; attempt: number; payload: { leagueId: number; season: number; date: string; bookmakerId: number; page: number } }
   | { type: "LIVE"; attempt: number; payload: { fixtureId: number; matchId: string; bookmakerId: number } }
+  | { type: "LINEUPS"; attempt: number; payload: { fixtureId: number; matchId: string } }
   | { type: "STATUS_CALIBRATE"; attempt: number; payload: Record<string, never> };
 
 export type SupplierJobResult =
   | { outcome: "SUCCESS"; synced: number; nextRunAt?: string; nextPage?: number }
+  | { outcome: "PENDING"; reason: "LINEUP_PENDING"; nextRunAt: string }
   | { outcome: "DEFERRED"; reason: "BUDGET_EXHAUSTED" | "PROTECTED_RESERVE"; retryAt: string }
   | { outcome: "RETRY"; reason: "SUPPLIER_FAILURE"; retryAt: string; nextAttempt: number };
 
@@ -145,6 +156,44 @@ export function createSupplierJobHandler<Fixture, Odds, Live>(dependencies: Hand
             synced: response.data.length,
             ...(response.paging.current < response.paging.total ? { nextPage: response.paging.current + 1 } : {}),
           };
+        }
+
+        if (job.type === "LINEUPS") {
+          const fetchLineups = dependencies.client.fetchLineups;
+          const getFixture = dependencies.repository.getFixture;
+          const getLineup = dependencies.repository.getLineup;
+          const saveLineup = dependencies.repository.saveLineup;
+          const claimAttempt = dependencies.repository.claimExternalSync;
+          if (!fetchLineups || !getFixture || !getLineup || !saveLineup || !claimAttempt) throw new Error("Lineups are not configured");
+          const fixture = await getFixture(job.payload.matchId);
+          // Finished/cancelled (or an already-purged fixture) never refresh; skip without spending budget.
+          if (!fixture) return { outcome: "SUCCESS", synced: 0 };
+          const decision = lineupRefreshDecision({ fixture, now });
+          if (!decision.due) return { outcome: "SUCCESS", synced: 0 };
+          const nextRunAt = new Date(now.getTime() + decision.intervalMs).toISOString();
+          // Durable per-fixture attempt gate (external_sync_claims.last_attempt_at): the recorded
+          // last-attempt time survives worker restarts, so a distant fixture is not re-fetched on every
+          // boot and the null/pending case is rate-limited even though it persists no snapshot.
+          if (!(await claimAttempt(`lineups:${fixture.id}`, now, decision.intervalMs))) {
+            return { outcome: "SUCCESS", synced: 0, nextRunAt };
+          }
+          const budget = await charge(dependencies, "STATIC", now);
+          if (!budget.allowed) return budget.result;
+          let quota: SupplierQuota = {};
+          let published = false;
+          const gateway: LineupGateway = {
+            fetchLineups: async (input) => {
+              const response = await fetchLineups(input);
+              quota = response.quota;
+              published = response.data !== null;
+              return response;
+            },
+          };
+          // LineupSyncService keeps the prior cache when the supplier has not published a lineup yet.
+          await new LineupSyncService({ repository: { getLineup, saveLineup }, gateway, now: () => now }).refresh({ fixture });
+          await reconcileQuota(dependencies, now, quota, budget.snapshot);
+          if (!published) return { outcome: "PENDING", reason: "LINEUP_PENDING", nextRunAt };
+          return { outcome: "SUCCESS", synced: 1, nextRunAt };
         }
 
         const budget = await charge(dependencies, "LIVE", now);

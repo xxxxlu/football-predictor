@@ -16,6 +16,7 @@ export interface WorkerSchedulerConfig {
   settlementIntervalMs: number;
   liveEnabled: boolean;
   liveIntervalMs: number;
+  lineupsIntervalMs?: number;
   settlementBatchSize: number;
 }
 
@@ -36,6 +37,8 @@ type SchedulerDependencies = {
   supplier: { run(job: SupplierJob): Promise<SupplierJobResult>; close(): Promise<void> };
   settlement: {
     scan(limit: number): Promise<{ outcome: "SUCCESS" | "RETRY"; processed: number; held: number; failedTicketIds: string[] }>;
+    /** Optional F1 lock-at-start sweep; deploys without F1 simply omit it. */
+    lockDueF1Sessions?(limit: number): Promise<{ outcome: "SUCCESS" | "RETRY"; locked: number; marketsClosed: number; skipped: number; failedSessionIds: string[] }>;
     close(): Promise<void>;
   };
   fixtures: { listFixtures(): Promise<FixtureTarget[]> };
@@ -44,6 +47,7 @@ type SchedulerDependencies = {
 
 const DAY_MS = 86_400_000;
 const FRESH_ODDS_MS = 10 * 60_000;
+const DEFAULT_LINEUPS_INTERVAL_MS = 5 * 60_000;
 
 function dateOnly(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -199,8 +203,36 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
     }
   }
 
+  async function refreshLineups() {
+    const now = clock.now().getTime();
+    const max = now + config.futureDays * DAY_MS;
+    const min = now - config.pastDays * DAY_MS;
+    const targets = (await fixtures.listFixtures()).filter((fixture) => {
+      const kickoff = new Date(fixture.kickoffAt).getTime();
+      if (!Number.isFinite(kickoff) || kickoff > max || kickoff < min) return false;
+      return fixture.status === "SCHEDULED" || fixture.status === "LIVE";
+    }).sort((left, right) => (new Date(left.kickoffAt).getTime() - new Date(right.kickoffAt).getTime()) || left.id.localeCompare(right.id));
+    for (const fixture of targets) {
+      const result = await supplierJob(
+        `lineups:${fixture.id}`,
+        { type: "LINEUPS", payload: { fixtureId: fixture.supplierFixtureId, matchId: fixture.id } },
+      );
+      // Stop the batch only when the shared budget is exhausted; a per-fixture pending/failure must not
+      // block the remaining fixtures (a supplier that has not published a lineup yet is not a system fault).
+      if (result?.outcome === "DEFERRED") break;
+    }
+  }
+
   async function scanSettlements() {
     await guarded("settlement", "SETTLEMENT_SCAN", () => settlement.scan(config.settlementBatchSize));
+  }
+
+  // Locks F1 sessions whose start time has passed. State lives entirely in the
+  // database, so the startup sweep recovers anything a downtime window missed.
+  async function lockF1Sessions() {
+    const lock = settlement.lockDueF1Sessions?.bind(settlement);
+    if (!lock) return;
+    await guarded("f1_session_lock", "F1_SESSION_LOCK", () => lock(config.settlementBatchSize));
   }
 
   function every(intervalMs: number, callback: () => Promise<unknown>) {
@@ -219,13 +251,17 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
       if (stopping) return;
       await refreshTargets("PREMATCH_ODDS");
       if (config.liveEnabled) await refreshTargets("LIVE");
+      await refreshLineups();
+      await lockF1Sessions();
       await scanSettlements();
       if (stopping) return;
       every(config.fixturesIntervalMs, refreshFixtures);
       every(config.resultsIntervalMs, refreshResults);
       every(config.oddsIntervalMs, () => refreshTargets("PREMATCH_ODDS"));
+      every(config.settlementIntervalMs, lockF1Sessions);
       every(config.settlementIntervalMs, scanSettlements);
       if (config.liveEnabled) every(config.liveIntervalMs, () => refreshTargets("LIVE"));
+      every(config.lineupsIntervalMs ?? DEFAULT_LINEUPS_INTERVAL_MS, refreshLineups);
     },
 
     stop(): Promise<void> {
