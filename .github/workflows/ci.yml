@@ -9,6 +9,26 @@ permissions:
   contents: read
 
 jobs:
+  audit:
+    # NFR21 (dependency slice): lockfile vulnerability scan against the npm advisory DB.
+    # High/critical advisories BLOCK; the first step logs every known advisory (any severity)
+    # for visibility without failing. Not a full NFR21 security scan (no SAST/DAST/secrets) —
+    # that remains a documented gap.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Report all known advisories (non-blocking, any severity)
+        run: pnpm audit || echo "::warning::pnpm audit found advisories below the blocking threshold (see log)"
+      - name: Fail on high or critical advisories (blocking)
+        run: pnpm audit --audit-level high
+
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
