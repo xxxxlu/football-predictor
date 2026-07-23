@@ -1,7 +1,8 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { StatusMessage } from "@/components/status-message";
+import { discardOfflineDraft, loadOfflineDraft, revalidateDraft, saveOfflineDraft, type DraftVerdict, type OfflineDraft } from "@/features/pwa/offline-draft";
 import { useOnlineStatus } from "@/features/pwa/offline-status";
 import {
   MARKET_KIND_LABELS,
@@ -46,9 +47,52 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
   const active = markets.find((market) => market.id === marketId) ?? markets[0];
   const outcome = active?.outcomes.find((candidate) => candidate.selection === selection);
   const predictable = sessionPredictable(detail.session) && interactive;
-  // 7.3a：离线是只读模式 —— 提交入口直接禁用，而不是等 POST 失败。
+  // 7.3a：离线禁提交；7.3b：离线仍可继续构建判断（存为本地草稿），只有提交被禁。
   const online = useOnlineStatus();
-  const unavailable = !predictable || !active || active.status !== "OPEN" || !online;
+  const closed = !predictable || !active || active.status !== "OPEN";
+  const unavailable = closed || !online;
+  const eventKey = `f1:${detail.session.id}`;
+
+  // 7.3b —— 离线草稿：与足球 Slip 同一纪律（保存/恢复/重新验证/永不自动提交）。
+  const [draft, setDraft] = useState<OfflineDraft | null>(null);
+  const [draftVerdict, setDraftVerdict] = useState<DraftVerdict | null>(null);
+  const restoredRef = useRef(false);
+
+  useEffect(() => {
+    if (online || !active || !outcome || !stake) return;
+    saveOfflineDraft({ v: 1, roomId, eventKey, marketId: active.id, marketVersion: active.version, selection: outcome.selection, decimalOdds: outcome.decimalOdds, stakePoints: stake, savedAt: new Date().toISOString() });
+  }, [online, active, outcome, stake, roomId, eventKey]);
+
+  useEffect(() => {
+    if (!online || restoredRef.current) return;
+    restoredRef.current = true;
+    // 微任务回调里恢复：localStorage 是外部系统，且避免 effect 内同步 setState 级联渲染。
+    queueMicrotask(() => {
+      const stored = loadOfflineDraft(roomId, eventKey);
+      if (!stored) return;
+      const target = markets.find((market) => market.id === stored.marketId);
+      const currentOdds = target?.outcomes.find((candidate) => candidate.selection === stored.selection)?.decimalOdds;
+      const verdict = revalidateDraft(stored, {
+        open: sessionPredictable(detail.session) && interactive && target?.status === "OPEN",
+        marketId: target?.id,
+        marketVersion: target?.version,
+        decimalOdds: currentOdds,
+      });
+      if (verdict === "UNCHANGED" && target) {
+        setMarketId(stored.marketId);
+        setSelection(stored.selection);
+        setStake(stored.stakePoints);
+      }
+      setDraft(stored);
+      setDraftVerdict(verdict);
+    });
+  }, [online, roomId, eventKey, markets, detail.session, interactive]);
+
+  function clearDraft() {
+    discardOfflineDraft(roomId, eventKey);
+    setDraft(null);
+    setDraftVerdict(null);
+  }
 
   const projected = useMemo(() => {
     const amount = Number(stake), value = Number(outcome?.decimalOdds);
@@ -81,6 +125,9 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
         return;
       }
       setReceipt(result.data?.ticketId || "已记录");
+      // 选中态已被消费：清掉它，避免之后离线时把已提交的判断又存成草稿。
+      setSelection(undefined);
+      clearDraft();
     } catch { setError("网络连接失败。系统不会离线排队，本次积分未发生变化。"); }
     finally { setPending(false); }
   }
@@ -106,17 +153,26 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
         ))}
       </div>
 
-      {active && <OutcomePicker market={active} drivers={detail.drivers} selection={selection} disabled={unavailable || pending} onSelect={(value) => { setSelection(value); setError(""); setReceipt(""); }} />}
+      {active && <OutcomePicker market={active} drivers={detail.drivers} selection={selection} disabled={closed || pending} onSelect={(value) => { setSelection(value); setError(""); setReceipt(""); }} />}
 
       <div>
         <label htmlFor={`f1-stake-${detail.session.id}`} className="mb-2 block text-sm font-bold">投入积分</label>
-        <input id={`f1-stake-${detail.session.id}`} disabled={unavailable || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={(event) => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular" />
+        <input id={`f1-stake-${detail.session.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={(event) => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular" />
         <div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map((value) => (
-          <button key={value} disabled={unavailable || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>
+          <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>
         ))}</div>
       </div>
 
       <div className="flex justify-between border-y rule py-3 text-sm"><span className="text-[var(--muted)]">预计返还（含投入）</span><strong className="tabular">{projected}</strong></div>
+      {draft && draftVerdict && <StatusMessage tone={draftVerdict === "UNCHANGED" ? "info" : "error"} title={draftVerdict === "UNCHANGED" ? "已恢复离线草稿" : "离线草稿需要处理"}>
+        <span className="block">
+          {draftVerdict === "UNCHANGED" && "离线时保存的判断已恢复。系统不会自动提交，请确认最新倍率后手动提交。"}
+          {draftVerdict === "ODDS_CHANGED" && `离线期间积分倍率已变化（草稿倍率 ${draft.decimalOdds}），请按最新倍率重新选择，或丢弃这份草稿。`}
+          {draftVerdict === "MARKET_CHANGED" && "离线期间市场已更换，这份草稿无法提交，请重新选择或丢弃。"}
+          {draftVerdict === "EVENT_CLOSED" && "本场次已封盘，这份离线草稿无法提交，请丢弃。"}
+        </span>
+        <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--field)] hover:text-[var(--field)]">丢弃草稿</button>
+      </StatusMessage>}
       {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
       {receipt && <StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage>}
       <button disabled={unavailable || pending || !outcome || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">

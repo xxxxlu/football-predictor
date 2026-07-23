@@ -8,6 +8,8 @@
  *  transitions is sufficient — an offline device can never change accounts.
  */
 
+import { hasOfflineDrafts, purgeOfflineDrafts } from "./offline-draft";
+
 const PRIVATE_CACHE_PREFIX = "pulse-private-";
 const OWNER_MARKER_PATH = "/__pulse-private-owner";
 
@@ -15,8 +17,9 @@ function cachesAvailable(): boolean {
   return typeof window !== "undefined" && "caches" in window;
 }
 
-/** Delete every private cache (logout, or ownership change). */
+/** Delete every private cache and offline draft (logout, or ownership change). */
 export async function purgePrivateCaches(): Promise<void> {
+  purgeOfflineDrafts();
   if (!cachesAvailable()) return;
   const keys = await window.caches.keys();
   await Promise.all(keys.filter((key) => key.startsWith(PRIVATE_CACHE_PREFIX)).map((key) => window.caches.delete(key)));
@@ -38,7 +41,8 @@ export async function syncPrivateCacheOwner(userId: string): Promise<void> {
       if (!hasEntries && (await cache.keys()).length > 0) hasEntries = true;
     }
     // A different owner — or content of UNKNOWN ownership (marker missing) — never survives.
-    if ((previousOwner !== null && previousOwner !== userId) || (previousOwner === null && hasEntries)) {
+    // Offline drafts count as content too: marker-less drafts are foreign (7.3b).
+    if ((previousOwner !== null && previousOwner !== userId) || (previousOwner === null && (hasEntries || hasOfflineDrafts()))) {
       await purgePrivateCaches();
     }
     // (Re)write the marker into the versioned cache the SW writes to.
