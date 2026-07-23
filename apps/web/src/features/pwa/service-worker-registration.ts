@@ -1,5 +1,14 @@
 export type ServiceWorkerUpdateHandler = (worker: ServiceWorker) => void;
 
+/** A controllerchange may mean two very different things: sw.js calls clients.claim()
+ *  on activate, so the FIRST install claims pages that had no controller — the page is
+ *  already the newest version and reloading would destroy in-progress user input (the
+ *  auth form lost its earliest-typed field this way). Only a takeover of a page that
+ *  already had a controller is a real version update worth reloading for. */
+export function shouldReloadOnControllerChange(hadController: boolean, alreadyReloading: boolean): boolean {
+  return hadController && !alreadyReloading;
+}
+
 export async function registerServiceWorker(onUpdate: ServiceWorkerUpdateHandler): Promise<ServiceWorkerRegistration | null> {
   if (typeof window === "undefined" || !("serviceWorker" in navigator) || process.env.NODE_ENV !== "production") return null;
   const registration = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });

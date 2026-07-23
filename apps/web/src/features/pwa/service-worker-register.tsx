@@ -1,12 +1,19 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { registerServiceWorker } from "./service-worker-registration";
+import { registerServiceWorker, shouldReloadOnControllerChange } from "./service-worker-registration";
 
 export function ServiceWorkerRegister() {
   const [waiting, setWaiting] = useState<ServiceWorker>(); const [dismissed, setDismissed] = useState(false); const reloading = useRef(false);
   useEffect(() => {
     let registration: ServiceWorkerRegistration | null = null;
-    const onControllerChange = () => { if (reloading.current) return; reloading.current = true; window.location.reload(); };
+    let hadController = Boolean(navigator.serviceWorker?.controller);
+    const onControllerChange = () => {
+      const reload = shouldReloadOnControllerChange(hadController, reloading.current);
+      hadController = true;
+      if (!reload) return;
+      reloading.current = true;
+      window.location.reload();
+    };
     const updateWhenVisible = () => { if (document.visibilityState === "visible" && registration) void registration.update(); };
     navigator.serviceWorker?.addEventListener("controllerchange", onControllerChange);
     document.addEventListener("visibilitychange", updateWhenVisible);
