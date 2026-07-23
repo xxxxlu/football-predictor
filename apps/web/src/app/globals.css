@@ -487,6 +487,14 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pd-page-lead [data-pulse-reveal][data-pulse-revealed="true"] { opacity: 1; transform: none; }
 
 .pulse-home { overflow: hidden; background: var(--pulse-paper); }
+.pulse-drive { --pulse-drive-progress: 0; --pulse-pointer-x: 50%; --pulse-pointer-y: 22%; position: relative; overflow: hidden; }
+.pulse-drive__spot { position: absolute; z-index: 1; inset: 0; pointer-events: none; opacity: .55; background: radial-gradient(circle at var(--pulse-pointer-x) var(--pulse-pointer-y), rgb(255 59 32 / 10%), transparent min(28rem, 42vw)); transition: opacity .35s ease; }
+.pulse-drive__rail { position: absolute; z-index: 4; right: clamp(1rem, 2.8vw, 2.5rem); top: clamp(4.5rem, 12vh, 8rem); bottom: clamp(4rem, 8vh, 6rem); display: flex; width: 1.1rem; flex-direction: column; align-items: center; justify-content: space-between; color: rgb(244 241 232 / 44%); pointer-events: none; }
+.pulse-drive__rail span, .pulse-drive__rail b { writing-mode: vertical-rl; font: .58rem/1 var(--pd-font-mono); letter-spacing: .12em; }
+.pulse-drive__rail b { color: var(--pulse-lime); font-weight: 500; }
+.pulse-drive__rail i { position: relative; display: block; width: 1px; flex: 1; margin: .8rem 0; background: linear-gradient(to bottom, rgb(244 241 232 / 18%), rgb(244 241 232 / 7%)); }
+.pulse-drive__rail i::after { content: ""; position: absolute; left: -2px; top: calc(var(--pulse-drive-progress) * (100% - 1.25rem)); width: 5px; height: 1.25rem; background: var(--pulse-red); box-shadow: 0 0 16px rgb(255 59 32 / 65%); }
+.pulse-drive > .pulse-home__hero { position: relative; z-index: 2; }
 .pulse-home__hero { position: relative; overflow: hidden; }
 .pulse-home__hero-grid { display: grid; gap: clamp(2rem, 5vw, 5rem); max-width: 1440px; min-height: min(78vh, 820px); margin: 0 auto; padding: clamp(3rem, 8vw, 7rem) clamp(1rem, 4vw, 3.5rem) clamp(2rem, 5vw, 4rem); }
 @media (min-width: 900px) { .pulse-home__hero-grid { grid-template-columns: 7fr 5fr; align-items: center; } }
@@ -559,6 +567,30 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__arena-glyph { position: absolute; right: 11%; top: 12%; width: clamp(7rem, 20vw, 16rem); height: clamp(7rem, 20vw, 16rem); color: var(--pulse-red-deep); opacity: .75; transition: transform .5s var(--pd-ease-out), color .25s; }
 .pulse-home__arena--football:hover .pulse-home__arena-glyph { color: var(--pulse-red); transform: rotate(8deg) scale(1.06); }
 .pulse-home__arena--f1::after { content: "RACE CONTROL"; position: absolute; right: 1.5rem; bottom: 1.5rem; color: var(--pulse-red-deep); font: .64rem var(--pd-font-mono); letter-spacing: .2em; transform: rotate(-90deg) translateX(100%); transform-origin: right bottom; }
+.pulse-home__arena-deck { position: relative; overflow: hidden; color: var(--pulse-ivory); background: var(--pulse-carbon); }
+.pulse-home__arena-deck::before { content: "PULSE / 03"; position: absolute; right: 1rem; top: 2.5rem; color: rgb(244 241 232 / 12%); font: 900 clamp(5rem, 18vw, 16rem)/.7 var(--pd-font-display); letter-spacing: -.08em; transform: skewX(-11deg); pointer-events: none; }
+.pulse-home__arena-deck.is-track::before { content: "F1"; color: rgb(255 59 32 / 10%); }
+.pulse-home__arena-deck-head { position: relative; z-index: 1; display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
+.pulse-home__mode-switch { display: flex; padding: 1px; background: var(--night-line); border: 1px solid var(--night-line); }
+.pulse-home__mode-switch button { position: relative; display: grid; min-width: 9.5rem; gap: .35rem; padding: .9rem 1rem; color: var(--pulse-muted); text-align: left; background: transparent; border: 0; cursor: pointer; transition: color .2s, background .2s; }
+.pulse-home__mode-switch button::after { content: ""; position: absolute; left: 1rem; right: 1rem; bottom: .45rem; height: 2px; background: transparent; transform: scaleX(0); transform-origin: left; transition: transform .3s var(--pd-ease-out), background .2s; }
+.pulse-home__mode-switch button:hover, .pulse-home__mode-switch button:focus-visible { color: var(--pulse-ivory); }
+.pulse-home__mode-switch button.is-active { color: var(--pulse-carbon); background: var(--pulse-lime); }
+.pulse-home__mode-switch button.is-active::after { background: var(--pulse-carbon); transform: scaleX(1); }
+.pulse-home__mode-switch button span { font: 800 1rem/1 var(--pd-font-display); letter-spacing: .04em; }
+.pulse-home__mode-switch button small { font: .58rem var(--pd-font-mono); letter-spacing: .08em; }
+.pulse-home__mode-panel { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(0, .8fr) minmax(18rem, 1.2fr); min-height: 28rem; margin-top: 3rem; border-top: 1px solid var(--night-line); border-bottom: 1px solid var(--night-line); }
+.pulse-home__mode-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; padding: clamp(1.5rem, 5vw, 4rem) 0; }
+.pulse-home__mode-copy > strong { margin-top: 1rem; color: var(--pulse-ivory); font: 800 clamp(3rem, 8vw, 7rem)/.82 var(--pd-font-display); letter-spacing: -.04em; }
+.pulse-home__mode-copy > p:not(.pulse-home__arena-index) { max-width: 27rem; margin: 1.5rem 0 0; color: rgb(244 241 232 / 62%); line-height: 1.7; }
+.pulse-home__mode-meta { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 1.5rem 0 2rem; color: var(--pulse-muted); font: .64rem var(--pd-font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.pulse-home__mode-meta b { color: var(--pulse-lime); font-size: 1.1rem; }
+.pulse-home__mode-visual { position: relative; display: grid; min-height: 20rem; place-items: center; overflow: hidden; background: linear-gradient(135deg, var(--pulse-carbon-2), var(--pulse-carbon)); border-left: 1px solid var(--night-line); clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%, 0 10%); }
+.pulse-home__mode-visual::before { content: ""; position: absolute; inset: 0; opacity: .45; background: repeating-linear-gradient(100deg, transparent 0 25px, rgb(255 255 255 / 4%) 26px 27px); transform: translateX(calc(var(--pulse-drive-progress) * 22px)); transition: transform .5s var(--pd-ease-out); }
+.pulse-home__mode-visual .pulse-circuit { position: absolute; inset: 0; min-height: 100%; background: transparent; }
+.pulse-home__mode-visual .pulse-circuit img { padding: 2rem; opacity: .82; }
+.pulse-home__mode-visual .pulse-home__arena-glyph { position: relative; z-index: 1; right: auto; top: auto; width: clamp(10rem, 30vw, 22rem); height: clamp(10rem, 30vw, 22rem); color: var(--pulse-red); opacity: .8; }
+.pulse-home__mode-stamp { position: absolute; z-index: 2; right: 1rem; bottom: 1rem; color: var(--pulse-red); font: .62rem var(--pd-font-mono); letter-spacing: .12em; writing-mode: vertical-rl; }
 .pulse-home__final { border-top: 1px solid var(--night-line); }
 
 .pd-sport-switch { align-items: stretch; gap: .6rem; }
@@ -637,6 +669,8 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 [data-pulse-reveal][data-pulse-revealed="true"] { opacity: 1; transform: none; }
 @media (prefers-reduced-motion: reduce) {
   .pulse-home__rail-loading span, .pulse-circuit__scan { animation: none; }
+  .pulse-drive__spot, .pulse-drive__rail i::after { transition: none; }
+  .pulse-home__mode-switch button, .pulse-home__mode-switch button::after, .pulse-home__mode-visual::before { transition: none; }
   [data-pulse-reveal], .pulse-weekend-card[data-pulse-reveal] { opacity: 1; transform: none; transition: none; }
   .pulse-circuit img, .pulse-home__arena, .pulse-home__arena::before, .pulse-weekend-session, .pulse-market-outcome, .pulse-timing-row { transition: none; }
 }
@@ -648,6 +682,14 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
   .pulse-home__cta > * { width: 100%; }
   .pulse-home__guest-art { min-height: 15rem; clip-path: none; }
   .pulse-home__telemetry-head, .pulse-home__telemetry-foot { font-size: .58rem; }
+  .pulse-drive__rail { right: .55rem; top: 4rem; bottom: 3rem; opacity: .72; }
+  .pulse-home__arena-deck-head { align-items: start; flex-direction: column; }
+  .pulse-home__mode-switch { width: 100%; }
+  .pulse-home__mode-switch button { min-width: 0; flex: 1; }
+  .pulse-home__mode-panel { grid-template-columns: 1fr; margin-top: 2rem; }
+  .pulse-home__mode-copy { padding: 2rem 0 2.5rem; }
+  .pulse-home__mode-visual { min-height: 15rem; border-top: 1px solid var(--night-line); border-left: 0; clip-path: none; }
+  .pulse-home__mode-visual .pulse-home__arena-glyph { width: 10rem; height: 10rem; }
   .pulse-home__circuit-media, .pulse-home__circuit-media .pulse-circuit { min-height: 12rem; }
   .pulse-home__locked-rail { grid-template-columns: 1fr; gap: .55rem; }
   .pulse-home__rail-row { grid-template-columns: 4rem minmax(0, 1fr) 1rem; gap: .65rem; padding-inline: 1rem; }
