@@ -35,13 +35,25 @@ describe("service worker static safety contract", () => {
     const source = await readFile(workerPath, "utf8");
     // No owner marker → no writes: after a logout purge, anonymous traffic
     // (login page + prefetches) must not resurrect the private cache.
-    expect(source).toMatch(/const owner = await caches\.match\(OWNER_MARKER_PATH[\s\S]*?if \(!owner\) return;/);
+    expect(source).toMatch(/const epochBefore = await readOwnerEpoch\(\);\s*if \(epochBefore === null\) return;/);
     // Eviction never removes the marker itself.
     expect(source).toMatch(/filter\(\(key\) => new URL\(key\.url\)\.pathname !== OWNER_MARKER_PATH\)/);
     // The marker path is the one the page side (private-cache.ts) actually writes.
     const pageSide = await readFile(resolve(process.cwd(), "apps/web/src/features/pwa/private-cache.ts"), "utf8");
     expect(source).toContain('const OWNER_MARKER_PATH = "/__pulse-private-owner"');
     expect(pageSide).toContain('const OWNER_MARKER_PATH = "/__pulse-private-owner"');
+  });
+
+  it("self-annuls in-flight writes on purge or rebind (#22 epoch mechanism)", async () => {
+    const source = await readFile(workerPath, "utf8");
+    // The marker body is re-read AFTER each put and compared with the pre-put value:
+    // marker gone (logout purge raced the write) → the whole private cache is deleted;
+    // marker changed (rebind to another user/epoch) → this write is deleted.
+    expect(source).toMatch(/const epochAfter = await readOwnerEpoch\(\);[\s\S]*?if \(epochAfter === null\) \{\s*await caches\.delete\(PRIVATE_CACHE_NAME\);\s*return;\s*\}[\s\S]*?if \(epochAfter !== epochBefore\) \{\s*await cache\.delete\(request\.url\);\s*return;\s*\}/);
+    // The page side mints an epoch per binding and preserves it only on same-owner re-confirms.
+    const pageSide = await readFile(resolve(process.cwd(), "apps/web/src/features/pwa/private-cache.ts"), "utf8");
+    expect(pageSide).toMatch(/const epoch = sameOwner && previous\?\.epoch \? previous\.epoch : newEpoch\(\);/);
+    expect(pageSide).toContain("JSON.stringify({ owner: userId, epoch })");
   });
 
   it("keeps a versioned shell cache and removes old versions", async () => {
