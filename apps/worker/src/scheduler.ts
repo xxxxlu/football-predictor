@@ -37,6 +37,8 @@ type SchedulerDependencies = {
   supplier: { run(job: SupplierJob): Promise<SupplierJobResult>; close(): Promise<void> };
   settlement: {
     scan(limit: number): Promise<{ outcome: "SUCCESS" | "RETRY"; processed: number; held: number; failedTicketIds: string[] }>;
+    /** Optional F1 lock-at-start sweep; deploys without F1 simply omit it. */
+    lockDueF1Sessions?(limit: number): Promise<{ outcome: "SUCCESS" | "RETRY"; locked: number; marketsClosed: number; skipped: number; failedSessionIds: string[] }>;
     close(): Promise<void>;
   };
   fixtures: { listFixtures(): Promise<FixtureTarget[]> };
@@ -225,6 +227,14 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
     await guarded("settlement", "SETTLEMENT_SCAN", () => settlement.scan(config.settlementBatchSize));
   }
 
+  // Locks F1 sessions whose start time has passed. State lives entirely in the
+  // database, so the startup sweep recovers anything a downtime window missed.
+  async function lockF1Sessions() {
+    const lock = settlement.lockDueF1Sessions?.bind(settlement);
+    if (!lock) return;
+    await guarded("f1_session_lock", "F1_SESSION_LOCK", () => lock(config.settlementBatchSize));
+  }
+
   function every(intervalMs: number, callback: () => Promise<unknown>) {
     timerHandles.push(timers.setInterval(() => { void callback().catch(() => undefined); }, intervalMs));
   }
@@ -242,11 +252,13 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
       await refreshTargets("PREMATCH_ODDS");
       if (config.liveEnabled) await refreshTargets("LIVE");
       await refreshLineups();
+      await lockF1Sessions();
       await scanSettlements();
       if (stopping) return;
       every(config.fixturesIntervalMs, refreshFixtures);
       every(config.resultsIntervalMs, refreshResults);
       every(config.oddsIntervalMs, () => refreshTargets("PREMATCH_ODDS"));
+      every(config.settlementIntervalMs, lockF1Sessions);
       every(config.settlementIntervalMs, scanSettlements);
       if (config.liveEnabled) every(config.liveIntervalMs, () => refreshTargets("LIVE"));
       every(config.lineupsIntervalMs ?? DEFAULT_LINEUPS_INTERVAL_MS, refreshLineups);
