@@ -1,0 +1,12 @@
+# gitleaks config — extends the default ruleset.
+# Allowlists ONLY the deliberate throwaway e2e credential (documented in
+# apps/web/tests/e2e/support/actors.ts). Real secrets must never be committed;
+# runtime credentials live in environment variables / Render secrets.
+title = "football-predictor secret scan"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Deliberate throwaway e2e test credential — not a real secret"
+regexes = ['''Passw0rd-e2e-journeys''']

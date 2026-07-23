@@ -27,9 +27,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Smoke test the deployed service
-        run: node scripts/smoke-test.mjs "${{ inputs.base_url }}"
+        # The input reaches the script via env, never interpolated into the shell line
+        # (a crafted base_url could otherwise inject commands into the runner).
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+        run: node scripts/smoke-test.mjs "$BASE_URL"
