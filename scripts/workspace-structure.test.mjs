@@ -22,8 +22,9 @@ test("workspace contains every architecture boundary", async () => {
 
 test("free-tier deployment builds the web workspace and bounds current World Cup synchronization", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8"));
-  assert.equal(manifest.devDependencies.next, "16.2.10");
+  assert.equal(manifest.devDependencies.next, "16.2.11");
   const webManifest = JSON.parse(await readFile("apps/web/package.json", "utf8"));
+  assert.equal(webManifest.dependencies.next, manifest.devDependencies.next, "web must build with the same next the workspace pins");
   assert.equal(webManifest.scripts["build:packages"], "pnpm --dir ../.. build:packages");
   const vercel = JSON.parse(await readFile("vercel.json", "utf8"));
   assert.equal(vercel.framework, "nextjs");
