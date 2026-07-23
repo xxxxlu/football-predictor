@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { KickoffLoader } from "@/components/kickoff-loader";
 import { Marquee } from "@/components/marquee";
 import { PulseCircuit } from "@/components/pulse-circuit";
+import { PulseDrive } from "@/components/pulse-drive";
 import { PulseLine, SportGlyph } from "@/components/pulse";
 import { PulseMotion } from "@/components/pulse-motion";
 import { StatusMessage } from "@/components/status-message";
@@ -70,6 +71,7 @@ function AuthenticatedHome({ username }: { username: string }) {
 function GuestHome() {
   return (
     <main id="main-content" className="pulse-home pulse-home--guest">
+      <PulseDrive className="pulse-home__hero-wrap">
       <section className="pulse-home__hero night line-art">
         <div className="pulse-home__hero-grid">
           <div className="pulse-home__copy">
@@ -91,10 +93,12 @@ function GuestHome() {
         </div>
         <div className="pulse-home__hero-line"><PulseLine state="ambient" /></div>
       </section>
+      </PulseDrive>
       <div className="pulse-home__ticker night"><Marquee items={["PULSE", "FOOTBALL", "FORMULA 1", "CALL THE MOMENT", "私人房间", "虚拟积分"]} /></div>
       <section className="pulse-home__guest-rail section-pad" data-pulse-reveal>
         <div className="mx-auto max-w-7xl px-4 md:px-8"><p className="eyebrow">LIVE DATA / 登录后可见</p><div className="pulse-home__locked-rail"><span className="pd-num">赛事脉搏</span><strong>登录后查看真实赛事与封盘状态</strong><Link href="/login" className="link-arrow text-[var(--field)]">进入赛事中心 <span className="arrow">→</span></Link></div></div>
       </section>
+      <ArenaDeck data={{ matches: [], weekends: [], errors: [] }} guest />
       <MechanismSection />
       <FinalCallToAction />
     </main>
@@ -106,6 +110,7 @@ function EditorialHome({ username, data, loading }: { username: string; data: Ho
   const featuredWeekend = next?.sport === "F1" ? next.weekend : data.weekends[0];
   return (
     <main id="main-content" className="pulse-home">
+      <PulseDrive className="pulse-home__hero-wrap">
       <section className="pulse-home__hero night line-art">
         <div className="pulse-home__hero-grid">
           <div className="pulse-home__copy">
@@ -122,6 +127,7 @@ function EditorialHome({ username, data, loading }: { username: string; data: Ho
         </div>
         <div className="pulse-home__hero-line"><PulseLine state={next?.status === "OPEN" ? "upcoming" : "ambient"} /></div>
       </section>
+      </PulseDrive>
 
       <div className="pulse-home__ticker night"><Marquee items={["PULSE LINE", `${data.matches.length} FOOTBALL EVENTS`, `${data.weekends.length} F1 WEEKENDS`, "NO CASH · VIRTUAL POINTS", "CALL THE MOMENT"]} /></div>
 
@@ -131,19 +137,35 @@ function EditorialHome({ username, data, loading }: { username: string; data: Ho
         {loading ? <div className="pulse-home__rail-loading" aria-busy="true"><span /><span /><span /></div> : <LiveRail data={data} />}
       </section>
 
-      <section className="pulse-home__arenas section-pad" data-pulse-reveal>
-        <div className="mx-auto max-w-7xl px-4 md:px-8"><p className="eyebrow">03 / TWO ARENAS</p><h2 className="kinetic mt-3 text-[clamp(3rem,8vw,7rem)]">选择你的<span className="text-stroke">赛场</span></h2>
-          <div className="pulse-home__arena-grid">
-            <Link href="/matches" className="pulse-home__arena pulse-home__arena--football"><SportGlyph sport="FOOTBALL" className="pulse-home__arena-glyph" /><span className="pulse-home__arena-index">01 / MATCHDAY</span><strong>FOOTBALL</strong><span>{data.matches.length} 场真实比赛 · 开赛前可预测</span><i aria-hidden>↗</i></Link>
-            <Link href="/matches/f1" className="pulse-home__arena pulse-home__arena--f1"><span className="pulse-home__arena-index">02 / PADDOCK</span><strong>FORMULA 1</strong><span>{data.weekends.length} 个 Race Weekend · 四类场次</span><i aria-hidden>↗</i></Link>
-          </div>
-        </div>
-      </section>
+      <ArenaDeck data={data} />
 
       <MechanismSection />
       <FinalCallToAction authenticated />
     </main>
   );
+}
+
+function ArenaDeck({ data, guest = false }: { data: HomeData; guest?: boolean }) {
+  const [mode, setMode] = useState<"FIELD" | "TRACK">("FIELD");
+  const isField = mode === "FIELD";
+  const href = isField ? "/matches" : "/matches/f1";
+  const count = isField ? data.matches.length : data.weekends.length;
+  const label = isField ? "FOOTBALL / MATCHDAY" : "FORMULA 1 / PADDOCK";
+  return <section className={`pulse-home__arena-deck section-pad ${isField ? "is-field" : "is-track"}`} data-pulse-reveal>
+    <div className="mx-auto max-w-7xl px-4 md:px-8">
+      <div className="pulse-home__arena-deck-head">
+        <div><p className="eyebrow">03 / CHOOSE YOUR MODE</p><h2 className="kinetic mt-3 text-[clamp(3rem,8vw,7rem)]">进入<span className="text-stroke">赛场</span></h2></div>
+        <div className="pulse-home__mode-switch" role="tablist" aria-label="切换赛场模式">
+          <button type="button" role="tab" aria-selected={isField} className={isField ? "is-active" : ""} onClick={() => setMode("FIELD")}><span>ON FIELD</span><small>足球 · MATCHDAY</small></button>
+          <button type="button" role="tab" aria-selected={!isField} className={!isField ? "is-active" : ""} onClick={() => setMode("TRACK")}><span>ON TRACK</span><small>F1 · RACE CONTROL</small></button>
+        </div>
+      </div>
+      <div className="pulse-home__mode-panel">
+        <div className="pulse-home__mode-copy"><p className="pulse-home__arena-index">{isField ? "01 / MATCHDAY" : "02 / PADDOCK"}</p><strong>{isField ? "FOOTBALL" : "FORMULA 1"}</strong><p>{isField ? "在哨声之前留下你的判断，和房间里的人一起看这场比赛。" : "把一个 Race Weekend 拆成每个可以被准确记录的瞬间。"}</p><div className="pulse-home__mode-meta"><span><b>{guest ? "SYNC" : count}</b> {guest ? "登录后同步真实赛事" : isField ? "场真实比赛" : "个 Race Weekend"}</span><span>{label}</span></div><Link href={guest ? "/login" : href} className="btn-volt link-arrow">{guest ? "登录查看赛事" : `进入${isField ? "赛事" : "Race Control"}`}<span className="arrow">→</span></Link></div>
+        <div className="pulse-home__mode-visual" aria-hidden="true">{isField ? <SportGlyph sport="FOOTBALL" className="pulse-home__arena-glyph" /> : data.weekends[0] ? <PulseCircuit circuitKey={data.weekends[0].circuitKey} /> : <PulseLine state="ambient" /> }<span className="pulse-home__mode-stamp">{isField ? "THE MATCH IS THE MOMENT" : "THE CLOCK NEVER LIES"}</span></div>
+      </div>
+    </div>
+  </section>;
 }
 
 function LiveRail({ data }: { data: HomeData }) {
