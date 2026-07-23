@@ -137,10 +137,10 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
   }
 
   return (
-    <form onSubmit={submit} className="surface space-y-4 p-4 sm:p-5" aria-label="F1 判断凭证">
-      <header className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="display text-xl font-bold">F1 判断</h3>
-        <p className="text-xs text-[var(--muted)]">倍率版本 <span className="tabular">{active?.version}</span></p>
+    <form onSubmit={submit} className="pulse-slip surface space-y-4 p-4 sm:p-5" aria-label="F1 判断凭证">
+      <header className="pulse-slip__head">
+        <div><p className="pd-eyebrow">PREDICTION SLIP / F1</p><h3 className="kinetic text-3xl">提交判断</h3></div>
+        <p className="pulse-slip__version">ODDS VERSION <span className="tabular">{active?.version}</span></p>
       </header>
 
       <div role="tablist" aria-label="选择市场" className="flex flex-wrap gap-2">
