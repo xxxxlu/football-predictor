@@ -341,4 +341,96 @@ describe("worker scheduler", () => {
     await runScheduler();
     expect(lineupFetches).toBe(1);
   });
+
+  it("runs the F1 lock sweep at startup before settlement and again on the settlement interval", async () => {
+    const order: string[] = [];
+    const timers = new FakeTimers();
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: {
+        scan: async () => { order.push("settlement"); return { outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }; },
+        lockDueF1Sessions: async (limit) => { order.push(`f1-lock:${limit}`); return { outcome: "SUCCESS", locked: 0, marketsClosed: 0, skipped: 0, failedSessionIds: [] }; },
+        close: async () => undefined,
+      },
+      fixtures: { listFixtures: async () => [] }, write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(order).toEqual(["f1-lock:100", "settlement"]);
+    timers.tickAll();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(order.filter((entry) => entry.startsWith("f1-lock"))).toHaveLength(2);
+    await scheduler.stop();
+  });
+
+  it("locks a session missed while the worker was down on the next boot's startup sweep", async () => {
+    // Durable state shared across two scheduler lifetimes; in-memory scheduler state resets.
+    const store = { state: "UPCOMING" as "UPCOMING" | "LOCKED", startsAt: "2026-07-13T12:00:00Z", openMarkets: 3 };
+    const lockedAtBoot: number[] = [];
+    const runScheduler = async (nowIso: string) => {
+      const now = new Date(nowIso);
+      const scheduler = createWorkerScheduler({
+        config: schedulerConfig(),
+        clock: { now: () => now }, timers: new FakeTimers(),
+        supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+        settlement: {
+          scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }),
+          lockDueF1Sessions: async () => {
+            const due = store.state === "UPCOMING" && new Date(store.startsAt).getTime() <= now.getTime();
+            if (due) { store.state = "LOCKED"; const closed = store.openMarkets; store.openMarkets = 0; lockedAtBoot.push(closed); }
+            return { outcome: "SUCCESS", locked: due ? 1 : 0, marketsClosed: due ? 3 : 0, skipped: 0, failedSessionIds: [] };
+          },
+          close: async () => undefined,
+        },
+        fixtures: { listFixtures: async () => [] }, write: () => undefined,
+      });
+      await scheduler.start();
+      await scheduler.stop();
+    };
+
+    await runScheduler("2026-07-13T10:00:00Z"); // before the session starts — nothing to do
+    expect(store.state).toBe("UPCOMING");
+    await runScheduler("2026-07-13T14:00:00Z"); // reboot after downtime spanning startsAt
+    expect(store.state).toBe("LOCKED");
+    expect(store.openMarkets).toBe(0);
+    await runScheduler("2026-07-13T15:00:00Z"); // a third boot is an idempotent no-op
+    expect(lockedAtBoot).toEqual([3]);
+  });
+
+  it("never runs two F1 lock sweeps concurrently: interval ticks during an in-flight sweep are skipped", async () => {
+    let sweeps = 0;
+    let release!: () => void;
+    const blocker = new Promise<void>((resolve) => { release = resolve; });
+    const skips: unknown[] = [];
+    const timers = new FakeTimers();
+    const scheduler = createWorkerScheduler({
+      config: schedulerConfig(),
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers,
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: {
+        scan: async () => ({ outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }),
+        lockDueF1Sessions: async () => {
+          sweeps += 1;
+          if (sweeps > 1) await blocker;
+          return { outcome: "SUCCESS", locked: 0, marketsClosed: 0, skipped: 0, failedSessionIds: [] };
+        },
+        close: async () => undefined,
+      },
+      fixtures: { listFixtures: async () => [] },
+      write: (entry) => { if (entry.event === "worker.job.skipped" && entry.jobType === "F1_SESSION_LOCK") skips.push(entry); },
+    });
+
+    await scheduler.start();
+    expect(sweeps).toBe(1);
+    timers.tickAll(); // starts sweep #2, which blocks in flight
+    await Promise.resolve();
+    timers.tickAll(); // sweep #3 must be refused re-entry while #2 is running
+    await Promise.resolve();
+    expect(sweeps).toBe(2);
+    expect(skips).toHaveLength(1);
+    release();
+    await scheduler.stop();
+  });
 });

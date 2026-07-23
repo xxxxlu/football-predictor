@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { SettlementService, type SettlementClock, type SettlementIds, type SettlementTransactionPort } from "@football-predictor/domain";
+import {
+  F1SessionLockService,
+  SettlementService,
+  type F1SessionLockPort,
+  type SettlementClock,
+  type SettlementIds,
+  type SettlementTransactionPort,
+} from "@football-predictor/domain";
 import { createSettlementPersistence } from "@football-predictor/db";
 import {
   createSettlementJobHandler,
@@ -12,7 +19,9 @@ import { createF1SettlementJobHandler, type F1SettlementCandidatePort } from "./
 export function createSettlementWorkerComposition(input: {
   candidates: SettlementCandidatePort;
   f1Candidates?: F1SettlementCandidatePort;
+  f1SessionLocks?: F1SessionLockPort;
   settlement: SettlementApplicationPort;
+  clock?: SettlementClock;
   close(): Promise<void>;
 }) {
   const handler = createSettlementJobHandler(input);
@@ -20,8 +29,24 @@ export function createSettlementWorkerComposition(input: {
   const f1 = input.f1Candidates
     ? createF1SettlementJobHandler({ candidates: input.f1Candidates, settlement: input.settlement })
     : null;
+  const locks = input.f1SessionLocks
+    ? new F1SessionLockService({ port: input.f1SessionLocks, clock: input.clock ?? { now: () => new Date() } })
+    : null;
   let closed = false;
   return {
+    /** Persistent lock-at-start sweep; absent port → permanent no-op (football-only deploys). */
+    async lockDueF1Sessions(limit: number) {
+      if (closed) return Promise.reject(new Error("Settlement composition is closed"));
+      if (!locks) return { outcome: "SUCCESS" as const, locked: 0, marketsClosed: 0, skipped: 0, failedSessionIds: [] };
+      const summary = await locks.run(limit);
+      return {
+        outcome: summary.outcome,
+        locked: summary.locked,
+        marketsClosed: summary.marketsClosed,
+        skipped: summary.skipped,
+        failedSessionIds: summary.failedSessionIds,
+      };
+    },
     async scan(limit: number) {
       if (closed) return Promise.reject(new Error("Settlement composition is closed"));
       const football = await handler.scan({ limit });
@@ -62,7 +87,9 @@ export function createPostgresSettlementWorkerComposition(input: {
   return createSettlementWorkerComposition({
     candidates: persistence.candidates,
     ...(persistence.f1Candidates ? { f1Candidates: persistence.f1Candidates } : {}),
+    ...(persistence.f1SessionLocks ? { f1SessionLocks: persistence.f1SessionLocks } : {}),
     settlement,
+    clock,
     close: persistence.close,
   });
 }
