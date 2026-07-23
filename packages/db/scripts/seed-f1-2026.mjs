@@ -16,20 +16,30 @@ const SEED_POINTS = {
   BEA: 12, LIN: 8, BOR: 6, COL: 4, PER: 3, BOT: 1,
 };
 
+/** Session times are relative to the run so re-seeding always yields upcoming,
+ *  predictable sessions (fixed calendar dates silently aged out — the e2e F1
+ *  suite then skipped for lack of an UPCOMING session). The upsert below
+ *  refreshes starts_at on conflict, so re-runs push the calendar forward. */
+const daysFromNow = (days, hourUtc) => {
+  const at = new Date(Date.now() + days * 86_400_000);
+  at.setUTCHours(hourUtc, 0, 0, 0);
+  return at.toISOString();
+};
+
 const WEEKENDS = [
   { season: 2026, round: 12, name: "BRITISH GRAND PRIX", circuitKey: "silverstone", isSprintWeekend: false, finished: true, sessions: [
-    { kind: "QUALIFYING", startsAt: "2026-07-04T14:00:00Z" },
-    { kind: "GRAND_PRIX", startsAt: "2026-07-05T14:00:00Z" },
+    { kind: "QUALIFYING", startsAt: daysFromNow(-19, 14) },
+    { kind: "GRAND_PRIX", startsAt: daysFromNow(-18, 14) },
   ] },
   { season: 2026, round: 13, name: "HUNGARIAN GRAND PRIX", circuitKey: "hungaroring", isSprintWeekend: false, finished: false, sessions: [
-    { kind: "QUALIFYING", startsAt: "2026-07-31T14:00:00Z" },
-    { kind: "GRAND_PRIX", startsAt: "2026-08-02T13:00:00Z" },
+    { kind: "QUALIFYING", startsAt: daysFromNow(8, 14) },
+    { kind: "GRAND_PRIX", startsAt: daysFromNow(10, 13) },
   ] },
   { season: 2026, round: 14, name: "DUTCH GRAND PRIX", circuitKey: "zandvoort", isSprintWeekend: true, finished: false, sessions: [
-    { kind: "SPRINT_QUALIFYING", startsAt: "2026-08-21T14:30:00Z" },
-    { kind: "SPRINT", startsAt: "2026-08-22T10:00:00Z" },
-    { kind: "QUALIFYING", startsAt: "2026-08-22T14:00:00Z" },
-    { kind: "GRAND_PRIX", startsAt: "2026-08-23T13:00:00Z" },
+    { kind: "SPRINT_QUALIFYING", startsAt: daysFromNow(29, 14) },
+    { kind: "SPRINT", startsAt: daysFromNow(30, 10) },
+    { kind: "QUALIFYING", startsAt: daysFromNow(30, 14) },
+    { kind: "GRAND_PRIX", startsAt: daysFromNow(31, 13) },
   ] },
 ];
 
