@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { PulseLine } from "@/components/pulse";
+import { PulseCircuit } from "@/components/pulse-circuit";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { F1PredictionSlip } from "./prediction-slip";
 import {
@@ -71,20 +72,22 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
 
   return (
     <div className="grid gap-8">
-      <header className="surface overflow-hidden">
-        <div className="bg-[var(--pulse-carbon)] p-5 text-[var(--pulse-ivory)] sm:p-6">
-          <p className="pd-eyebrow text-[var(--pulse-ivory)]">ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}{weekend.isSprintWeekend ? " · SPRINT 周末" : ""}</p>
-          <h2 className="display mt-2 text-3xl font-black uppercase sm:text-4xl">{weekend.name}</h2>
-          <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-            <span className="pd-tag"><span>{SESSION_KIND_LABELS[session.kind]}</span></span>
-            <time dateTime={session.startsAt} className="tabular">{new Date(session.startsAt).toLocaleString("zh-CN")}</time>
-            <span className={`rounded-full px-3 py-1 text-xs font-black ${predictable ? "bg-[var(--pulse-red-deep)] text-white" : "bg-[rgb(244_241_232/14%)] text-[var(--pulse-ivory)]"}`}>
-              {session.state === "UPCOMING" && !predictable ? "待封盘" : SESSION_STATE_LABELS[session.state]}
-            </span>
+      <header className="pulse-session-hero">
+        <div className="pulse-session-hero__grid">
+          <div className="pulse-session-hero__copy">
+            <p className="pd-eyebrow"><span>ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</span></p>
+            <p className="pulse-session-hero__index">RACE CONTROL / SESSION {session.kind}</p>
+            <h2 className="kinetic mt-3 text-[clamp(3rem,8vw,6rem)]">{weekend.name}</h2>
+            <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
+              <span className="pd-tag"><span>{SESSION_KIND_LABELS[session.kind]}</span></span>
+              <time dateTime={session.startsAt} className="tabular">{new Date(session.startsAt).toLocaleString("zh-CN")}</time>
+              <span className={`pulse-session-hero__state ${predictable ? "is-open" : ""}`}><i />{session.state === "UPCOMING" && !predictable ? "待封盘" : SESSION_STATE_LABELS[session.state]}</span>
+            </div>
+            <div className="mt-6"><PulseLine state={session.state === "FINISHED" ? "settled" : session.state === "LOCKED" ? "locked" : predictable ? "upcoming" : "ambient"} /></div>
           </div>
-          <div className="mt-4"><PulseLine state={session.state === "FINISHED" ? "settled" : session.state === "LOCKED" ? "locked" : predictable ? "upcoming" : "ambient"} /></div>
+          <div className="pulse-session-hero__track"><PulseCircuit circuitKey={weekend.circuitKey} /><div className="pulse-session-hero__track-meta"><span>{weekend.circuitKey.replaceAll("-", " ").toUpperCase()}</span><span className="pd-num">{markets.length} MARKET{markets.length === 1 ? "" : "S"}</span></div></div>
         </div>
-        <p className="p-4 text-xs leading-5 text-[var(--muted)]">预测在场次开始（排位 Q1 / 正赛熄灯）时封盘；结果由管理员依据官方成绩录入并确认后自动结算。</p>
+        <p className="pulse-session-hero__note">预测在场次开始（排位 Q1 / 正赛熄灯）时封盘；结果由管理员依据官方成绩录入并确认后自动结算。</p>
       </header>
 
       {roomId
@@ -107,16 +110,15 @@ function ReadOnlyMarkets({ detail, driverIndex }: { detail: F1SessionDetailView;
     return <DataStatePanel state="empty" title="本场次还没有开放市场" description="管理员发布积分倍率后，市场会出现在这里。" />;
   }
   return (
-    <section aria-label="市场与倍率" className="grid gap-4">
+    <section aria-label="市场与倍率" className="pulse-market-stack">
       {primary && (
-        <article className="surface p-4 sm:p-5">
-          <h3 className="display text-xl font-bold">{MARKET_KIND_LABELS[primary.kind]}倍率</h3>
-          <p className="mt-1 text-xs text-[var(--muted)]">倍率版本 <span className="tabular">{primary.version}</span></p>
+        <article className="pulse-market-panel pulse-market-panel--primary">
+          <header><div><p className="pd-eyebrow">MARKET / LIVE SNAPSHOT</p><h3 className="kinetic text-3xl">{MARKET_KIND_LABELS[primary.kind]}</h3></div><p className="pulse-market-version">VERSION <span className="tabular">{primary.version}</span></p></header>
           <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {primary.outcomes.map((outcome) => {
               const code = /^DRV:(.+)$/.exec(outcome.selection)?.[1] ?? outcome.selection;
               const driver = driverIndex.get(code);
-              return <li key={outcome.selection} className="flex items-center justify-between gap-2 rounded-lg border border-[var(--line)] px-3 py-2">
+              return <li key={outcome.selection} className="pulse-market-outcome">
                 <span className="flex min-w-0 items-center gap-2">
                   <i aria-hidden className="h-4 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
                   <span className="truncate text-sm font-bold">{code}</span>
@@ -128,8 +130,8 @@ function ReadOnlyMarkets({ detail, driverIndex }: { detail: F1SessionDetailView;
         </article>
       )}
       {others.map((market) => (
-        <details key={market.id} className="surface p-4 sm:p-5">
-          <summary className="display cursor-pointer text-lg font-bold">{MARKET_KIND_LABELS[market.kind]}（{market.outcomes.length} 个选项）</summary>
+        <details key={market.id} className="pulse-market-panel">
+          <summary className="kinetic cursor-pointer text-2xl">{MARKET_KIND_LABELS[market.kind]} <span className="pulse-market-count">{market.outcomes.length} 个选项</span></summary>
           <ul className="mt-3 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
             {market.outcomes.map((outcome) => (
               <li key={outcome.selection} className="flex items-center justify-between gap-2 border-b rule py-1.5 last:border-0">
@@ -157,22 +159,19 @@ function outcomeLabel(selection: string): string {
 function TimingTower({ drivers }: { drivers: F1DriverView[] }) {
   if (!drivers.length) return null;
   return (
-    <section aria-label="车手榜" className="surface overflow-hidden">
-      <header className="flex items-baseline justify-between gap-3 border-b rule p-4">
-        <h3 className="display text-xl font-bold">车手榜</h3>
+    <section aria-label="车手榜" className="pulse-timing-tower">
+      <header className="pulse-timing-tower__head">
+        <div><p className="pd-eyebrow">RACE CONTROL / TIMING TOWER</p><h3 className="kinetic text-3xl">车手榜</h3></div>
         <p className="text-xs text-[var(--muted)]">按赛季积分排序 · 车队对决倍率由积分公式生成</p>
       </header>
       <ol>
         {drivers.map((driver, index) => (
-          <li key={driver.code} className="flex items-center gap-3 border-b rule px-4 py-2.5 last:border-0">
-            <span className="tabular w-6 shrink-0 text-right text-sm font-black text-[var(--muted)]">{index + 1}</span>
-            <i aria-hidden className="h-6 w-1 shrink-0 rounded-sm" style={{ background: driver.color }} />
-            <span className="tabular w-8 shrink-0 text-sm font-black">{driver.number}</span>
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-bold">{driver.name}</span>
-              <span className="block truncate text-[10px] uppercase text-[var(--muted)]">{driver.constructorName}</span>
-            </span>
-            <span className="tabular shrink-0 text-sm font-black">{driver.seasonPoints}<span className="ml-1 text-[10px] font-normal text-[var(--muted)]">分</span></span>
+          <li key={driver.code} className="pulse-timing-row">
+            <span className="pulse-timing-row__pos tabular">{String(index + 1).padStart(2, "0")}</span>
+            <i aria-hidden className="pulse-timing-row__stripe" style={{ background: driver.color }} />
+            <span className="pulse-timing-row__number tabular">{driver.number}</span>
+            <span className="pulse-timing-row__driver"><span className="block truncate font-bold">{driver.name}</span><span className="block truncate text-[10px] uppercase text-[var(--muted)]">{driver.constructorName}</span></span>
+            <span className="pulse-timing-row__points tabular">{driver.seasonPoints}<small>PTS</small></span>
           </li>
         ))}
       </ol>
