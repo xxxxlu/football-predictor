@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@10.4.0",
-  "engines": { "node": "24.x" },
+  "engines": {
+    "node": "24.x"
+  },
   "scripts": {
     "build:packages": "pnpm --filter './packages/**' -r build",
     "dev:web": "pnpm --filter @football-predictor/config build && node scripts/dev-web.mjs",
@@ -26,9 +28,15 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
-    "next": "16.2.10",
+    "next": "16.2.11",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "next>postcss": ">=8.5.10",
+      "next>sharp": ">=0.35.0"
+    }
   }
 }
