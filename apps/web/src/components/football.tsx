@@ -58,10 +58,11 @@ export function Trophy({ className }: { className?: string }) {
 function crestColor(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  // Deterministic hue per team (consistent across matches, near-zero collisions),
-  // kept dark enough for legible white initials across the wheel.
+  // Deterministic hue per team (consistent across matches, near-zero collisions).
+  // Lightness 30%: the wheel's brightest hue (yellow, ~60°) still gives white
+  // initials ≥4.5:1 (axe color-contrast); at 40% the yellow-green band failed.
   const hue = hash % 360;
-  return `hsl(${hue} 52% 40%)`;
+  return `hsl(${hue} 52% 30%)`;
 }
 
 function crestInitials(name: string) {

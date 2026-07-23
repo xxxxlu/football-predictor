@@ -78,7 +78,7 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
           <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
             <span className="pd-tag"><span>{SESSION_KIND_LABELS[session.kind]}</span></span>
             <time dateTime={session.startsAt} className="tabular">{new Date(session.startsAt).toLocaleString("zh-CN")}</time>
-            <span className={`rounded-full px-3 py-1 text-xs font-black ${predictable ? "bg-[var(--pulse-red)] text-white" : "bg-[rgb(244_241_232/14%)] text-[var(--pulse-ivory)]"}`}>
+            <span className={`rounded-full px-3 py-1 text-xs font-black ${predictable ? "bg-[var(--pulse-red-deep)] text-white" : "bg-[rgb(244_241_232/14%)] text-[var(--pulse-ivory)]"}`}>
               {session.state === "UPCOMING" && !predictable ? "待封盘" : SESSION_STATE_LABELS[session.state]}
             </span>
           </div>
