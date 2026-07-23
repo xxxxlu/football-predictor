@@ -65,9 +65,9 @@ jobs:
 
   e2e:
     # Story 7.5 gates G1/G2/G5: main-journey Playwright E2E + axe a11y scan + perf smoke.
-    # BLOCKING release gate — verified green in CI (PR #1 run 3, 2026-07-22: 8 passed / 7 skipped).
-    # The 4 authenticated journeys remain test.fixme (production Secure-cookie session blocker) and skip
-    # automatically without reporting false green; un-fixme them once that blocker is addressed.
+    # BLOCKING release gate. The session cookie's Secure flag now keys on APP_ENV (=test here), so the
+    # authenticated journeys (invite/join, closing race, host operations, super admin, F1 axe) run for
+    # real against the production build — no test.fixme placeholders remain.
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -91,6 +91,12 @@ jobs:
       RULES_VERSION: phase-1-ci
       DATABASE_URL: postgresql://football:football_ci@127.0.0.1:5432/football_predictor_test
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3001
+      # Throwaway credentials for this job's disposable database only — never used outside CI.
+      # The seed script and the super-admin journey (super-admin-exception.spec.ts) read the same values.
+      SUPER_ADMIN_1_USERNAME: ci_admin_one
+      SUPER_ADMIN_1_PASSWORD: Ci-Admin-One-2026!e2e
+      SUPER_ADMIN_2_USERNAME: ci_admin_two
+      SUPER_ADMIN_2_PASSWORD: Ci-Admin-Two-2026!e2e
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -103,10 +109,15 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Apply database migrations
         run: pnpm db:migrate
-      - name: Seed a super-admin for admin journeys (best-effort)
-        run: pnpm db:seed:super-admins || echo "super-admin seed skipped; journey 5 may be limited"
+      - name: Seed super-admins for the admin journey (blocking — journey 5 depends on it)
+        run: pnpm db:seed:super-admins
       - name: Build packages, worker and web
         run: pnpm build
+      # Seeds run after the build: the F1 seed imports pricing from the built domain package.
+      - name: Seed F1 2026 data (F1 axe suite + submission wall)
+        run: pnpm db:seed:f1-2026
+      - name: Seed the e2e football fixture (closing-race journey)
+        run: pnpm db:seed:e2e
       - name: Install Playwright browser (chromium)
         run: pnpm --filter @football-predictor/web exec playwright install --with-deps chromium
       - name: Run main-journey E2E and axe accessibility scan
