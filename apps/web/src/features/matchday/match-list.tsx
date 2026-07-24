@@ -97,8 +97,8 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
     <section className="night mb-6 flex items-start gap-3 rounded-xl px-5 py-4" aria-label="当前比赛数据说明" data-pulse-reveal>
       <SportGlyph sport="FOOTBALL" className="mt-0.5 size-5 shrink-0 text-[var(--pulse-red)]" />
       <div>
-        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/70">当前赛程 · 2026 世界杯</p>
-        <p className="mt-1 text-sm leading-6 text-white/70">展示 2026 世界杯完整赛程，包括已结束、正在进行和未来比赛；球队、赛事名称使用中文。开球时间与赛果来自 OpenLigaDB，显示的 3.00 为平台固定虚拟积分倍率，不是博彩公司赔率。</p>
+        <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/70">足球数据 · 产品缓存</p>
+        <p className="mt-1 text-sm leading-6 text-white/70">比赛、开球时间与赛果只展示已配置供应商写入的真实缓存；当前没有未来可预测比赛时，只保留历史记录，不编造赛程或赔率。平台固定倍率会明确标注为虚拟积分规则。</p>
       </div>
     </section>
     {notice && <section className="mb-6 rounded-xl border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
