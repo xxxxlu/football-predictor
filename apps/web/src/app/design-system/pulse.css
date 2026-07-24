@@ -633,7 +633,6 @@
 }
 @keyframes pd-track-draw { to { stroke-dashoffset: 0; } }
 @keyframes pd-start-flash { 0% { opacity: 0; transform: scale(0.4); } 100% { opacity: 1; transform: scale(1); } }
-@keyframes pd-route-in { to { transform: scaleX(1); } }
 
 .pd-enter { opacity: 0; animation: pd-enter-up 700ms var(--pd-ease-out) forwards; }
 .pd-enter--1 { animation-delay: 240ms; }
@@ -644,12 +643,6 @@
 
 [data-pd-reveal] { opacity: 0; transform: translateY(32px); transition: opacity 680ms var(--pd-ease-out), transform 680ms var(--pd-ease-out); }
 [data-pd-reveal][data-pd-revealed="true"] { opacity: 1; transform: translateY(0); }
-
-.pd-route-wipe {
-  position: fixed; inset: 0; z-index: 100; pointer-events: none;
-  background: var(--pulse-red); transform: scaleX(0); transform-origin: left;
-}
-.pd-route-leaving .pd-route-wipe { animation: pd-route-in 260ms var(--pd-ease-out) forwards; }
 
 @media (prefers-reduced-motion: reduce) {
   .pd-enter, [data-pd-reveal], .pd-media-panel .pd-circuit-path, .pd-media-panel .pd-circuit-start,

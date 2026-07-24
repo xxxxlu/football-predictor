@@ -709,23 +709,14 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-stamp > * { animation: pulse-stamp-in .45s var(--pd-ease-out); }
 
 /* ============================================================
-   Route transition + scroll progress — decorative only; navigation
-   is never intercepted. Leave = carbon/red wipe, arrive = finish sweep.
+   Scroll progress — quiet, information-bearing rail. Full-screen route
+   wipes are intentionally not used: they obscure content and flash during
+   normal navigation.
    ============================================================ */
 .pulse-progress { position: fixed; inset: 0 0 auto 0; z-index: 60; height: 3px; pointer-events: none; }
 .pulse-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--pulse-red-deep), var(--pulse-red)); transform: scaleX(0); transform-origin: left; box-shadow: 0 0 10px rgb(255 59 32 / 45%); }
 
-.pulse-wipe { position: fixed; inset: 0; z-index: 120; pointer-events: none; overflow: hidden; }
-.pulse-wipe--leave i, .pulse-wipe--leave b { position: absolute; inset: -6% -22%; display: block; }
-.pulse-wipe--leave i { background: var(--pulse-red); animation: pulse-wipe-cover .3s cubic-bezier(.7, 0, .3, 1) both; }
-.pulse-wipe--leave b { background: var(--pulse-carbon); animation: pulse-wipe-cover .3s cubic-bezier(.7, 0, .3, 1) .06s both; }
-@keyframes pulse-wipe-cover { from { transform: translateX(-118%) skewX(-11deg); } to { transform: translateX(0) skewX(-11deg); } }
-
-.pulse-wipe--sweep::before { content: ""; position: absolute; top: -6%; bottom: -6%; left: 0; width: 26vw; background: linear-gradient(90deg, transparent, rgb(255 59 32 / 16%) 40%, var(--pulse-red) 98%, var(--pulse-lime) 100%); transform: translateX(-30vw) skewX(-11deg); animation: pulse-wipe-sweep .6s cubic-bezier(.65, 0, .35, 1) forwards; }
-@keyframes pulse-wipe-sweep { to { transform: translateX(135vw) skewX(-11deg); } }
-
 @media (prefers-reduced-motion: reduce) {
-  .pulse-wipe, .pulse-wipe--sweep::before, .pulse-wipe--leave i, .pulse-wipe--leave b { display: none; animation: none; }
   .pulse-pick[aria-pressed="true"], .scoreboard-cell[data-selected="true"], .pulse-submit-armed:not(:disabled), .pulse-stamp > *, .pulse-confirm__lock, .pulse-confirm__value { animation: none; }
   .pulse-comp-head .pulse-comp-head__bar { transform: none; transition: none; }
   .pulse-confirm { transition: none; }

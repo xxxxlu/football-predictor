@@ -289,6 +289,79 @@ export class PostgresMatchSnapshotRepository {
     return rows.map(mapFixture);
   }
 
+  /**
+   * Bulk read model for the match list. The previous implementation made up to
+   * five database round trips per fixture, which turned the 228-match history
+   * into a request timeout on the production function. Keep detail reads
+   * unchanged, but make the list path bounded to a handful of queries.
+   */
+  async listViewData() {
+    const [fixtures, marketRows, liveRows, lineupRows, syncRows] = await Promise.all([
+      this.listFixtures(),
+      this.sql<OddsRow[]>`SELECT id AS "productMarketId",fixture_id AS "fixtureId",supplier,supplier_fixture_id AS "supplierFixtureId",
+        bookmaker_id AS "bookmakerId",bookmaker_name AS "bookmakerName",supplier_market_id AS "supplierMarketId",market_name AS "marketName",
+        current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",outcomes
+        FROM supplier.markets
+        WHERE supplier_market_id=${ONE_X_TWO_SUPPLIER_MARKET_ID} OR supplier_market_id=${CORRECT_SCORE_SUPPLIER_MARKET_ID}
+        ORDER BY fixture_id,supplier_market_id,captured_at DESC`,
+      this.sql<LiveRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",home_score AS "homeScore",
+        away_score AS "awayScore",minute,data_as_of AS "dataAsOf",captured_at AS "capturedAt",markets
+        FROM supplier.live_snapshots`,
+      this.sql<LineupRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",status,
+        data_as_of AS "dataAsOf",captured_at AS "capturedAt",home,away
+        FROM supplier.lineup_snapshots`,
+      this.sql<Array<{ fixtureId: string; syncState: SyncState }>>`SELECT DISTINCT ON (fixture_id)
+        fixture_id AS "fixtureId",sync_state AS "syncState"
+        FROM supplier.markets ORDER BY fixture_id,updated_at DESC`,
+    ]);
+
+    const marketByFixture = new Map<string, Map<number, OddsSnapshotRecord & { productMarketId: string }>>();
+    for (const row of marketRows) {
+      const marketId = Number(row.supplierMarketId);
+      const byKind = marketByFixture.get(row.fixtureId) ?? new Map();
+      // getMarketOdds() returns the newest captured row for each supplier market.
+      if (!byKind.has(marketId)) byKind.set(marketId, mapOdds(row));
+      marketByFixture.set(row.fixtureId, byKind);
+    }
+    const liveByFixture = new Map(liveRows.map((row) => [row.fixtureId, {
+      fixtureId: row.fixtureId,
+      supplierFixtureId: Number(row.supplierFixtureId),
+      homeScore: row.homeScore,
+      awayScore: row.awayScore,
+      minute: row.minute,
+      dataAsOf: isoTimestamp(row.dataAsOf),
+      capturedAt: isoTimestamp(row.capturedAt),
+      markets: row.markets,
+    } satisfies LiveSnapshotRecord]));
+    const lineupByFixture = new Map<string, LineupSnapshot | null>();
+    for (const row of lineupRows) {
+      const home = parseTeamLineup(row.home);
+      const away = parseTeamLineup(row.away);
+      lineupByFixture.set(row.fixtureId, home && away ? {
+        fixtureId: row.fixtureId,
+        supplierFixtureId: Number(row.supplierFixtureId),
+        status: row.status,
+        dataAsOf: isoTimestamp(row.dataAsOf),
+        capturedAt: isoTimestamp(row.capturedAt),
+        home,
+        away,
+      } : null);
+    }
+    const syncByFixture = new Map(syncRows.map((row) => [row.fixtureId, row.syncState]));
+
+    return fixtures.map((fixture) => {
+      const markets = marketByFixture.get(fixture.id);
+      return {
+        fixture,
+        odds: markets?.get(ONE_X_TWO_SUPPLIER_MARKET_ID) ?? null,
+        correctScoreOdds: markets?.get(CORRECT_SCORE_SUPPLIER_MARKET_ID) ?? null,
+        live: liveByFixture.get(fixture.id) ?? null,
+        lineup: lineupByFixture.get(fixture.id) ?? null,
+        syncState: syncByFixture.get(fixture.id) ?? "IDLE",
+      };
+    });
+  }
+
   async getOdds(matchId: string): Promise<(OddsSnapshotRecord & { productMarketId: string }) | null> {
     return this.getMarketOdds(matchId, ONE_X_TWO_SUPPLIER_MARKET_ID);
   }

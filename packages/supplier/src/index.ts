@@ -15,6 +15,7 @@ import {
   type SupplierBudgetPort,
   type SupplierRequestCategory,
   type SyncState,
+  type LineupSnapshot,
 } from "@football-predictor/domain";
 
 export * from "./lineups.js";
@@ -32,7 +33,18 @@ export interface MatchSnapshotRepository {
   saveLineup?(snapshot: import("@football-predictor/domain").LineupSnapshot): Promise<void>;
   setSyncState(matchId: string, state: SyncState): Promise<void>;
   getSyncState(matchId: string): Promise<SyncState>;
+  /** Optional bulk projection used by list reads; avoids one query fan-out per fixture. */
+  listViewData?(): Promise<MatchViewData[]>;
   claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
+}
+
+export interface MatchViewData {
+  fixture: FixtureSnapshot;
+  odds: OddsSnapshot | null;
+  correctScoreOdds: OddsSnapshot | null;
+  live: LiveSnapshot | null;
+  lineup: LineupSnapshot | null;
+  syncState: SyncState;
 }
 
 export interface SupplierGateway {
@@ -436,6 +448,17 @@ export class MatchCacheReader {
   }
 
   async list(): Promise<{ views: MatchView[]; etag: string }> {
+    if (this.repository.listViewData) {
+      const now = this.now();
+      const data = await this.repository.listViewData();
+      const views = data.map((item) => createMatchView({
+        ...item,
+        now,
+        sourceVerified: item.syncState !== "FAILED",
+        budgetAvailable: item.syncState !== "PAUSED",
+      }));
+      return { views, etag: etagOf(views) };
+    }
     const fixtures = await this.repository.listFixtures();
     const views = await Promise.all(fixtures.map((fixture) => this.viewFor(fixture)));
     return { views, etag: etagOf(views) };

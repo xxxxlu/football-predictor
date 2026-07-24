@@ -15,6 +15,7 @@
     "db:migrate": "pnpm --filter @football-predictor/db migrate",
     "db:seed:super-admins": "pnpm --filter @football-predictor/db seed:super-admins",
     "db:seed:f1-2026": "pnpm --filter @football-predictor/db seed:f1-2026",
+    "db:seed:f1-official-2026": "pnpm --filter @football-predictor/db seed:f1-official-2026",
     "db:seed:e2e": "pnpm --filter @football-predictor/db seed:e2e",
     "lint": "pnpm --filter @football-predictor/web lint",
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",

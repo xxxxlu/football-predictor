@@ -9,11 +9,11 @@ import { F1_CONSTRUCTORS_2026, F1_DRIVERS_2026, f1MarketKindsForSession, h2hOdds
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
 
-/** Plausible mid-season points for dev pricing only — not real standings. */
+/** Official 2026 driver standings snapshot used for the current F1 pricing/ordering. */
 const SEED_POINTS = {
-  NOR: 241, PIA: 218, VER: 187, RUS: 152, LEC: 121, HAM: 104, ANT: 88, ALO: 62,
-  SAI: 48, ALB: 44, HAD: 39, GAS: 30, HUL: 26, OCO: 22, LAW: 18, STR: 14,
-  BEA: 12, LIN: 8, BOR: 6, COL: 4, PER: 3, BOT: 1,
+  ANT: 204, HAM: 159, RUS: 154, LEC: 126, NOR: 103, PIA: 92, VER: 91, HAD: 60,
+  GAS: 42, LAW: 39, LIN: 22, COL: 19, BEA: 18, BOR: 10, SAI: 6, ALB: 5,
+  OCO: 3, ALO: 1, HUL: 0, BOT: 0, PER: 0, STR: 0,
 };
 
 /** Session times are relative to the run so re-seeding always yields upcoming,

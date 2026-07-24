@@ -26,29 +26,12 @@ export function PulseMotion() {
 
     revealTargets.forEach((element) => observer.observe(element));
 
-    const handleNavigation = (event: MouseEvent) => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      const target = event.target as Element | null;
-      const anchor = target?.closest<HTMLAnchorElement>("a[href]");
-      if (!anchor || anchor.target === "_blank") return;
-
-      const destination = new URL(anchor.href, window.location.href);
-      const sameDocument = destination.pathname === window.location.pathname && destination.search === window.location.search;
-      if (destination.origin !== window.location.origin || sameDocument) return;
-
-      event.preventDefault();
-      document.documentElement.classList.add("pd-route-leaving");
-      window.setTimeout(() => window.location.assign(destination.href), 260);
-    };
-
-    document.addEventListener("click", handleNavigation);
     return () => {
       observer.disconnect();
-      document.removeEventListener("click", handleNavigation);
     };
   }, []);
 
-  return <span className="pd-route-wipe" aria-hidden="true" />;
+  return null;
 }
 
 export function InteractiveSportSwitcher({ initial = "全部" }: { initial?: string }) {
