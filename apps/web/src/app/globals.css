@@ -665,8 +665,70 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-slip__head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .pulse-slip__version { color: var(--pulse-muted); font: .65rem var(--pd-font-mono); }
 
-[data-pulse-reveal] { opacity: 0; transform: translateY(26px); transition: opacity .7s var(--pd-ease-out), transform .7s var(--pd-ease-out); }
+[data-pulse-reveal] { opacity: 0; transform: translateY(26px); transition: opacity .7s var(--pd-ease-out), transform .7s var(--pd-ease-out); transition-delay: var(--pulse-reveal-delay, 0ms); }
 [data-pulse-reveal][data-pulse-revealed="true"] { opacity: 1; transform: none; }
+
+/* ============================================================
+   Scroll narrative — staggered rows, drawn rules, sector marks.
+   赛程/详情页的滚动推进感：区块进入视口时按序点亮。
+   ============================================================ */
+/* Competition header: the red accent draws itself when the block reveals. */
+.pulse-comp-head .pulse-comp-head__bar { transform: scaleX(0); transform-origin: left; transition: transform .8s var(--pd-ease-out) .25s; }
+.pulse-comp-head[data-pulse-revealed="true"] .pulse-comp-head__bar { transform: scaleX(1); }
+
+/* Shared row entrance, keyed off the revealed parent (animation, not transition,
+   so hover transitions on the same rows keep their own timing afterwards). */
+@keyframes pulse-row-in { from { opacity: 0; transform: translateX(-14px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .pulse-weekend-card[data-pulse-revealed="true"] .pulse-weekend-session { animation: pulse-row-in .5s var(--pd-ease-out) backwards; animation-delay: calc(140ms + var(--pulse-session-delay, 0ms)); }
+  .pulse-timing-tower[data-pulse-revealed="true"] .pulse-timing-row { animation: pulse-row-in .55s var(--pd-ease-out) backwards; animation-delay: var(--pulse-row-delay, 0ms); }
+}
+
+/* ============================================================
+   Prediction confirmation — pick pop, armed strip, receipt stamp.
+   选择即确认：按钮落锁、返还条武装、票据盖章。
+   ============================================================ */
+@keyframes pulse-pick-pop { 0% { transform: scale(.96); } 55% { transform: scale(1.02); } 100% { transform: scale(1); } }
+@keyframes pulse-pick-ring { from { box-shadow: 0 0 0 0 rgb(184 23 13 / 40%); } to { box-shadow: 0 0 0 12px rgb(184 23 13 / 0%); } }
+.pulse-pick[aria-pressed="true"],
+.scoreboard-cell[data-selected="true"] { animation: pulse-pick-pop .28s var(--pd-ease-out), pulse-pick-ring .55s ease-out; }
+
+.pulse-confirm { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: .8rem 0; border-block: 1px solid var(--line); transition: border-color .3s ease, background .3s ease, padding-left .3s var(--pd-ease-out); }
+.pulse-confirm.is-armed { padding-left: .8rem; border-color: var(--pulse-red-deep); background: linear-gradient(90deg, rgb(255 59 32 / 7%), transparent 55%); box-shadow: inset 3px 0 0 var(--pulse-red); }
+.pulse-confirm__lock { display: inline-flex; align-items: center; gap: .4rem; color: var(--pulse-red-deep); font: 700 .62rem/1 var(--pd-font-mono); letter-spacing: .14em; text-transform: uppercase; animation: pulse-tick-in .3s var(--pd-ease-out); }
+.pulse-confirm__lock::before { content: "✓"; display: grid; place-items: center; width: 1rem; height: 1rem; border-radius: 999px; background: var(--pulse-red-deep); color: #fff; font-size: .6rem; }
+.pulse-confirm__value { display: inline-block; animation: pulse-tick-in .3s var(--pd-ease-out); }
+@keyframes pulse-tick-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* Submit arms itself the moment a pick + stake are valid (one ring, not a loop). */
+.pulse-submit-armed:not(:disabled) { animation: pulse-pick-ring .6s ease-out; }
+
+/* Receipt / status stamp — the slip's success answer. */
+@keyframes pulse-stamp-in { 0% { opacity: 0; transform: scale(.94) rotate(-1.2deg); } 60% { opacity: 1; transform: scale(1.012) rotate(.4deg); } 100% { opacity: 1; transform: none; } }
+.pulse-stamp > * { animation: pulse-stamp-in .45s var(--pd-ease-out); }
+
+/* ============================================================
+   Route transition + scroll progress — decorative only; navigation
+   is never intercepted. Leave = carbon/red wipe, arrive = finish sweep.
+   ============================================================ */
+.pulse-progress { position: fixed; inset: 0 0 auto 0; z-index: 60; height: 3px; pointer-events: none; }
+.pulse-progress i { display: block; height: 100%; background: linear-gradient(90deg, var(--pulse-red-deep), var(--pulse-red)); transform: scaleX(0); transform-origin: left; box-shadow: 0 0 10px rgb(255 59 32 / 45%); }
+
+.pulse-wipe { position: fixed; inset: 0; z-index: 120; pointer-events: none; overflow: hidden; }
+.pulse-wipe--leave i, .pulse-wipe--leave b { position: absolute; inset: -6% -22%; display: block; }
+.pulse-wipe--leave i { background: var(--pulse-red); animation: pulse-wipe-cover .3s cubic-bezier(.7, 0, .3, 1) both; }
+.pulse-wipe--leave b { background: var(--pulse-carbon); animation: pulse-wipe-cover .3s cubic-bezier(.7, 0, .3, 1) .06s both; }
+@keyframes pulse-wipe-cover { from { transform: translateX(-118%) skewX(-11deg); } to { transform: translateX(0) skewX(-11deg); } }
+
+.pulse-wipe--sweep::before { content: ""; position: absolute; top: -6%; bottom: -6%; left: 0; width: 26vw; background: linear-gradient(90deg, transparent, rgb(255 59 32 / 16%) 40%, var(--pulse-red) 98%, var(--pulse-lime) 100%); transform: translateX(-30vw) skewX(-11deg); animation: pulse-wipe-sweep .6s cubic-bezier(.65, 0, .35, 1) forwards; }
+@keyframes pulse-wipe-sweep { to { transform: translateX(135vw) skewX(-11deg); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse-wipe, .pulse-wipe--sweep::before, .pulse-wipe--leave i, .pulse-wipe--leave b { display: none; animation: none; }
+  .pulse-pick[aria-pressed="true"], .scoreboard-cell[data-selected="true"], .pulse-submit-armed:not(:disabled), .pulse-stamp > *, .pulse-confirm__lock, .pulse-confirm__value { animation: none; }
+  .pulse-comp-head .pulse-comp-head__bar { transform: none; transition: none; }
+  .pulse-confirm { transition: none; }
+}
 @media (prefers-reduced-motion: reduce) {
   .pulse-home__rail-loading span, .pulse-circuit__scan { animation: none; }
   .pulse-drive__spot, .pulse-drive__rail i::after { transition: none; }

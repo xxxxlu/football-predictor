@@ -2,12 +2,14 @@ import { BrandMark } from "@/components/brand-mark";
 import { PulseHeaderNav, MobileBottomNav } from "@/components/pulse-nav";
 import { PulseLine } from "@/components/pulse";
 import { PulseMotion } from "@/components/pulse-motion";
+import { PulseTransition } from "@/components/pulse-transition";
 import { SessionGuard } from "@/features/auth/session-guard";
 
 export function PrivateShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   return <SessionGuard>
     <div className="pd-has-bottom-nav min-h-screen">
       <PulseMotion />
+      <PulseTransition />
       <header className="pd-header">
         <div className="pd-header-inner">
           <BrandMark tone="light" />

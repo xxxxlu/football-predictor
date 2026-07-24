@@ -75,19 +75,19 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
       <header className="pulse-session-hero">
         <div className="pulse-session-hero__grid">
           <div className="pulse-session-hero__copy">
-            <p className="pd-eyebrow"><span>ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</span></p>
-            <p className="pulse-session-hero__index">RACE CONTROL / SESSION {session.kind}</p>
-            <h2 className="kinetic mt-3 text-[clamp(3rem,8vw,6rem)]">{weekend.name}</h2>
-            <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
+            <p className="pd-eyebrow pd-enter"><span>ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</span></p>
+            <p className="pulse-session-hero__index pd-enter pd-enter--1">RACE CONTROL / SESSION {session.kind}</p>
+            <h2 className="kinetic pd-enter pd-enter--1 mt-3 text-[clamp(3rem,8vw,6rem)]">{weekend.name}</h2>
+            <div className="pd-enter pd-enter--2 mt-5 flex flex-wrap items-center gap-3 text-sm">
               <span className="pd-tag"><span>{SESSION_KIND_LABELS[session.kind]}</span></span>
               <time dateTime={session.startsAt} className="tabular">{new Date(session.startsAt).toLocaleString("zh-CN")}</time>
               <span className={`pulse-session-hero__state ${predictable ? "is-open" : ""}`}><i />{session.state === "UPCOMING" && !predictable ? "待封盘" : SESSION_STATE_LABELS[session.state]}</span>
             </div>
-            <div className="mt-6"><PulseLine state={session.state === "FINISHED" ? "settled" : session.state === "LOCKED" ? "locked" : predictable ? "upcoming" : "ambient"} /></div>
+            <div className="pd-enter pd-enter--3 mt-6"><PulseLine state={session.state === "FINISHED" ? "settled" : session.state === "LOCKED" ? "locked" : predictable ? "upcoming" : "ambient"} /></div>
           </div>
-          <div className="pulse-session-hero__track"><PulseCircuit circuitKey={weekend.circuitKey} /><div className="pulse-session-hero__track-meta"><span>{weekend.circuitKey.replaceAll("-", " ").toUpperCase()}</span><span className="pd-num">{markets.length} MARKET{markets.length === 1 ? "" : "S"}</span></div></div>
+          <div className="pulse-session-hero__track pd-enter pd-enter--2"><PulseCircuit circuitKey={weekend.circuitKey} /><div className="pulse-session-hero__track-meta"><span>{weekend.circuitKey.replaceAll("-", " ").toUpperCase()}</span><span className="pd-num">{markets.length} MARKET{markets.length === 1 ? "" : "S"}</span></div></div>
         </div>
-        <p className="pulse-session-hero__note">预测在场次开始（排位 Q1 / 正赛熄灯）时封盘；结果由管理员依据官方成绩录入并确认后自动结算。</p>
+        <p className="pulse-session-hero__note pd-enter pd-enter--4">预测在场次开始（排位 Q1 / 正赛熄灯）时封盘；结果由管理员依据官方成绩录入并确认后自动结算。</p>
       </header>
 
       {roomId
@@ -112,8 +112,8 @@ function ReadOnlyMarkets({ detail, driverIndex }: { detail: F1SessionDetailView;
   return (
     <section aria-label="市场与倍率" className="pulse-market-stack">
       {primary && (
-        <article className="pulse-market-panel pulse-market-panel--primary">
-          <header><div><p className="pd-eyebrow">MARKET / LIVE SNAPSHOT</p><h3 className="kinetic text-3xl">{MARKET_KIND_LABELS[primary.kind]}</h3></div><p className="pulse-market-version">VERSION <span className="tabular">{primary.version}</span></p></header>
+        <article className="pulse-market-panel pulse-market-panel--primary" data-pulse-reveal>
+          <header><div><p className="pd-eyebrow">SECTOR 01 / MARKET SNAPSHOT</p><h3 className="kinetic text-3xl">{MARKET_KIND_LABELS[primary.kind]}</h3></div><p className="pulse-market-version">VERSION <span className="tabular">{primary.version}</span></p></header>
           <ul className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
             {primary.outcomes.map((outcome) => {
               const code = /^DRV:(.+)$/.exec(outcome.selection)?.[1] ?? outcome.selection;
@@ -129,8 +129,8 @@ function ReadOnlyMarkets({ detail, driverIndex }: { detail: F1SessionDetailView;
           </ul>
         </article>
       )}
-      {others.map((market) => (
-        <details key={market.id} className="pulse-market-panel">
+      {others.map((market, marketIndex) => (
+        <details key={market.id} className="pulse-market-panel" data-pulse-reveal style={{ "--pulse-reveal-delay": `${Math.min(marketIndex, 4) * 90}ms` } as React.CSSProperties}>
           <summary className="kinetic cursor-pointer text-2xl">{MARKET_KIND_LABELS[market.kind]} <span className="pulse-market-count">{market.outcomes.length} 个选项</span></summary>
           <ul className="mt-3 grid grid-cols-1 gap-1 text-sm sm:grid-cols-2">
             {market.outcomes.map((outcome) => (
@@ -159,14 +159,14 @@ function outcomeLabel(selection: string): string {
 function TimingTower({ drivers }: { drivers: F1DriverView[] }) {
   if (!drivers.length) return null;
   return (
-    <section aria-label="车手榜" className="pulse-timing-tower">
+    <section aria-label="车手榜" className="pulse-timing-tower" data-pulse-reveal>
       <header className="pulse-timing-tower__head">
-        <div><p className="pd-eyebrow">RACE CONTROL / TIMING TOWER</p><h3 className="kinetic text-3xl">车手榜</h3></div>
+        <div><p className="pd-eyebrow">SECTOR 02 / TIMING TOWER</p><h3 className="kinetic text-3xl">车手榜</h3></div>
         <p className="text-xs text-[var(--muted)]">按赛季积分排序 · 车队对决倍率由积分公式生成</p>
       </header>
       <ol>
         {drivers.map((driver, index) => (
-          <li key={driver.code} className="pulse-timing-row">
+          <li key={driver.code} className="pulse-timing-row" style={{ "--pulse-row-delay": `${Math.min(index, 14) * 45}ms` } as React.CSSProperties}>
             <span className="pulse-timing-row__pos tabular">{String(index + 1).padStart(2, "0")}</span>
             <i aria-hidden className="pulse-timing-row__stripe" style={{ background: driver.color }} />
             <span className="pulse-timing-row__number tabular">{driver.number}</span>
