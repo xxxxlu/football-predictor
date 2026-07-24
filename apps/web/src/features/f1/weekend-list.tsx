@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { PulseLine } from "@/components/pulse";
+import { PulseCircuit } from "@/components/pulse-circuit";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { normalizeWeekend, SESSION_KIND_LABELS, SESSION_STATE_LABELS, sessionPredictable, type F1SessionView, type F1WeekendView } from "./types";
 
@@ -61,34 +62,40 @@ export function WeekendList({ roomId }: { roomId?: string }) {
   }
   if (!weekends.length) return <DataStatePanel state="empty" title="目前没有 F1 分站" description="赛程发布后，Race Weekend 会出现在这里。" />;
 
-  return <div className="grid gap-4 lg:grid-cols-2">
-    {weekends.map((weekend) => <WeekendCard key={weekend.id} weekend={weekend} roomId={roomId} />)}
+  return <div className="grid gap-6 xl:grid-cols-2">
+    {weekends.map((weekend, index) => <WeekendCard key={weekend.id} weekend={weekend} roomId={roomId} index={index} />)}
   </div>;
 }
 
-function WeekendCard({ weekend, roomId }: { weekend: F1WeekendView; roomId?: string }) {
+function WeekendCard({ weekend, roomId, index }: { weekend: F1WeekendView; roomId?: string; index: number }) {
   const live = weekend.sessions.some((session) => sessionPredictable(session));
   return (
-    <article className="surface overflow-hidden">
-      <header className="bg-[var(--pulse-carbon)] p-4 text-[var(--pulse-ivory)]">
-        <p className="pd-eyebrow text-[var(--pulse-ivory)]">ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</p>
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <h3 className="display text-2xl font-black uppercase">{weekend.name}</h3>
-          {weekend.isSprintWeekend && <span className="pd-tag pd-tag--lime"><span>SPRINT 周末</span></span>}
+    <article className="pulse-weekend-card" data-pulse-reveal style={{ "--pulse-card-delay": `${Math.min(index, 5) * 80}ms` } as React.CSSProperties}>
+      <header className="pulse-weekend-card__head">
+        <div className="pulse-weekend-card__media"><PulseCircuit circuitKey={weekend.circuitKey} /></div>
+        <div className="pulse-weekend-card__head-copy">
+          <p className="pd-eyebrow"><span>ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</span></p>
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            <h3 className="kinetic text-3xl">{weekend.name}</h3>
+            {weekend.isSprintWeekend && <span className="pd-tag pd-tag--lime"><span>SPRINT 周末</span></span>}
+          </div>
+          <p className="pulse-weekend-card__circuit">{weekend.circuitKey.replaceAll("-", " ").toUpperCase()} / RACE CONTROL</p>
+          <div className="mt-4"><PulseLine state={live ? "upcoming" : "ambient"} /></div>
         </div>
-        <div className="mt-3"><PulseLine state={live ? "upcoming" : "ambient"} /></div>
       </header>
-      <ol className="divide-y rule">
-        {weekend.sessions.map((session) => (
+      <ol className="pulse-weekend-card__sessions">
+        {weekend.sessions.map((session, sessionIndex) => (
           <li key={session.id}>
-            <Link href={sessionHref(session.id, roomId)} className="flex flex-wrap items-center justify-between gap-3 p-4 transition hover:bg-[rgb(255_59_32/5%)]">
-              <div>
+            <Link href={sessionHref(session.id, roomId)} className="pulse-weekend-session" style={{ "--pulse-session-delay": `${sessionIndex * 55}ms` } as React.CSSProperties}>
+              <span className={`pulse-weekend-session__marker ${sessionPredictable(session) ? "is-open" : ""}`} aria-hidden="true">{String(sessionIndex + 1).padStart(2, "0")}</span>
+              <div className="min-w-0">
                 <p className="font-bold">{SESSION_KIND_LABELS[session.kind]}</p>
                 <time dateTime={session.startsAt} className="tabular mt-0.5 block text-xs text-[var(--muted)]">
                   {new Date(session.startsAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </time>
               </div>
-              <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${stateChipClass(session)}`}>{stateChipLabel(session)}</span>
+              <span className={`pulse-weekend-session__state ${stateChipClass(session)}`}>{stateChipLabel(session)}</span>
+              <span className="pulse-weekend-session__arrow" aria-hidden="true">→</span>
             </Link>
           </li>
         ))}
