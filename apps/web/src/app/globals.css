@@ -635,7 +635,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-session-hero__track { min-height: 18rem; border-left: 1px solid var(--night-line); }
 .pulse-session-hero__track .pulse-circuit { min-height: 18rem; }
 .pulse-session-hero__track-meta { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 1rem; color: var(--pulse-muted); background: rgb(0 0 0 / 24%); font: .63rem var(--pd-font-mono); letter-spacing: .12em; }
-.pulse-session-hero__note { margin: 0; padding: .95rem 1.25rem; color: var(--pulse-muted); font-size: .72rem; line-height: 1.6; border-top: 1px solid var(--night-line); }
+.pulse-session-hero__note { margin: 0; padding: .95rem 1.25rem; color: var(--pulse-ivory); font-size: .72rem; line-height: 1.6; border-top: 1px solid var(--night-line); }
 .pulse-market-stack { display: grid; gap: 1px; background: var(--pulse-line-light); border: 1px solid var(--pulse-line-light); }
 .pulse-market-panel { padding: 1.25rem; background: var(--pulse-paper); }
 .pulse-market-panel--primary { color: var(--pulse-ivory); background: var(--pulse-carbon); }
