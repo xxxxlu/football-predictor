@@ -137,9 +137,9 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
   }
 
   return (
-    <form onSubmit={submit} className="pulse-slip surface space-y-4 p-4 sm:p-5" aria-label="F1 判断凭证">
+    <form onSubmit={submit} className="pulse-slip surface space-y-4 p-4 sm:p-5" aria-label="F1 判断凭证" data-pulse-reveal>
       <header className="pulse-slip__head">
-        <div><p className="pd-eyebrow">PREDICTION SLIP / F1</p><h3 className="kinetic text-3xl">提交判断</h3></div>
+        <div><p className="pd-eyebrow">SECTOR 01 / PREDICTION SLIP</p><h3 className="kinetic text-3xl">提交判断</h3></div>
         <p className="pulse-slip__version">ODDS VERSION <span className="tabular">{active?.version}</span></p>
       </header>
 
@@ -163,7 +163,13 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
         ))}</div>
       </div>
 
-      <div className="flex justify-between border-y rule py-3 text-sm"><span className="text-[var(--muted)]">预计返还（含投入）</span><strong className="tabular">{projected}</strong></div>
+      <div className={`pulse-confirm text-sm ${outcome ? "is-armed" : ""}`}>
+        <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-[var(--muted)]">预计返还（含投入）</span>
+          {outcome && <span className="pulse-confirm__lock">已锁定 {outcome.decimalOdds}x</span>}
+        </span>
+        <strong key={`${outcome?.selection ?? "none"}-${projected}`} className="pulse-confirm__value tabular">{projected}</strong>
+      </div>
       {draft && draftVerdict && <StatusMessage tone={draftVerdict === "UNCHANGED" ? "info" : "error"} title={draftVerdict === "UNCHANGED" ? "已恢复离线草稿" : "离线草稿需要处理"}>
         <span className="block">
           {draftVerdict === "UNCHANGED" && "离线时保存的判断已恢复。系统不会自动提交，请确认最新倍率后手动提交。"}
@@ -174,8 +180,8 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
         <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--field)] hover:text-[var(--field)]">丢弃草稿</button>
       </StatusMessage>}
       {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
-      {receipt && <StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage>}
-      <button disabled={unavailable || pending || !outcome || !stake} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45">
+      {receipt && <div className="pulse-stamp"><StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage></div>}
+      <button disabled={unavailable || pending || !outcome || !stake} className={`inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 ${outcome && !unavailable ? "pulse-submit-armed" : ""}`}>
         {pending ? "正在复核倍率与封盘状态…" : !online ? "离线中，提交已禁用" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}
       </button>
       <p className="text-xs leading-5 text-[var(--muted)]">投入必须为整数，单张上限 20,000 分。服务端将复核封盘时间与倍率版本；失败时不冻结积分。{advanced ? "精确前三按 P1→P2→P3 顺序判定。" : "精确前三玩法仅在高级房间开放。"}</p>
@@ -192,7 +198,7 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
 }) {
   const driverIndex = useMemo(() => new Map(drivers.map((driver) => [driver.code, driver])), [drivers]);
   const buttonClass = (selected: boolean) =>
-    `rounded-lg border-2 px-2 py-2 text-left text-sm font-bold transition ${selected ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`;
+    `pulse-pick rounded-lg border-2 px-2 py-2 text-left text-sm font-bold transition ${selected ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`;
 
   if (market.kind === "POLE" || market.kind === "WINNER") {
     return <fieldset disabled={disabled}>

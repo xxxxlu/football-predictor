@@ -94,7 +94,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
   };
 
   return <div>
-    <section className="night mb-6 flex items-start gap-3 rounded-xl px-5 py-4" aria-label="当前比赛数据说明">
+    <section className="night mb-6 flex items-start gap-3 rounded-xl px-5 py-4" aria-label="当前比赛数据说明" data-pulse-reveal>
       <SportGlyph sport="FOOTBALL" className="mt-0.5 size-5 shrink-0 text-[var(--pulse-red)]" />
       <div>
         <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/70">当前赛程 · 2026 世界杯</p>
@@ -152,29 +152,30 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
       <p className="mb-5 text-xs font-bold uppercase tracking-[0.16em] text-[var(--muted)]" aria-live="polite">当前展示 {page.shown} / {page.total} 场</p>
       <div className="space-y-12">
         {groups.map((competitionGroup, competitionIndex) => <section key={competitionGroup.name} aria-labelledby={`competition-${competitionIndex}`}>
-          <header className="relative mb-6 flex items-end justify-between gap-4 border-b-2 border-[var(--ink)] pb-3">
+          <header className="pulse-comp-head relative mb-6 flex items-end justify-between gap-4 border-b-2 border-[var(--ink)] pb-3" data-pulse-reveal>
             <div className="min-w-0">
-              <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--field)]">Competition</span>
+              <span className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-[var(--field)]">Competition / {String(competitionIndex + 1).padStart(2, "0")}</span>
               <h2 id={`competition-${competitionIndex}`} className="kinetic mt-1 text-[clamp(1.75rem,5vw,3rem)]">{competitionGroup.name}</h2>
             </div>
             <span className="league-pill shrink-0">{competitionGroup.dates.reduce((total, group) => total + group.matches.length, 0)} 场</span>
-            <span className="absolute -bottom-[2px] left-0 h-[3px] w-24 bg-[var(--pulse-red)]" aria-hidden="true" />
+            <span className="pulse-comp-head__bar absolute -bottom-[2px] left-0 h-[3px] w-24 bg-[var(--pulse-red)]" aria-hidden="true" />
           </header>
           <div className="space-y-8">
             {competitionGroup.dates.map((dateGroup) => <section key={dateGroup.date} aria-label={dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}>
-              <div className="mb-3 flex items-center gap-3">
+              <div className="mb-3 flex items-center gap-3" data-pulse-reveal>
                 <span className="league-pill">{dateGroup.date === "unknown" ? "日期待确认" : formatDate(dateGroup.date)}</span>
                 <span className="text-xs text-[var(--muted)]">{dateGroup.matches.length} 场</span>
                 <span className="h-px flex-1 bg-[var(--line)]" aria-hidden="true" />
               </div>
               <div className="grid gap-4 xl:grid-cols-2">
-                {dateGroup.matches.map((match) => {
+                {dateGroup.matches.map((match, matchIndex) => {
                   const predictable = matchAvailability(match).predictable;
-                  return <MatchCard
-                    key={match.id}
-                    match={match}
-                    action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} /> : undefined}
-                  />;
+                  return <div key={match.id} className="grid" data-pulse-reveal style={{ "--pulse-reveal-delay": `${Math.min(matchIndex, 5) * 70}ms` } as React.CSSProperties}>
+                    <MatchCard
+                      match={match}
+                      action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} /> : undefined}
+                    />
+                  </div>;
                 })}
               </div>
             </section>)}
