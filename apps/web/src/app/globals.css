@@ -634,7 +634,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-session-hero__state.is-open { color: var(--pulse-lime); }
 .pulse-session-hero__track { min-height: 18rem; border-left: 1px solid var(--night-line); }
 .pulse-session-hero__track .pulse-circuit { min-height: 18rem; }
-.pulse-session-hero__track-meta { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 1rem; color: var(--pulse-muted); background: rgb(0 0 0 / 24%); font: .63rem var(--pd-font-mono); letter-spacing: .12em; }
+.pulse-session-hero__track-meta { display: flex; justify-content: space-between; gap: 1rem; padding: .65rem 1rem; color: var(--pulse-ivory); background: rgb(0 0 0 / 24%); font: .63rem var(--pd-font-mono); letter-spacing: .12em; }
 .pulse-session-hero__note { margin: 0; padding: .95rem 1.25rem; color: var(--pulse-ivory); font-size: .72rem; line-height: 1.6; border-top: 1px solid var(--night-line); }
 .pulse-market-stack { display: grid; gap: 1px; background: var(--pulse-line-light); border: 1px solid var(--pulse-line-light); }
 .pulse-market-panel { padding: 1.25rem; background: var(--pulse-paper); }
@@ -662,6 +662,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-timing-row__points { font-weight: 700; }
 .pulse-timing-row__points small { margin-left: .35rem; color: var(--pulse-muted); font-size: .55rem; letter-spacing: .1em; }
 .pulse-slip { border-top: 3px solid var(--pulse-red); }
+.pulse-slip .pd-eyebrow { color: var(--pulse-red-deep); }
 .pulse-slip__head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; }
 .pulse-slip__version { color: var(--pulse-muted); font: .65rem var(--pd-font-mono); }
 
