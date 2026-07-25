@@ -90,9 +90,13 @@ export function F1TeamDetail({ teamKey }: { teamKey: string }) {
               ))}
             </dl>
           </div>
-          <div className="pulse-session-hero__track pd-enter pd-enter--2">
-            {car && <Image src={car} alt={`${team.name} 2026 赛车`} width={640} height={220} unoptimized priority className="mx-auto w-full max-w-lg object-contain" />}
-            <div className="pulse-session-hero__track-meta">
+          <div className="pulse-session-hero__track pd-enter pd-enter--2 flex flex-col">
+            {/* flex-1 + centered content keeps the car vertically centered against
+                the taller stats column instead of hugging the top edge. */}
+            <div className="flex flex-1 items-center justify-center p-6">
+              {car && <Image src={car} alt={`${team.name} 2026 赛车`} width={640} height={220} unoptimized priority className="w-full max-w-lg object-contain" />}
+            </div>
+            <div className="pulse-session-hero__track-meta mt-auto">
               <span>{team.name.toUpperCase()}</span>
               <i aria-hidden className="inline-block h-2 w-16 rounded-sm" style={{ background: team.color }} />
             </div>

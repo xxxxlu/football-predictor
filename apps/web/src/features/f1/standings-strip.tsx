@@ -72,7 +72,7 @@ export function F1StandingsStrip() {
         <p className="text-xs text-white/60">积分为已确认官方结果的赛季积分</p>
       </header>
       <ol className="mt-4 flex snap-x gap-3 overflow-x-auto pb-2">
-        {drivers.slice(0, 10).map((driver, index) => {
+        {drivers.map((driver, index) => {
           const photo = driverPhotoPath(driver.code);
           return (
             <li key={driver.code} className="snap-start">

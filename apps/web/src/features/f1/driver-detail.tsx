@@ -101,11 +101,15 @@ export function F1DriverDetail({ code }: { code: string }) {
               ))}
             </dl>
           </div>
-          <div className="pulse-session-hero__track pd-enter pd-enter--2">
-            {photo
-              ? <Image src={photo} alt={`${driver.name} 官方照片`} width={480} height={480} unoptimized priority className="mx-auto max-h-80 w-auto object-contain" />
-              : car && <Image src={car} alt={`${driver.constructorName} 赛车`} width={560} height={200} unoptimized className="mx-auto w-full max-w-md object-contain" />}
-            <div className="pulse-session-hero__track-meta">
+          <div className="pulse-session-hero__track pd-enter pd-enter--2 flex flex-col">
+            {/* flex-1 + centered content keeps the media vertically centered against
+                the taller stats column instead of hugging the top edge. */}
+            <div className="flex flex-1 items-center justify-center p-6">
+              {photo
+                ? <Image src={photo} alt={`${driver.name} 官方照片`} width={480} height={480} unoptimized priority className="max-h-80 w-auto object-contain" />
+                : car && <Image src={car} alt={`${driver.constructorName} 赛车`} width={560} height={200} unoptimized className="w-full max-w-md object-contain" />}
+            </div>
+            <div className="pulse-session-hero__track-meta mt-auto">
               <span>{driver.constructorName.toUpperCase()}</span>
               {logo && <Image src={logo} alt="" width={90} height={24} unoptimized className="h-6 w-auto opacity-90" />}
             </div>
