@@ -59,10 +59,12 @@ export async function createLoggedInActor(page: Page, prefix: string, password: 
 }
 
 /** Create a room via the API using the page's session cookie; returns { roomId, inviteToken }. */
-export async function createRoomViaApi(page: Page, baseURL: string | undefined, name: string, options?: { visibility?: "PRIVATE" | "PUBLIC"; tier?: "STANDARD" | "ADVANCED" }) {
+export async function createRoomViaApi(page: Page, baseURL: string | undefined, name: string, options?: { visibility?: "PRIVATE" | "PUBLIC"; tier?: "STANDARD" | "ADVANCED"; sport?: "FOOTBALL" | "FORMULA_1" }) {
   const response = await page.request.post("/api/v1/rooms", {
     headers: { origin: baseURL ?? "http://127.0.0.1:3001" },
-    data: { name, visibility: options?.visibility ?? "PRIVATE", tier: options?.tier ?? "STANDARD", rulesAccepted: true },
+    // A room predicts exactly one sport, so an F1 journey must ask for an F1 room —
+    // the server refuses an F1 ticket in a football room (ROOM_SPORT_MISMATCH).
+    data: { name, visibility: options?.visibility ?? "PRIVATE", tier: options?.tier ?? "STANDARD", sport: options?.sport ?? "FOOTBALL", rulesAccepted: true },
   });
   expect(response.status(), "room creation").toBe(201);
   const body = (await response.json()) as { data?: { id?: string; inviteToken?: string } };

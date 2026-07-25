@@ -325,6 +325,12 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
   letter-spacing: .22em; text-transform: uppercase;
   color: var(--pulse-red);
 }
+/* No single red clears WCAG AA on both surfaces: passing on paper needs a
+   relative luminance ≤ .157, passing on carbon needs ≥ .20. So the bright brand
+   red stays the default for the dark bands it was designed on, and an eyebrow
+   placed on light paper must opt into the deeper accent (5.9:1 instead of the
+   failing 3.15:1). */
+.pd-eyebrow--ink { color: var(--field); }
 .night .pd-eyebrow, .pd-band-dark .pd-eyebrow { color: var(--pulse-ivory); }
 .pd-eyebrow::after { content: ""; flex: 0 0 4rem; height: 1px; background: currentColor; opacity: .5; align-self: center; }
 

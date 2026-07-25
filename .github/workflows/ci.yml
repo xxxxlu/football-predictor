@@ -3,7 +3,10 @@ name: ci
 on:
   pull_request:
   push:
-    branches: [main]
+    # Release branches must be covered, not just main: the 2026-07-25 releases were
+    # pushed straight to feature/pulse-football-f1 with no pull request, so all three
+    # production deploys shipped without CI — and the e2e suite was red at the time.
+    branches: [main, 'feature/**', 'release/**']
 
 permissions:
   contents: read
@@ -86,7 +89,8 @@ jobs:
   e2e:
     # Story 7.5 gates G1/G2/G5: main-journey Playwright E2E + axe a11y scan + perf smoke.
     # BLOCKING release gate. The session cookie's Secure flag now keys on APP_ENV (=test here), so the
-    # authenticated journeys (invite/join, closing race, host operations, super admin, F1 axe) run for
+    # authenticated journeys (invite/join, closing race, host operations, super admin, F1 axe, F1
+    # prediction rules: combination pricing / one bet per market / retired markets) run for
     # real against the production build — no test.fixme placeholders remain.
     runs-on: ubuntu-latest
     timeout-minutes: 25

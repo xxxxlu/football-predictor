@@ -74,7 +74,8 @@ export function RoomF1Arena({ roomId, interactive }: {
   return (
     <div className="mt-4 grid gap-5">
       <div>
-        <p className="pd-eyebrow"><span>NEXT SESSION · 本周竞猜</span></p>
+        {/* Light room surface: the bright brand red would fail AA here. */}
+        <p className="pd-eyebrow pd-eyebrow--ink"><span>NEXT SESSION · 本周竞猜</span></p>
         <p className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-bold"><span className="tabular text-xs text-[var(--muted)]">R{String(nearest.round).padStart(2, "0")}</span> {nearest.weekendName} · {nearest.kindLabel}</span>
           <time dateTime={nearest.startsAt} className="tabular text-xs text-[var(--muted)]">
