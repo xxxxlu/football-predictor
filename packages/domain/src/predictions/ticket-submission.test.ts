@@ -58,6 +58,8 @@ class AtomicFake implements TicketSubmissionTransactionPort {
         getRoomTier: async () => this.tier,
         getRoomSport: async () => this.sport,
         hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => this.openCorrectScore.has(`${userId}:${roomId}:${fixtureId}`),
+        // 一人一注 is an F1-only rule; the football fake never reports an open market.
+        hasOpenTicketForMarket: async () => false,
         persistFreeze: async (write) => {
           const key = `${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.idempotencyKey}`;
           const existing = this.tickets.get(key);

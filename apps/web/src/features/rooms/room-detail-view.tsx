@@ -74,7 +74,7 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
   const inviteUrl = invitePath && typeof window !== "undefined" ? `${window.location.origin}${invitePath}` : invitePath;
 
   return <div className="space-y-6">
-    <section className="surface overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><RoomSwitcher rooms={rooms} currentRoomId={roomId}/><div className="text-left sm:text-right"><p className="text-xs text-[var(--muted)]">房间状态</p><p className="mt-1 text-sm font-bold">{detail.sport === "FORMULA_1" ? "F1 赛车" : "足球"} · {detail.visibility === "PUBLIC" ? "公开" : "私人"}{detail.tier === "ADVANCED" ? (detail.sport === "FORMULA_1" ? " · 高级（可买精确前三）" : " · 高级（可买比分）") : ""} · {detail.status === "ACTIVE" ? "正常" : detail.status === "RESTRICTED" ? "已限制" : "已关闭"} · {detail.memberCount} 位成员</p></div></div><BalanceSummary balance={detail.balance}/></section>
+    <section className="surface overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><RoomSwitcher rooms={rooms} currentRoomId={roomId}/><div className="text-left sm:text-right"><p className="text-xs text-[var(--muted)]">房间状态</p><p className="mt-1 text-sm font-bold">{detail.sport === "FORMULA_1" ? "F1 赛车" : "足球"} · {detail.visibility === "PUBLIC" ? "公开" : "私人"}{detail.tier === "ADVANCED" && detail.sport !== "FORMULA_1" ? " · 高级（可买比分）" : ""} · {detail.status === "ACTIVE" ? "正常" : detail.status === "RESTRICTED" ? "已限制" : "已关闭"} · {detail.memberCount} 位成员</p></div></div><BalanceSummary balance={detail.balance}/></section>
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
       <section aria-labelledby="members-title" className="surface p-5"><div className="flex items-center justify-between gap-4"><h2 id="members-title" className="display text-2xl font-bold">房间成员</h2>{detail.isOwner && <Link href={`/rooms/${encodeURIComponent(roomId)}/status`} className="text-sm font-bold underline">查看提交状态</Link>}</div><ul className="mt-4 divide-y divide-[var(--line)]">{detail.members.map((member) => <li key={member.userId} className="flex min-h-14 items-center justify-between gap-4 py-3"><span className="font-bold">{member.displayName}</span><span className="text-xs text-[var(--muted)]">{member.roleLabel}</span></li>)}</ul></section>
@@ -88,12 +88,12 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 id="room-f1-title" className="display text-2xl font-bold">本房间 F1 竞赛</h2>
-              <p className="mt-1 text-sm text-[var(--muted)]">最近一场的竞猜直接在这里提交：冠军、杆位、领奖台{detail.tier === "ADVANCED" ? "、精确前三" : ""}。</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">最近一场的竞猜直接在这里提交：正赛猜冠军和领奖台之争（按顺序选出前三），排位赛猜杆位；每个盘口只能压一注。</p>
             </div>
             <button type="button" onClick={reportRoom} disabled={reporting} className="inline-flex min-h-10 items-center justify-center rounded-full border-2 border-[var(--coral)] px-4 text-sm font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-50">{reporting ? "正在提交…" : "举报此房间"}</button>
           </div>
           {reportMessage && <div className="mb-4"><StatusMessage tone={reportMessage.includes("已提交") ? "success" : "error"} title={reportMessage}/></div>}
-          <RoomF1Arena roomId={roomId} advanced={detail.tier === "ADVANCED"} interactive={detail.status === "ACTIVE"} />
+          <RoomF1Arena roomId={roomId} interactive={detail.status === "ACTIVE"} />
         </section>
       : <section aria-labelledby="room-matches-title"><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 id="room-matches-title" className="display text-2xl font-bold">本房间比赛</h2><button type="button" onClick={reportRoom} disabled={reporting} className="inline-flex min-h-10 items-center justify-center rounded-full border-2 border-[var(--coral)] px-4 text-sm font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-50">{reporting ? "正在提交…" : "举报此房间"}</button></div>{reportMessage && <div className="mb-4"><StatusMessage tone={reportMessage.includes("已提交") ? "success" : "error"} title={reportMessage}/></div>}<MatchList roomId={roomId} interactive={detail.status === "ACTIVE"} advanced={detail.tier === "ADVANCED"}/></section>}
   </div>;

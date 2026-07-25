@@ -22,8 +22,9 @@ export const SESSION_STATE_LABELS: Readonly<Record<F1SessionState, string>> = {
 export const MARKET_KIND_LABELS: Readonly<Record<F1MarketKind, string>> = {
   POLE: "杆位",
   WINNER: "冠军",
+  // PODIUM 与 H2H 已下架（历史票据展示仍需要标签）；领奖台之争 = 全车手自由组合前三。
   PODIUM: "领奖台",
-  EXACT_PODIUM: "精确前三",
+  EXACT_PODIUM: "领奖台之争",
   H2H: "车手对决",
 };
 

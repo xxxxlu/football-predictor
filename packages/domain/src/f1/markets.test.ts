@@ -20,18 +20,17 @@ describe("F1 markets", () => {
     expect(f1MarketKindFromSupplierMarketId(104)).toBe("EXACT_PODIUM");
   });
 
-  it("offers pole on qualifying sessions and winner on races (§12.5)", () => {
-    expect(f1MarketKindsForSession("QUALIFYING")).toContain("POLE");
-    expect(f1MarketKindsForSession("SPRINT_QUALIFYING")).toContain("POLE");
-    expect(f1MarketKindsForSession("SPRINT")).toContain("WINNER");
-    expect(f1MarketKindsForSession("GRAND_PRIX")).toContain("WINNER");
+  it("offers pole-only qualifying and winner + 领奖台之争 races (§12.5, 2026-07-25 merge)", () => {
+    expect(f1MarketKindsForSession("QUALIFYING")).toEqual(["POLE"]);
+    expect(f1MarketKindsForSession("SPRINT_QUALIFYING")).toEqual(["POLE"]);
+    expect(f1MarketKindsForSession("SPRINT")).toEqual(["WINNER", "EXACT_PODIUM"]);
+    expect(f1MarketKindsForSession("GRAND_PRIX")).toEqual(["WINNER", "EXACT_PODIUM"]);
     for (const kind of ["QUALIFYING", "SPRINT_QUALIFYING", "SPRINT", "GRAND_PRIX"] as const) {
       const kinds = f1MarketKindsForSession(kind);
-      expect(kinds).toContain("PODIUM");
-      expect(kinds).toContain("EXACT_PODIUM");
-      // H2H retired 2026-07-25: no longer offered, but ids still parse for settlement.
+      // Retired offered kinds: H2H (2026-07-25) and yes/no PODIUM (merged into
+      // EXACT_PODIUM). Their ids still parse so legacy tickets settle.
       expect(kinds).not.toContain("H2H");
-      expect(kinds).toHaveLength(3);
+      expect(kinds).not.toContain("PODIUM");
     }
   });
 

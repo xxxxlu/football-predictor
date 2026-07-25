@@ -4,7 +4,7 @@
  *  entry list and H2H pricing formula are imported from it, not duplicated here. */
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { F1_CONSTRUCTORS_2026, F1_DRIVERS_2026, f1MarketKindsForSession, h2hOdds } from "@football-predictor/domain";
+import { F1_CONSTRUCTORS_2026, F1_DRIVERS_2026, f1MarketKindsForSession } from "@football-predictor/domain";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -59,41 +59,14 @@ function fieldOdds(code, cap) {
   return clamp(1.15, cap, (1 / share) * 0.94).toFixed(2);
 }
 
+/** POLE / WINNER enumerate the field directly. EXACT_PODIUM (领奖台之争) stores the
+ *  same per-driver base odds — ordered P1-P2-P3 combos are derived on demand via the
+ *  shared domain formula (exactPodiumComboOdds), never enumerated into the snapshot. */
 function outcomesFor(kind) {
-  if (kind === "POLE" || kind === "WINNER") {
-    return topDrivers.map((driver) => ({ selection: `DRV:${driver.code}`, decimalOdds: fieldOdds(driver.code, 60) }));
+  if (kind !== "POLE" && kind !== "WINNER" && kind !== "EXACT_PODIUM") {
+    throw new Error(`unexpected offered market kind: ${kind}`);
   }
-  if (kind === "PODIUM") {
-    return topDrivers.flatMap((driver) => {
-      const yes = Number(fieldOdds(driver.code, 60));
-      const yesOdds = clamp(1.15, 25, yes / 3);
-      const noOdds = clamp(1.02, 8, 1 / (1 - 0.94 / yesOdds));
-      return [
-        { selection: `PODIUM:${driver.code}:YES`, decimalOdds: yesOdds.toFixed(2) },
-        { selection: `PODIUM:${driver.code}:NO`, decimalOdds: noOdds.toFixed(2) },
-      ];
-    });
-  }
-  if (kind === "EXACT_PODIUM") {
-    const contenders = topDrivers.slice(0, 5);
-    const combos = [];
-    for (const first of contenders) for (const second of contenders) for (const third of contenders) {
-      if (new Set([first.code, second.code, third.code]).size !== 3) continue;
-      const combined = Number(fieldOdds(first.code, 60)) * Number(fieldOdds(second.code, 60)) * Number(fieldOdds(third.code, 60));
-      combos.push({ selection: `POD3:${first.code}-${second.code}-${third.code}`, decimalOdds: clamp(6, 500, combined / 2.5).toFixed(2) });
-    }
-    return combos;
-  }
-  // H2H: teammate duels, both directions, priced by the shared domain formula.
-  return F1_CONSTRUCTORS_2026.flatMap((constructor) => {
-    const [a, b] = F1_DRIVERS_2026.filter((driver) => driver.constructorKey === constructor.key);
-    if (!a || !b) return [];
-    const { oddsA, oddsB } = h2hOdds({ pointsA: points(a.code), pointsB: points(b.code) });
-    return [
-      { selection: `H2H:${a.code}>${b.code}`, decimalOdds: oddsA },
-      { selection: `H2H:${b.code}>${a.code}`, decimalOdds: oddsB },
-    ];
-  });
+  return topDrivers.map((driver) => ({ selection: `DRV:${driver.code}`, decimalOdds: fieldOdds(driver.code, 60) }));
 }
 
 const sql = postgres(databaseUrl, { max: 1, prepare: false });

@@ -231,6 +231,17 @@ export class PostgresOperationsRepository {
     return rows.map((row) => redactTicketHistory(row, userId, this.clock.now(), settings));
   }
 
+  /** The caller's own tickets on one fixture (own rows only, so no redaction) — the
+   *  read behind the prediction slip's already-staked markets (一人一注). */
+  async myTickets(roomId: string, userId: string, fixtureId: string) {
+    await this.assertMember(roomId, userId);
+    return this.sql<Array<{ ticketId: string; marketId: string; status: string }>>`
+      SELECT id AS "ticketId",market_id AS "marketId",status
+      FROM prediction.tickets
+      WHERE room_id=${roomId} AND user_id=${userId} AND fixture_id=${fixtureId}
+      ORDER BY created_at DESC LIMIT 50`;
+  }
+
   async ledger(roomId: string, userId: string) {
     await this.assertMember(roomId, userId);
     const rows = await this.sql<LedgerSourceRow[]>`

@@ -1,6 +1,8 @@
 import type { RoomSport, RoomTier } from "../rooms/service.js";
 import { marketKindFromSupplierMarketId } from "./markets.js";
 import { f1MarketKindFromSupplierMarketId } from "../f1/markets.js";
+import { parseF1Selection } from "../f1/selections.js";
+import { exactPodiumComboOdds } from "../f1/exact-podium-odds.js";
 
 export const MAX_TICKET_STAKE_POINTS = 20_000;
 
@@ -12,7 +14,8 @@ export type TicketSubmissionErrorCode =
   | "INVALID_STAKE"
   | "ADVANCED_ROOM_REQUIRED"
   | "ROOM_SPORT_MISMATCH"
-  | "SCORE_TICKET_EXISTS";
+  | "SCORE_TICKET_EXISTS"
+  | "MARKET_TICKET_EXISTS";
 
 export class TicketSubmissionError extends Error {
   constructor(readonly code: TicketSubmissionErrorCode) {
@@ -107,6 +110,8 @@ export interface TicketSubmissionTransaction {
   getRoomSport(roomId: string): Promise<RoomSport>;
   /** Whether the user already holds an unsettled correct-score ticket on the fixture; read under the account row lock. */
   hasOpenCorrectScoreTicket(userId: string, roomId: string, fixtureId: string): Promise<boolean>;
+  /** Whether the user already holds an unsettled ticket on this exact market; read under the account row lock. */
+  hasOpenTicketForMarket(userId: string, roomId: string, marketId: string): Promise<boolean>;
   /** Must enforce the idempotency unique key and account row lock itself. */
   persistFreeze(write: AtomicFreezeWrite): Promise<SubmittedTicket>;
 }
@@ -149,6 +154,28 @@ function assertMarketAvailable(market: MarketForSubmission | null, now: Date): a
   if (!Number.isFinite(dataAsOf) || dataAsOf > now.getTime()) {
     throw new TicketSubmissionError("DATA_UNAVAILABLE");
   }
+}
+
+/** Resolves the priced outcome for a selection. Football and most F1 kinds match an
+ *  enumerated outcome directly; EXACT_PODIUM combos are derived from the market's
+ *  per-driver base outcomes via the shared domain formula, so all 9,240 ordered
+ *  combinations are priceable without enumerating them in the snapshot. Legacy
+ *  snapshots that still enumerate `POD3:` outcomes match on the direct path. */
+function resolveOutcome(
+  market: MarketForSubmission,
+  f1Kind: ReturnType<typeof f1MarketKindFromSupplierMarketId>,
+  selection: PredictionSelection,
+): { selection: PredictionSelection; decimalOdds: string } | null {
+  const direct = market.snapshot.outcomes.find((candidate) => candidate.selection === selection);
+  if (direct) return direct;
+  if (f1Kind !== "EXACT_PODIUM") return null;
+  const parsed = parseF1Selection("EXACT_PODIUM", selection);
+  if (parsed === null || parsed.kind !== "EXACT_PODIUM") return null;
+  const base = [parsed.first, parsed.second, parsed.third].map((code) =>
+    market.snapshot.outcomes.find((candidate) => candidate.selection === `DRV:${code}`)?.decimalOdds);
+  if (base[0] === undefined || base[1] === undefined || base[2] === undefined) return null;
+  const derived = exactPodiumComboOdds([base[0], base[1], base[2]]);
+  return derived === null ? null : { selection, decimalOdds: derived };
 }
 
 export class TicketSubmissionService {
@@ -195,13 +222,22 @@ export class TicketSubmissionService {
           throw new TicketSubmissionError("SCORE_TICKET_EXISTS");
         }
       }
-      /* F1 exact podium keeps the same advanced-room gate as other high-odds tickets,
-         without routing through the correct-score market abstraction (§12.5). */
-      if (f1Kind === "EXACT_PODIUM" && (await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
-        throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");
+      if (f1Kind !== null) {
+        /* The selection must match the market's grammar. EXACT_PODIUM markets store
+           per-driver base outcomes (`DRV:<code>`) that are pricing inputs, never
+           bettable selections — without this guard a POD3 market would accept a
+           bare `DRV:` selection because it appears in the outcome list. */
+        if (parseF1Selection(f1Kind, command.selection) === null) {
+          throw new TicketSubmissionError("DATA_UNAVAILABLE");
+        }
+        /* 一人一注: one settled-or-pending judgement per F1 market — once staked,
+           the user waits for the result instead of averaging across outcomes. */
+        if (await transaction.hasOpenTicketForMarket(command.userId, command.roomId, market.id)) {
+          throw new TicketSubmissionError("MARKET_TICKET_EXISTS");
+        }
       }
 
-      const outcome = market.snapshot.outcomes.find((candidate) => candidate.selection === command.selection);
+      const outcome = resolveOutcome(market, f1Kind, command.selection);
       if (!outcome || !validPositiveDecimal(outcome.decimalOdds)) throw new TicketSubmissionError("DATA_UNAVAILABLE");
       if (market.snapshot.version !== command.acceptedOddsVersion || outcome.decimalOdds !== command.acceptedDecimalOdds) {
         throw new TicketSubmissionError("ODDS_CHANGED");

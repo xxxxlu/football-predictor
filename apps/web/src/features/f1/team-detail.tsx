@@ -98,7 +98,9 @@ export function F1TeamDetail({ teamKey }: { teamKey: string }) {
             </div>
             <div className="pulse-session-hero__track-meta mt-auto">
               <span>{team.name.toUpperCase()}</span>
-              <i aria-hidden className="inline-block h-2 w-16 rounded-sm" style={{ background: team.color }} />
+              {logo
+                ? <Image src={logo} alt="" width={96} height={24} unoptimized className="h-5 w-auto max-w-24 object-contain" />
+                : <i aria-hidden className="inline-block h-2 w-16 rounded-sm" style={{ background: team.color }} />}
             </div>
           </div>
         </div>

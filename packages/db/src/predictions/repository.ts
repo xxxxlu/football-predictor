@@ -57,6 +57,14 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
             )).limit(1);
           return existing.length > 0;
         },
+        hasOpenTicketForMarket: async (userId, roomId, marketId) => {
+          const existing = await tx.select({ id: predictionTickets.id }).from(predictionTickets)
+            .where(and(
+              eq(predictionTickets.userId, userId), eq(predictionTickets.roomId, roomId),
+              eq(predictionTickets.marketId, marketId), eq(predictionTickets.status, "PENDING"),
+            )).limit(1);
+          return existing.length > 0;
+        },
         persistFreeze: async (write) => persistFreeze(tx as IdentityDatabase, write),
       };
       return work(transaction);

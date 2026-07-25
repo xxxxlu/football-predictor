@@ -41,6 +41,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
   tier: RoomTier = "STANDARD";
   sport: RoomSport = "FORMULA_1";
   correctScoreTierReads = 0;
+  readonly openMarkets = new Set<string>();
 
   async run<T>(_scope: { userId: string; roomId: string; idempotencyKey: string }, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
     const transaction: TicketSubmissionTransaction = {
@@ -53,9 +54,11 @@ class AtomicFake implements TicketSubmissionTransactionPort {
         this.correctScoreTierReads += 1;
         return false;
       },
+      hasOpenTicketForMarket: async (userId, roomId, marketId) => this.openMarkets.has(`${userId}:${roomId}:${marketId}`),
       persistFreeze: async (write) => {
         this.account.availablePoints += write.balance.availableDeltaPoints;
         this.account.frozenPoints += write.balance.frozenDeltaPoints;
+        this.openMarkets.add(`${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.marketId}`);
         this.tickets.set(`${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.idempotencyKey}`, structuredClone(write.ticket));
         this.writes.push(structuredClone(write));
         return structuredClone(write.ticket);
@@ -110,32 +113,104 @@ describe("TicketSubmissionService F1 markets", () => {
     expect(fake.writes[0]?.ledger).toMatchObject({ type: "PREDICTION_FREEZE", availableDeltaPoints: -500, frozenDeltaPoints: 500 });
   });
 
-  it("gates EXACT_PODIUM behind ADVANCED rooms without touching the correct-score path", async () => {
+  it("accepts EXACT_PODIUM in a STANDARD room via legacy enumerated combo outcomes", async () => {
+    /* 2026-07-25: the advanced-room gate was removed when 领奖台之争 became the one
+       podium market — every room tier can stake it. */
     const outcomes = [{ selection: "POD3:NOR-VER-PIA", decimalOdds: "18.00" }];
-    const command = {
+    const { fake, service } = setup(f1Market("EXACT_PODIUM", outcomes));
+    const ticket = await service.submit({
       userId: "user-1",
       roomId: "room-1",
       idempotencyKey: "idem-f1-2",
       marketId: "f1:session-9:EXACT_PODIUM",
-      selection: "POD3:NOR-VER-PIA" as const,
+      selection: "POD3:NOR-VER-PIA",
       stakePoints: 200,
       acceptedOddsVersion: "f1-odds-v1",
       acceptedDecimalOdds: "18.00",
-    };
-
-    const standard = setup(f1Market("EXACT_PODIUM", outcomes));
-    await expect(standard.service.submit(command)).rejects.toMatchObject({
-      name: "TicketSubmissionError",
-      code: "ADVANCED_ROOM_REQUIRED",
     });
-    expect(standard.fake.writes).toHaveLength(0);
-
-    const advanced = setup(f1Market("EXACT_PODIUM", outcomes));
-    advanced.fake.tier = "ADVANCED";
-    const ticket = await advanced.service.submit(command);
     expect(ticket.legs[0]?.oddsSnapshot.marketId).toBe(104);
     /* The football single-open-score-ticket rule must not apply to F1 exact podium. */
-    expect(advanced.fake.correctScoreTierReads).toBe(0);
+    expect(fake.correctScoreTierReads).toBe(0);
+  });
+
+  it("derives EXACT_PODIUM combo odds from per-driver base outcomes", async () => {
+    const { service } = setup(f1Market("EXACT_PODIUM", [
+      { selection: "DRV:NOR", decimalOdds: "5.00" },
+      { selection: "DRV:VER", decimalOdds: "6.00" },
+      { selection: "DRV:PIA", decimalOdds: "8.00" },
+    ]));
+    const command = {
+      userId: "user-1",
+      roomId: "room-1",
+      idempotencyKey: "idem-f1-derived",
+      marketId: "f1:session-9:EXACT_PODIUM",
+      selection: "POD3:NOR-VER-PIA" as const,
+      stakePoints: 200,
+      acceptedOddsVersion: "f1-odds-v1",
+      // 5.00 × 6.00 × 8.00 / 2.5 = 96.00 (shared exactPodiumComboOdds formula)
+      acceptedDecimalOdds: "96.00",
+    };
+    const ticket = await service.submit(command);
+    expect(ticket.legs[0]?.oddsSnapshot).toMatchObject({ marketId: 104, decimalOdds: "96.00" });
+
+    /* A stale accepted price on the derived path still surfaces as ODDS_CHANGED. */
+    const stale = setup(f1Market("EXACT_PODIUM", [
+      { selection: "DRV:NOR", decimalOdds: "5.00" },
+      { selection: "DRV:VER", decimalOdds: "6.00" },
+      { selection: "DRV:PIA", decimalOdds: "8.00" },
+    ]));
+    await expect(stale.service.submit({ ...command, acceptedDecimalOdds: "95.00" }))
+      .rejects.toMatchObject({ code: "ODDS_CHANGED" });
+  });
+
+  it("rejects a bare DRV base-outcome selection on the EXACT_PODIUM market", async () => {
+    /* Base outcomes are pricing inputs, not bettable selections — without the grammar
+       guard the direct outcome match would accept them at field odds. */
+    const { fake, service } = setup(f1Market("EXACT_PODIUM", [
+      { selection: "DRV:NOR", decimalOdds: "5.00" },
+      { selection: "DRV:VER", decimalOdds: "6.00" },
+      { selection: "DRV:PIA", decimalOdds: "8.00" },
+    ]));
+    await expect(service.submit({
+      userId: "user-1",
+      roomId: "room-1",
+      idempotencyKey: "idem-f1-base",
+      marketId: "f1:session-9:EXACT_PODIUM",
+      selection: "DRV:NOR",
+      stakePoints: 100,
+      acceptedOddsVersion: "f1-odds-v1",
+      acceptedDecimalOdds: "5.00",
+    })).rejects.toMatchObject({ name: "TicketSubmissionError", code: "DATA_UNAVAILABLE" });
+    expect(fake.writes).toHaveLength(0);
+  });
+
+  it("enforces 一人一注: one open ticket per F1 market, while idempotent replays still return the original", async () => {
+    const { fake, service } = setup(f1Market("WINNER", [
+      { selection: "DRV:NOR", decimalOdds: "2.40" },
+      { selection: "DRV:VER", decimalOdds: "3.10" },
+    ]));
+    const command = {
+      userId: "user-1",
+      roomId: "room-1",
+      idempotencyKey: "idem-once-1",
+      marketId: "f1:session-9:WINNER",
+      selection: "DRV:NOR" as const,
+      stakePoints: 300,
+      acceptedOddsVersion: "f1-odds-v1",
+      acceptedDecimalOdds: "2.40",
+    };
+    const first = await service.submit(command);
+
+    /* Same idempotency key → the stored ticket replays, no double freeze. */
+    await expect(service.submit(command)).resolves.toMatchObject({ id: first.id });
+    expect(fake.writes).toHaveLength(1);
+
+    /* A genuinely new submission on the same market — even a different outcome —
+       is refused without freezing points. */
+    await expect(service.submit({ ...command, idempotencyKey: "idem-once-2", selection: "DRV:VER", acceptedDecimalOdds: "3.10" }))
+      .rejects.toMatchObject({ name: "TicketSubmissionError", code: "MARKET_TICKET_EXISTS" });
+    expect(fake.writes).toHaveLength(1);
+    expect(fake.account).toMatchObject({ availablePoints: 9_700, frozenPoints: 300 });
   });
 
   it("does not gate the other F1 kinds behind room tier", async () => {

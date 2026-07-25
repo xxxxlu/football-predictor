@@ -6,7 +6,7 @@ const get = (path: string) => new Request(`https://example.test${path}`, { heade
 const patch = (body: unknown) => new Request("https://example.test/api/v1/account/profile", { method: "PATCH", headers: { cookie: "fp_session=token", "content-type": "application/json" }, body: JSON.stringify(body) });
 function setup() {
   const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }) };
-  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), accountHistory: vi.fn().mockResolvedValue({ records: [] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]), adminStatus: vi.fn() };
+  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), accountHistory: vi.fn().mockResolvedValue({ records: [] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), myTickets: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]), adminStatus: vi.fn() };
   return { operations, handlers: createOperationsHandlers(identity, operations) };
 }
 describe("operations API permissions", () => {
@@ -17,6 +17,14 @@ describe("operations API permissions", () => {
   it("does not weaken owner or super-admin denials", async () => {
     const owner = setup(); owner.operations.submissionStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await owner.handlers.submissionStatus(get("/x"), "room-1")).status).toBe(403);
     const admin = setup(); admin.operations.adminStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await admin.handlers.adminStatus(get("/x"))).status).toBe(403);
+  });
+  it("scopes tickets/mine to the authenticated caller and requires fixtureId", async () => {
+    const subject = setup();
+    expect((await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine"), "room-1")).status).toBe(422);
+    expect(subject.operations.myTickets).not.toHaveBeenCalled();
+    const ok = await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine?fixtureId=f1:session-1"), "room-1");
+    expect(ok.status).toBe(200);
+    expect(subject.operations.myTickets).toHaveBeenCalledWith("room-1", "user-1", "f1:session-1");
   });
   it("returns only the authenticated user's cross-competition history", async () => {
     const subject = setup();

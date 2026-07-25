@@ -29,15 +29,16 @@ export function f1MarketKindFromSupplierMarketId(supplierMarketId: number): F1Ma
 /** Provenance value recorded on F1 legs (no realtime supplier; admin enters results). */
 export const F1_SUPPLIER = "F1_MANUAL";
 
-/** Markets offered per session kind (§12.5): qualifying-type sessions price pole,
- *  race-type sessions price the winner; podium (basic + exact) is offered on every
- *  predictable session. H2H was retired as an offered market on 2026-07-25 (product
- *  decision) — it stays in F1MarketKind/selection/settlement so existing tickets
- *  keep settling, but no new H2H markets are offered or accept submissions. */
+/** Markets offered per session kind (§12.5): qualifying-type sessions price pole
+ *  only; race-type sessions price the winner plus the exact-podium contest
+ *  (领奖台之争 — pick P1/P2/P3 in order from the whole field). H2H (2026-07-25) and
+ *  the yes/no PODIUM market (2026-07-25, merged into EXACT_PODIUM) were retired as
+ *  offered markets — both stay in F1MarketKind/selection/settlement so existing
+ *  tickets keep settling, but they are never offered and reject new submissions. */
 export function f1MarketKindsForSession(kind: F1SessionKind): readonly F1MarketKind[] {
   return kind === "QUALIFYING" || kind === "SPRINT_QUALIFYING"
-    ? ["POLE", "PODIUM", "EXACT_PODIUM"]
-    : ["WINNER", "PODIUM", "EXACT_PODIUM"];
+    ? ["POLE"]
+    : ["WINNER", "EXACT_PODIUM"];
 }
 
 /** Canonical market id: `f1:<sessionId>:<kind>`. Stored in tickets.market_id. */

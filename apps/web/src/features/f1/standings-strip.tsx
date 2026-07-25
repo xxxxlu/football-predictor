@@ -74,13 +74,16 @@ export function F1StandingsStrip() {
       <ol className="mt-4 flex snap-x gap-3 overflow-x-auto pb-2">
         {drivers.map((driver, index) => {
           const photo = driverPhotoPath(driver.code);
+          const teamLogo = teamLogoPath(driver.constructorKey);
           return (
             <li key={driver.code} className="snap-start">
               <Link href={`/matches/f1/drivers/${driver.code}`}
                 className="group flex w-36 shrink-0 flex-col gap-2 rounded-xl bg-white/5 p-3 transition hover:bg-white/10">
                 <span className="flex items-center justify-between">
                   <span className="tabular text-xs font-black text-white/60">P{index + 1}</span>
-                  <i aria-hidden className="h-3 w-6 rounded-sm" style={{ background: driver.color }} />
+                  {teamLogo
+                    ? <Image src={teamLogo} alt={driver.constructorName} width={48} height={16} unoptimized className="h-4 w-auto max-w-16 object-contain" />
+                    : <i aria-hidden className="h-3 w-6 rounded-sm" style={{ background: driver.color }} />}
                 </span>
                 {photo && <Image src={photo} alt="" width={96} height={96} unoptimized className="mx-auto size-20 rounded-full bg-white/10 object-cover object-top" />}
                 <span className="min-w-0 text-center">

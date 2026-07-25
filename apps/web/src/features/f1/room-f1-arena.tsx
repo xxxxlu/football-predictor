@@ -17,9 +17,8 @@ import {
 /** In-room F1 arena: the nearest session's full prediction slip is embedded right
  *  here（免跳转）, and the rest of the calendar is listed as 未开始 by start time.
  *  "Nearest" = the soonest session that is still predictable. */
-export function RoomF1Arena({ roomId, advanced, interactive }: {
+export function RoomF1Arena({ roomId, interactive }: {
   roomId: string;
-  advanced: boolean;
   interactive: boolean;
 }) {
   const [sessions, setSessions] = useState<F1UpcomingSessionView[] | null>(null);
@@ -85,7 +84,7 @@ export function RoomF1Arena({ roomId, advanced, interactive }: {
       </div>
 
       {detail
-        ? <F1PredictionSlip roomId={roomId} detail={detail} advanced={advanced} interactive={interactive} onRefresh={() => loadDetail().catch(() => {})} />
+        ? <F1PredictionSlip roomId={roomId} detail={detail} interactive={interactive} onRefresh={() => loadDetail().catch(() => {})} />
         : detailError
           ? <DataStatePanel state="error" title="最近场次暂不可用" description="场次数据加载失败；稍后刷新，或从下方列表打开具体场次。" />
           : <DataStatePanel state="loading" title="正在加载竞猜面板" description="正在读取场次、车手与积分倍率。" />}
