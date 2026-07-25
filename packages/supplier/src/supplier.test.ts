@@ -25,7 +25,7 @@ describe("supplier synchronization", () => {
     });
   });
 
-  it("reuses persisted real odds for two hours instead of spending credits on page reads", async () => {
+  it("reuses persisted real odds for a full sync interval instead of spending credits on page reads", async () => {
     const source = [{ matchID: 7001, leagueId: 501, leagueName: "WM 2026", leagueSeason: 2026, leagueShortcut: "wm26", matchDateTimeUTC: "2026-07-15T19:00:00Z", lastUpdateDateTime: "2026-07-14T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: "France", shortName: "FRA" }, team2: { teamId: 20, teamName: "Spain", shortName: "ESP" }, matchResults: [] }];
     const repository = new InMemoryMatchSnapshotRepository();
     let oddsCalls = 0;
@@ -37,12 +37,30 @@ describe("supplier synchronization", () => {
     }, now: () => firstNow });
     await new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => firstNow }).run();
 
-    const second = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T11:59:59Z") });
+    const second = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T15:59:59Z") });
     await expect(second.run()).resolves.toMatchObject({ oddsRequestMade: false, marketsSynced: 0 });
     expect(oddsCalls).toBe(1);
 
-    const third = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T12:00:00Z") });
+    const third = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T16:00:00Z") });
     await expect(third.run()).resolves.toMatchObject({ oddsRequestMade: true });
+    expect(oddsCalls).toBe(2);
+  });
+
+  /* The interval is the credit budget: keys × 24h / interval × 30 must stay inside
+     the supplier plan's monthly allowance, so it has to be tunable per deployment. */
+  it("honors a per-deployment odds sync interval override", async () => {
+    const source = [{ matchID: 7002, leagueId: 4937, leagueName: "1. Fußball-Bundesliga", leagueSeason: 2026, leagueShortcut: "bl1", matchDateTimeUTC: "2026-08-28T18:30:00Z", lastUpdateDateTime: "2026-07-25T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: "FC Bayern München" }, team2: { teamId: 20, teamName: "RB Leipzig" }, matchResults: [] }];
+    const repository = new InMemoryMatchSnapshotRepository();
+    let oddsCalls = 0;
+    const client = new OpenLigaDbClient({ fetcher: async () => Response.json(source), now: () => new Date("2026-07-25T10:00:00Z") });
+    const oddsClient = new TheOddsApiClient({ apiKey: "test-key", fetcher: async () => { oddsCalls += 1; return Response.json([]); }, now: () => new Date("2026-07-25T10:00:00Z") });
+    const competitions = [{ shortcut: "bl1", season: 2026, oddsSportKey: "soccer_germany_bundesliga" }];
+    const sync = (now: string) => new OpenLigaDbCompetitionSync({ repository, client, oddsClient, competitions, oddsSyncIntervalMs: 30 * 60_000, now: () => new Date(now) });
+
+    await sync("2026-07-25T10:00:00Z").run();
+    await expect(sync("2026-07-25T10:29:59Z").run()).resolves.toMatchObject({ oddsRequestMade: false });
+    expect(oddsCalls).toBe(1);
+    await expect(sync("2026-07-25T10:30:00Z").run()).resolves.toMatchObject({ oddsRequestMade: true });
     expect(oddsCalls).toBe(2);
   });
 

@@ -1,10 +1,16 @@
 name: supplier-sync
 
+# The only production automation: deployments run the web app alone, so this
+# scheduled sweep stands in for the resident worker. Every run refreshes football
+# fixtures/odds, imports finished F1 session results, closes the markets of started
+# F1 sessions, and settles every ticket whose result is now confirmed.
+
 on:
   workflow_dispatch:
   schedule:
     # Offset from the top of the hour to reduce scheduled-run congestion.
-    # The database lease allows at most one World Cup odds credit per run window.
+    # Odds spend is capped independently by a database lease per sport key
+    # (ODDS_SYNC_INTERVAL_MINUTES), so this cadence only bounds settlement latency.
     - cron: "17 */2 * * *"
 
 permissions:
@@ -21,6 +27,12 @@ jobs:
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+      # Repository variables override the in-code defaults without a deploy. The
+      # competition list must always name a live season: a finished competition
+      # makes the sweep a silent no-op. Season 2026 == the German 2026/27 season.
+      OPENLIGADB_COMPETITIONS: ${{ vars.OPENLIGADB_COMPETITIONS || 'bl1:2026:soccer_germany_bundesliga,bl2:2026:soccer_germany_bundesliga2,bl3:2026:soccer_germany_liga3,dfb:2026,BLSupercup:2026' }}
+      ODDS_SYNC_INTERVAL_MINUTES: ${{ vars.ODDS_SYNC_INTERVAL_MINUTES }}
+      F1_IMPORT_SEASON: ${{ vars.F1_IMPORT_SEASON || '2026' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -33,5 +45,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Apply idempotent database migrations
         run: pnpm db:migrate
-      - name: Refresh current World Cup fixtures, results, and real 1X2 odds
-        run: pnpm supplier:current-world-cup
+      # Ahead of the sweep, so a session that just finished settles in the same run.
+      # A Jolpica outage must not block football settlement, so the failure is
+      # deferred to the end of the job instead of short-circuiting it.
+      - name: Import official F1 session results
+        id: f1-results
+        continue-on-error: true
+        run: pnpm db:import:f1-results-2026
+      - name: Sync football fixtures and odds, lock due F1 sessions, settle results
+        run: pnpm supplier:sweep
+      - name: Report a deferred F1 result-import failure
+        if: steps.f1-results.outcome == 'failure'
+        run: |
+          echo "::error::F1 result import failed; football settlement still ran. See the import step log."
+          exit 1

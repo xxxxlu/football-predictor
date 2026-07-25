@@ -69,7 +69,13 @@ export interface SupplierGateway {
 }
 
 type Fetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
-export const REAL_ODDS_SYNC_INTERVAL_MS = 2 * 60 * 60_000;
+/** One real-odds fetch costs one The-Odds-API credit per distinct sport key, so the
+ *  monthly spend is `keys × 24h / interval × 30`. At six hours the three German league
+ *  tiers cost ~360 credits/month, which still fits the free 500-credit allowance;
+ *  raise the cadence via `ODDS_SYNC_INTERVAL_MINUTES` only on a paid plan. Prematch
+ *  markets tolerate this: a stored snapshot stays valid until kickoff and the match
+ *  list surfaces snapshot age, so a slower refresh degrades honestly. */
+export const REAL_ODDS_SYNC_INTERVAL_MS = 6 * 60 * 60_000;
 
 type OpenLigaDbMatch = {
   matchID: number;
@@ -319,13 +325,15 @@ export class OpenLigaDbCompetitionSync {
   private readonly client: OpenLigaDbClient;
   private readonly oddsClient: RealOddsClient | undefined;
   private readonly competitions: readonly SyncCompetition[];
+  private readonly oddsSyncIntervalMs: number;
   private readonly now: () => Date;
 
-  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; competitions?: SyncCompetition[]; now?: () => Date }) {
+  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; competitions?: SyncCompetition[]; oddsSyncIntervalMs?: number; now?: () => Date }) {
     this.repository = input.repository;
     this.client = input.client ?? new OpenLigaDbClient();
     this.oddsClient = input.oddsClient;
     this.competitions = input.competitions?.length ? input.competitions : DEFAULT_SYNC_COMPETITIONS;
+    this.oddsSyncIntervalMs = input.oddsSyncIntervalMs && input.oddsSyncIntervalMs > 0 ? input.oddsSyncIntervalMs : REAL_ODDS_SYNC_INTERVAL_MS;
     this.now = input.now ?? (() => new Date());
   }
 
@@ -374,7 +382,7 @@ export class OpenLigaDbCompetitionSync {
     let marketsSynced = 0;
     let oddsRequestMade = false;
     for (const [sportKey, sportUpcoming] of upcomingBySportKey) {
-      if (!(await this.repository.claimExternalSync(`the-odds-api:${sportKey}:h2h:eu`, now, REAL_ODDS_SYNC_INTERVAL_MS))) continue;
+      if (!(await this.repository.claimExternalSync(`the-odds-api:${sportKey}:h2h:eu`, now, this.oddsSyncIntervalMs))) continue;
       let quotes: RealOddsQuote[];
       try {
         quotes = await this.oddsClient.fetchOdds(sportKey);

@@ -20,7 +20,7 @@ test("workspace contains every architecture boundary", async () => {
   assert.equal(required.length, 10);
 });
 
-test("free-tier deployment builds the web workspace and bounds current World Cup synchronization", async () => {
+test("free-tier deployment builds the web workspace and bounds the scheduled production sweep", async () => {
   const manifest = JSON.parse(await readFile("package.json", "utf8"));
   assert.equal(manifest.devDependencies.next, "16.2.11");
   const webManifest = JSON.parse(await readFile("apps/web/package.json", "utf8"));
@@ -36,7 +36,14 @@ test("free-tier deployment builds the web workspace and bounds current World Cup
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /cron: "17 \*\/2 \* \* \*"/);
   assert.match(workflow, /pnpm db:migrate/);
-  assert.match(workflow, /pnpm supplier:current-world-cup/);
+  assert.match(workflow, /pnpm supplier:sweep/);
+  // The sweep is the only production automation: without the F1 result import,
+  // F1 tickets stay pending until somebody runs the script by hand.
+  assert.match(workflow, /pnpm db:import:f1-results-2026/);
+  // A finished competition makes every run a no-op, so the schedule must name a
+  // live season explicitly instead of relying on whatever the default once was.
+  assert.match(workflow, /OPENLIGADB_COMPETITIONS:/);
+  assert.doesNotMatch(workflow, /wm26/, "the World Cup ended 2026-07-19");
   for (const secret of ["DATABASE_URL", "THE_ODDS_API_KEY"]) {
     assert.ok(workflow.includes(secret + ": ${{ secrets." + secret + " }}"));
   }
