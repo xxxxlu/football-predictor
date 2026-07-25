@@ -32,8 +32,10 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
   onRefresh: () => void;
 }) {
   const markets = useMemo(() => {
-    const order: F1MarketKind[] = ["WINNER", "POLE", "PODIUM", "EXACT_PODIUM", "H2H"];
+    const order: F1MarketKind[] = ["WINNER", "POLE", "PODIUM", "EXACT_PODIUM"];
     return [...detail.markets]
+      // H2H 已下架：老数据里的行不再展示；精确前三仍只对高级房开放。
+      .filter((market) => market.kind !== "H2H")
       .filter((market) => market.kind !== "EXACT_PODIUM" || advanced)
       .sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
   }, [detail.markets, advanced]);
@@ -154,7 +156,8 @@ export function F1PredictionSlip({ roomId, detail, advanced, interactive, onRefr
         ))}
       </div>
 
-      {active && <OutcomePicker market={active} drivers={detail.drivers} selection={selection} disabled={closed || pending} onSelect={(value) => { setSelection(value); setError(""); setReceipt(""); }} />}
+      {/* key 按市场重挂：切市场/提交后组合器的分步选择从头开始 */}
+      {active && <OutcomePicker key={`${active.id}:${receipt}`} market={active} drivers={detail.drivers} selection={selection} disabled={closed || pending} onSelect={(value) => { setSelection(value); setError(""); setReceipt(""); }} />}
 
       <div>
         <label htmlFor={`f1-stake-${detail.session.id}`} className="mb-2 block text-sm font-bold">投入积分</label>
@@ -195,7 +198,8 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
   drivers: F1DriverView[];
   selection?: string;
   disabled: boolean;
-  onSelect: (selection: string) => void;
+  // undefined = 撤销选择（组合器凑不满三位时解除已锁定的组合）
+  onSelect: (selection?: string) => void;
 }) {
   const driverIndex = useMemo(() => new Map(drivers.map((driver) => [driver.code, driver])), [drivers]);
   const buttonClass = (selected: boolean) =>
@@ -238,35 +242,89 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
   }
 
   if (market.kind === "EXACT_PODIUM") {
-    return <fieldset disabled={disabled}>
-      <legend className="mb-2 text-sm font-bold">选择精确前三（P1 → P2 → P3，顺序判定）</legend>
-      <div className="grid max-h-72 grid-cols-1 gap-2 overflow-y-auto pr-1 sm:grid-cols-2">
-        {market.outcomes.map((outcome) => {
-          const parsed = /^POD3:(.+)-(.+)-(.+)$/.exec(outcome.selection);
-          const label = parsed ? `${parsed[1]} → ${parsed[2]} → ${parsed[3]}` : outcome.selection;
-          return <button key={outcome.selection} type="button" aria-pressed={selection === outcome.selection} onClick={() => onSelect(outcome.selection)} className={buttonClass(selection === outcome.selection)}>
-            <span className="flex items-center justify-between gap-2"><span className="tabular truncate">{label}</span><span className="tabular text-xs font-black">{outcome.decimalOdds}</span></span>
-          </button>;
-        })}
-      </div>
-    </fieldset>;
+    return <ExactPodiumComposer market={market} driverIndex={driverIndex} selection={selection} disabled={disabled} onSelect={onSelect} buttonClass={buttonClass} />;
   }
 
+  // H2H 已下架，读层也不再返回该市场；未知类型不渲染任何可选项。
+  return null;
+}
+
+const PODIUM_SLOT_LABELS = ["P1 冠军", "P2 亚军", "P3 季军"] as const;
+
+/** 精确前三自由组合：分别挑 P1/P2/P3（顺序判定），组合完成后锁定该组合的倍率。
+ *  候选车手与倍率都来自市场既有 outcomes（POD3:A-B-C 全排列），不做任何推算。 */
+function ExactPodiumComposer({ market, driverIndex, selection, disabled, onSelect, buttonClass }: {
+  market: F1MarketView;
+  driverIndex: Map<string, F1DriverView>;
+  selection?: string;
+  disabled: boolean;
+  onSelect: (selection?: string) => void;
+  buttonClass: (selected: boolean) => string;
+}) {
+  const { codes, oddsByCombo } = useMemo(() => {
+    const seen: string[] = [];
+    const byCombo = new Map<string, string>();
+    for (const outcome of market.outcomes) {
+      const parsed = /^POD3:([^-]+)-([^-]+)-([^-]+)$/.exec(outcome.selection);
+      if (!parsed) continue;
+      byCombo.set(outcome.selection, outcome.decimalOdds);
+      for (const code of [parsed[1], parsed[2], parsed[3]]) if (!seen.includes(code)) seen.push(code);
+    }
+    return { codes: seen, oddsByCombo: byCombo };
+  }, [market.outcomes]);
+
+  const parsedSelection = selection ? /^POD3:([^-]+)-([^-]+)-([^-]+)$/.exec(selection) : null;
+  const [slots, setSlots] = useState<Array<string | null>>(
+    parsedSelection ? [parsedSelection[1], parsedSelection[2], parsedSelection[3]] : [null, null, null],
+  );
+
+  function pick(slot: number, code: string) {
+    const next = [...slots];
+    // 再点一次取消该格；占用其他格的车手按钮是禁用态，不存在跨格抢占。
+    next[slot] = next[slot] === code ? null : code;
+    setSlots(next);
+    if (next[0] && next[1] && next[2]) {
+      const combo = `POD3:${next[0]}-${next[1]}-${next[2]}`;
+      onSelect(oddsByCombo.has(combo) ? combo : undefined);
+    } else {
+      onSelect(undefined);
+    }
+  }
+
+  const complete = slots[0] && slots[1] && slots[2];
+  const combo = complete ? `POD3:${slots[0]}-${slots[1]}-${slots[2]}` : null;
+  const comboOdds = combo ? oddsByCombo.get(combo) : undefined;
+
   return <fieldset disabled={disabled}>
-    <legend className="mb-2 text-sm font-bold">选择车手对决（谁的完赛名次更靠前）</legend>
-    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-      {market.outcomes.map((outcome) => {
-        const parsed = /^H2H:(.+)>(.+)$/.exec(outcome.selection);
-        const label = parsed ? `${parsed[1]} 先于 ${parsed[2]}` : outcome.selection;
-        const driver = parsed ? driverIndex.get(parsed[1]) : undefined;
-        return <button key={outcome.selection} type="button" aria-pressed={selection === outcome.selection} onClick={() => onSelect(outcome.selection)} className={buttonClass(selection === outcome.selection)}>
-          <span className="flex items-center gap-2">
-            <i aria-hidden className="h-4 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
-            <span className="min-w-0 flex-1 truncate">{label}</span>
-            <span className="tabular text-xs font-black">{outcome.decimalOdds}</span>
-          </span>
-        </button>;
-      })}
+    <legend className="mb-2 text-sm font-bold">自由组合精确前三（P1 → P2 → P3，顺序判定）</legend>
+    <div className="grid gap-3">
+      {PODIUM_SLOT_LABELS.map((label, slot) => (
+        <div key={label}>
+          <p className="mb-1.5 text-xs font-bold text-[var(--muted)]">{label}</p>
+          <div className="flex flex-wrap gap-2" role="group" aria-label={label}>
+            {codes.map((code) => {
+              const chosenHere = slots[slot] === code;
+              const chosenElsewhere = !chosenHere && slots.includes(code);
+              const driver = driverIndex.get(code);
+              return <button key={code} type="button" aria-pressed={chosenHere} disabled={chosenElsewhere}
+                onClick={() => pick(slot, code)}
+                className={`${buttonClass(chosenHere)} disabled:cursor-not-allowed disabled:opacity-35`}>
+                <span className="flex items-center gap-2">
+                  <i aria-hidden className="h-4 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
+                  <span className="tabular">{code}</span>
+                </span>
+              </button>;
+            })}
+          </div>
+        </div>
+      ))}
     </div>
+    <p className="mt-3 text-sm" aria-live="polite">
+      {complete
+        ? comboOdds
+          ? <><span className="tabular font-bold">{slots[0]} → {slots[1]} → {slots[2]}</span><span className="tabular ml-2 text-xs font-black">{comboOdds}x</span></>
+          : <span className="font-bold text-[var(--pulse-red-deep)]">该组合暂未开放，请换一位车手。</span>
+        : <span className="text-[var(--muted)]">依次选满三位车手后锁定该组合的倍率。</span>}
+    </p>
   </fieldset>;
 }

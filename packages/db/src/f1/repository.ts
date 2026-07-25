@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import {
   F1_SUPPLIER,
   F1_SUPPLIER_MARKET_IDS,
@@ -154,7 +154,8 @@ export class DrizzleF1Repository {
       outcomes: f1MarketOdds.outcomes,
     }).from(f1Markets)
       .innerJoin(f1MarketOdds, and(eq(f1MarketOdds.marketId, f1Markets.id), eq(f1MarketOdds.version, f1Markets.currentVersion)))
-      .where(eq(f1Markets.sessionId, sessionId));
+      // H2H retired 2026-07-25: seeded rows may still exist but are never presented.
+      .where(and(eq(f1Markets.sessionId, sessionId), ne(f1Markets.kind, "H2H")));
     const session = mapSession(row.session);
     let result: F1SessionDetail["result"] = null;
     // State guard: a confirmed classification is only presentable once the session
@@ -323,6 +324,9 @@ export class F1MarketSnapshotAdapter implements MarketSnapshotPort {
   async getMarket(marketId: string, transaction: IdentityDatabase = this.db): Promise<MarketForSubmission | null> {
     const parsed = parseF1MarketId(marketId);
     if (!parsed) return null;
+    // H2H retired 2026-07-25: existing tickets still settle, but new submissions
+    // must not resolve a market (surfaces as DATA_UNAVAILABLE, no points frozen).
+    if (parsed.kind === "H2H") return null;
     const [row] = await transaction.select({
       marketId: f1Markets.id,
       sessionId: f1Markets.sessionId,

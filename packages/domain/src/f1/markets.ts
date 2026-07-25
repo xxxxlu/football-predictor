@@ -30,12 +30,14 @@ export function f1MarketKindFromSupplierMarketId(supplierMarketId: number): F1Ma
 export const F1_SUPPLIER = "F1_MANUAL";
 
 /** Markets offered per session kind (§12.5): qualifying-type sessions price pole,
- *  race-type sessions price the winner; podium (basic + exact) and head-to-head are
- *  offered on every predictable session. */
+ *  race-type sessions price the winner; podium (basic + exact) is offered on every
+ *  predictable session. H2H was retired as an offered market on 2026-07-25 (product
+ *  decision) — it stays in F1MarketKind/selection/settlement so existing tickets
+ *  keep settling, but no new H2H markets are offered or accept submissions. */
 export function f1MarketKindsForSession(kind: F1SessionKind): readonly F1MarketKind[] {
   return kind === "QUALIFYING" || kind === "SPRINT_QUALIFYING"
-    ? ["POLE", "PODIUM", "EXACT_PODIUM", "H2H"]
-    : ["WINNER", "PODIUM", "EXACT_PODIUM", "H2H"];
+    ? ["POLE", "PODIUM", "EXACT_PODIUM"]
+    : ["WINNER", "PODIUM", "EXACT_PODIUM"];
 }
 
 /** Canonical market id: `f1:<sessionId>:<kind>`. Stored in tickets.market_id. */

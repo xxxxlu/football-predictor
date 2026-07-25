@@ -29,8 +29,9 @@ describe("F1 markets", () => {
       const kinds = f1MarketKindsForSession(kind);
       expect(kinds).toContain("PODIUM");
       expect(kinds).toContain("EXACT_PODIUM");
-      expect(kinds).toContain("H2H");
-      expect(kinds).toHaveLength(4);
+      // H2H retired 2026-07-25: no longer offered, but ids still parse for settlement.
+      expect(kinds).not.toContain("H2H");
+      expect(kinds).toHaveLength(3);
     }
   });
 
