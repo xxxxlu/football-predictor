@@ -38,6 +38,22 @@ describe("GET /api/v1/matches", () => {
     expect(reads).toBe(2);
   });
 
+  it("exposes freshness metadata in meta and stays null-safe when the repository lacks it", async () => {
+    const access = { authenticate: async () => ({ id: "user-1" }), assertRoomMember: async () => undefined };
+    const freshness = { lastCapturedAt: "2026-07-24T08:00:00.000Z", nextKickoffAt: "2026-08-07T18:30:00.000Z", nextKickoffCompetition: "德国足球甲级联赛", upcomingCount: 9, liveCount: 0, finishedRecentCount: 1 };
+    const withFreshness = createMatchesGet({ list: async () => ({ views: [], etag: '"v1"' }), freshness: async () => freshness }, access);
+    const withoutFreshness = createMatchesGet({ list: async () => ({ views: [], etag: '"v1"' }) }, access);
+    const failingFreshness = createMatchesGet({ list: async () => ({ views: [], etag: '"v1"' }), freshness: async () => { throw new Error("db down"); } }, access);
+    const request = () => new Request("http://localhost/api/v1/matches", { headers: { cookie: "fp_session=valid" } });
+
+    expect(await (await withFreshness(request())).json()).toMatchObject({ meta: { source: "product-cache", freshness } });
+    expect(await (await withoutFreshness(request())).json()).toMatchObject({ meta: { freshness: null } });
+    expect(await (await failingFreshness(request())).json()).toMatchObject({ meta: { freshness: null } });
+
+    const conditional = await withFreshness(new Request("http://localhost/api/v1/matches", { headers: { cookie: "fp_session=valid", "if-none-match": '"v1"' } }));
+    expect(conditional.status).toBe(304);
+  });
+
   it("returns an explicit cache-unavailable error and never accepts an upstream callback", async () => {
     const GET = createMatchesGet(
       { list: async () => { throw Object.assign(new Error("missing"), { code: "CACHE_UNAVAILABLE" }); } },

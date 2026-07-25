@@ -116,6 +116,40 @@ describe("supplier cache persistence helpers", () => {
     expect(values[0]?.every((param) => !(param instanceof Date))).toBe(true);
   });
 
+  it("maps the freshness aggregate including PostgreSQL bigint counts and empty caches", async () => {
+    const populated = (async () => [{
+      lastCapturedAt: "2026-07-24T08:00:00.000Z", nextKickoffAt: "2026-08-07T18:30:00.000Z", nextKickoffCompetition: "德国足球甲级联赛",
+      upcomingCount: "12", liveCount: "0", finishedRecentCount: "3",
+    }]) as unknown as import("postgres").Sql;
+    await expect(new PostgresMatchSnapshotRepository(populated).getFreshness()).resolves.toEqual({
+      lastCapturedAt: "2026-07-24T08:00:00.000Z", nextKickoffAt: "2026-08-07T18:30:00.000Z", nextKickoffCompetition: "德国足球甲级联赛",
+      upcomingCount: 12, liveCount: 0, finishedRecentCount: 3,
+    });
+
+    const empty = (async () => [{ lastCapturedAt: null, nextKickoffAt: null, nextKickoffCompetition: null, upcomingCount: "0", liveCount: "0", finishedRecentCount: "0" }]) as unknown as import("postgres").Sql;
+    await expect(new PostgresMatchSnapshotRepository(empty).getFreshness()).resolves.toEqual({
+      lastCapturedAt: null, nextKickoffAt: null, nextKickoffCompetition: null, upcomingCount: 0, liveCount: 0, finishedRecentCount: 0,
+    });
+  });
+
+  it("bounds the list read model fixtures query to the kickoff window while detail reads stay unbounded", async () => {
+    const statements: string[] = [];
+    const sql = ((strings: TemplateStringsArray) => {
+      statements.push(strings.join("$"));
+      return Promise.resolve([]);
+    }) as unknown as import("postgres").Sql;
+    const repository = new PostgresMatchSnapshotRepository(sql);
+
+    await repository.listViewData();
+    const fixturesQuery = statements.find((statement) => statement.includes("FROM supplier.fixtures"));
+    expect(fixturesQuery).toContain("kickoff_at BETWEEN now() - make_interval(days => $) AND now() + make_interval(days => $)");
+
+    statements.length = 0;
+    await repository.getFixture("openligadb:7001");
+    expect(statements[0]).toContain("FROM supplier.fixtures");
+    expect(statements[0]).not.toContain("BETWEEN");
+  });
+
   it("builds a stable market identity from supplier trace fields", () => {
     expect(marketCacheId("api-football:101", 8, 1)).toBe("api-football:101:bookmaker:8:market:1");
   });

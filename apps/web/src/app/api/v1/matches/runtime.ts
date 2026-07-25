@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { loadIdentityConfig } from "@football-predictor/config";
 import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
 import type { LineupSnapshot } from "@football-predictor/domain";
-import { MatchCacheReader } from "@football-predictor/supplier";
+import { MatchCacheReader, type SupplierFreshness } from "@football-predictor/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
 export interface MatchReadAccess {
@@ -16,10 +16,14 @@ export interface LineupReadPort {
   get(matchId: string): Promise<LineupSnapshot | null>;
 }
 
+export type { SupplierFreshness };
+
 export interface MatchApiRuntime {
   cache: {
     list(): Promise<{ views: unknown[]; etag: string }>;
     get(matchId: string): Promise<{ view: unknown; etag: string }>;
+    /** Optional freshness metadata for the list response; null when the repository cannot provide it. */
+    freshness?(): Promise<SupplierFreshness | null>;
   };
   lineup: LineupReadPort;
   access: MatchReadAccess;
@@ -41,10 +45,11 @@ function etagOf(value: unknown): string { return `"${createHash("sha256").update
 
 export class CurrentMatchCache {
   private readonly reader: { list(): Promise<{ views: CurrentMatchView[]; etag: string }>; get(matchId: string): Promise<{ view: unknown; etag: string }> };
+  private readonly readFreshness: (() => Promise<SupplierFreshness>) | undefined;
   private readonly now: () => Date;
 
-  constructor(input: { reader: CurrentMatchCache["reader"]; now?: () => Date }) {
-    this.reader = input.reader; this.now = input.now ?? (() => new Date());
+  constructor(input: { reader: CurrentMatchCache["reader"]; freshness?: () => Promise<SupplierFreshness>; now?: () => Date }) {
+    this.reader = input.reader; this.readFreshness = input.freshness; this.now = input.now ?? (() => new Date());
   }
 
   async list(): Promise<{ views: CurrentMatchView[]; etag: string }> {
@@ -54,6 +59,13 @@ export class CurrentMatchCache {
   }
 
   async get(matchId: string): Promise<{ view: unknown; etag: string }> { return this.reader.get(matchId); }
+
+  /** Null-safe: repositories without a freshness read model simply yield null metadata. */
+  async freshness(): Promise<SupplierFreshness | null> {
+    if (!this.readFreshness) return null;
+    try { return await this.readFreshness(); }
+    catch { return null; }
+  }
 }
 
 declare global {
@@ -69,7 +81,7 @@ export function createMatchApiRuntime(input: {
   const repository = new PostgresMatchSnapshotRepository(input.sql);
   const reader = new MatchCacheReader({ repository });
   return {
-    cache: new CurrentMatchCache({ reader }),
+    cache: new CurrentMatchCache({ reader, freshness: () => repository.getFreshness() }),
     lineup: { get: (matchId) => repository.getLineup(matchId) },
     access: {
       authenticate: (token) => identity.authenticate(token),

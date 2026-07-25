@@ -7,6 +7,7 @@ import { PredictionSlip } from "./prediction-slip";
 import {
   datasetNotice,
   filterMatches,
+  freshnessNotice,
   groupMatches,
   matchAvailability,
   matchDateKey,
@@ -15,12 +16,13 @@ import {
   summarizeMatches,
   type MatchStatusFilter,
 } from "./match-filters";
-import { normalizeMatch, type ApiEnvelope, type ApiFailure, type MatchView } from "./types";
+import { normalizeFreshness, normalizeMatch, type ApiEnvelope, type ApiFailure, type FreshnessMeta, type MatchView } from "./types";
 
 const MATCH_BATCH_SIZE = 24;
 
 export function MatchList({ roomId, interactive = false, advanced = false }: { roomId?: string; interactive?: boolean; advanced?: boolean }) {
   const [matches, setMatches] = useState<MatchView[]>([]);
+  const [freshness, setFreshness] = useState<FreshnessMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
@@ -47,6 +49,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
               .filter((item): item is MatchView => item !== null)
           : [];
         setMatches(normalized);
+        setFreshness(normalizeFreshness(result.meta?.freshness));
         setVisibleCount(MATCH_BATCH_SIZE);
         setError("");
       } catch (reason) {
@@ -69,7 +72,13 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
       <button onClick={() => { setLoading(true); setError(""); setRetry((value) => value + 1); }} className={BTN_OUTLINE}>重试</button>
     } />;
   }
-  if (!matches.length) return <Empty title="目前没有可显示的比赛" text="同步完成后，目标赛事会出现在这里。" />;
+  if (!matches.length) {
+    const emptyNotice = freshnessNotice({ freshness, matches, now: new Date() });
+    const nextLine = emptyNotice?.nextMatch
+      ? `下一场比赛：${formatKickoff(emptyNotice.nextMatch.kickoffAt)}${emptyNotice.nextMatch.competitionName ? ` · ${emptyNotice.nextMatch.competitionName}` : ""}。`
+      : "";
+    return <Empty title="目前没有可显示的比赛" text={`同步完成后，目标赛事会出现在这里。${nextLine}`} />;
+  }
 
   const competitions = [...new Set(matches.map((match) => match.competitionName))]
     .sort((left, right) => left.localeCompare(right, "zh-CN"));
@@ -79,6 +88,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
   const groups = groupMatches(page.items);
   const summary = summarizeMatches(filtered);
   const notice = datasetNotice(matches);
+  const supplierNotice = freshnessNotice({ freshness, matches, now: new Date() });
   const newestDataAsOf = matches
     .map((match) => match.dataAsOf)
     .filter((value): value is string => Boolean(value))
@@ -93,12 +103,19 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
     resetBatch();
   };
 
-  return <div>
+  // min-w-0: rendered as a grid item; the league-chip rail scrolls internally
+  // (overflow-x-auto) instead of widening the whole page on narrow screens.
+  return <div className="min-w-0">
     <section className="night mb-6 flex items-start gap-3 rounded-xl px-5 py-4" aria-label="当前比赛数据说明" data-pulse-reveal>
       <SportGlyph sport="FOOTBALL" className="mt-0.5 size-5 shrink-0 text-[var(--pulse-red)]" />
       <div>
         <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white/70">足球数据 · 产品缓存</p>
         <p className="mt-1 text-sm leading-6 text-white/70">比赛、开球时间与赛果只展示已配置供应商写入的真实缓存；当前没有未来可预测比赛时，只保留历史记录，不编造赛程或赔率。平台固定倍率会明确标注为虚拟积分规则。</p>
+        {supplierNotice && <div className="mt-2 space-y-1 text-sm leading-6">
+          {supplierNotice.lastCapturedAt && <p className="text-white/70">最新缓存时间 {new Date(supplierNotice.lastCapturedAt).toLocaleString("zh-CN")}</p>}
+          {supplierNotice.nextMatch && <p className="text-white/70">当前没有进行中的赛事，下一场比赛：{formatKickoff(supplierNotice.nextMatch.kickoffAt)}{supplierNotice.nextMatch.competitionName ? ` · ${supplierNotice.nextMatch.competitionName}` : ""}</p>}
+          {supplierNotice.stale && <p className="font-bold text-[var(--amber)]">供应商数据已超过 48 小时未更新</p>}
+        </div>}
       </div>
     </section>
     {notice && <section className="mb-6 rounded-xl border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
@@ -118,7 +135,8 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
           >{label}</button>)}
         </div>
       </fieldset>
-      <fieldset className="mb-4">
+      {/* fieldset defaults to min-width:min-content — min-w-0 lets the chip rail scroll */}
+      <fieldset className="mb-4 min-w-0">
         <legend className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">联赛分类</legend>
         <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="按联赛筛选比赛">
           {[{ value: "", label: `全部联赛（${competitions.length}）` }, ...competitions.map((name) => ({ value: name, label: name }))].map((option) => <button
@@ -198,6 +216,10 @@ const BTN_OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-fu
 
 function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
+}
+
+function formatKickoff(value: string) {
+  return new Date(value).toLocaleString("zh-CN", { month: "long", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
 }
 
 function Empty({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {

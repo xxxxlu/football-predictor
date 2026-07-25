@@ -35,7 +35,21 @@ export interface MatchSnapshotRepository {
   getSyncState(matchId: string): Promise<SyncState>;
   /** Optional bulk projection used by list reads; avoids one query fan-out per fixture. */
   listViewData?(): Promise<MatchViewData[]>;
+  /** Optional aggregate over the fixture cache used for freshness metadata on list reads. */
+  getFreshness?(): Promise<SupplierFreshness>;
   claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean>;
+}
+
+export interface SupplierFreshness {
+  /** Newest captured_at across all cached fixtures, or null when the cache is empty. */
+  lastCapturedAt: string | null;
+  /** Kickoff of the next future SCHEDULED fixture, or null when none exists. */
+  nextKickoffAt: string | null;
+  /** Competition name of that next fixture, or null when none exists. */
+  nextKickoffCompetition: string | null;
+  upcomingCount: number;
+  liveCount: number;
+  finishedRecentCount: number;
 }
 
 export interface MatchViewData {
@@ -91,7 +105,8 @@ export interface RealOddsQuote {
 }
 
 export interface RealOddsClient {
-  fetchWorldCupOdds(): Promise<RealOddsQuote[]>;
+  fetchOdds(sportKey: string): Promise<RealOddsQuote[]>;
+  fetchWorldCupOdds?(): Promise<RealOddsQuote[]>;
 }
 
 function validDate(value: string | undefined, fallback: Date): string {
@@ -111,7 +126,11 @@ export class OpenLigaDbClient {
   }
 
   async fetchWorldCup2026(): Promise<FixtureSnapshot[]> {
-    const response = await this.fetcher(`${this.baseUrl}/getmatchdata/wm26/2026`, {
+    return this.fetchLeague("wm26", 2026);
+  }
+
+  async fetchLeague(shortcut: string, season: number): Promise<FixtureSnapshot[]> {
+    const response = await this.fetcher(`${this.baseUrl}/getmatchdata/${encodeURIComponent(shortcut)}/${season}`, {
       method: "GET",
       headers: { accept: "application/json" },
       signal: AbortSignal.timeout(6_000),
@@ -212,7 +231,11 @@ export class TheOddsApiClient implements RealOddsClient {
   }
 
   async fetchWorldCupOdds(): Promise<RealOddsQuote[]> {
-    const url = new URL(`${this.baseUrl}/sports/soccer_fifa_world_cup/odds`);
+    return this.fetchOdds("soccer_fifa_world_cup");
+  }
+
+  async fetchOdds(sportKey: string): Promise<RealOddsQuote[]> {
+    const url = new URL(`${this.baseUrl}/sports/${encodeURIComponent(sportKey)}/odds`);
     url.searchParams.set("apiKey", this.apiKey);
     url.searchParams.set("regions", "eu");
     url.searchParams.set("markets", "h2h");
@@ -267,55 +290,119 @@ function correctScoreMarket(fixture: FixtureSnapshot, now: Date): OddsSnapshot {
   };
 }
 
-export class OpenLigaDbWorldCupSync {
+export interface SyncCompetition {
+  /** OpenLigaDB league shortcut, e.g. "wm26" or "bl1". */
+  shortcut: string;
+  /** OpenLigaDB season, e.g. 2026 for the 2026/27 season. */
+  season: number;
+  /** The-Odds-API sport key for real 1X2 odds. Omit for competitions without a reliable market (platform odds only). */
+  oddsSportKey?: string;
+}
+
+/** Historical default: the sync originally covered only the FIFA World Cup 2026. */
+export const DEFAULT_SYNC_COMPETITIONS: readonly SyncCompetition[] = [
+  { shortcut: "wm26", season: 2026, oddsSportKey: "soccer_fifa_world_cup" },
+];
+
+export interface CompetitionSyncResult {
+  fixturesSynced: number;
+  marketsSynced: number;
+  oddsRequestMade: boolean;
+  /** Fixture count per successfully fetched competition, keyed by "<shortcut>/<season>". */
+  fixturesByCompetition: Record<string, number>;
+  /** Number of per-competition fixture fetches (or per-sport odds fetches) that failed and were skipped. */
+  fetchErrorCount: number;
+}
+
+export class OpenLigaDbCompetitionSync {
   private readonly repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">;
   private readonly client: OpenLigaDbClient;
   private readonly oddsClient: RealOddsClient | undefined;
+  private readonly competitions: readonly SyncCompetition[];
   private readonly now: () => Date;
 
-  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; now?: () => Date }) {
+  constructor(input: { repository: Pick<MatchSnapshotRepository, "saveFixtures" | "saveOdds" | "getOdds" | "getCorrectScoreOdds" | "claimExternalSync">; client?: OpenLigaDbClient; oddsClient?: RealOddsClient; competitions?: SyncCompetition[]; now?: () => Date }) {
     this.repository = input.repository;
     this.client = input.client ?? new OpenLigaDbClient();
     this.oddsClient = input.oddsClient;
+    this.competitions = input.competitions?.length ? input.competitions : DEFAULT_SYNC_COMPETITIONS;
     this.now = input.now ?? (() => new Date());
   }
 
-  async run(): Promise<{ fixturesSynced: number; marketsSynced: number; oddsRequestMade: boolean }> {
+  async run(): Promise<CompetitionSyncResult> {
     const now = this.now();
-    const fixtures = await this.client.fetchWorldCup2026();
-    await this.repository.saveFixtures(fixtures);
-    const upcoming = fixtures.filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now);
+    const fixturesByCompetition: Record<string, number> = {};
+    let fetchErrorCount = 0;
+    const fetched: Array<{ competition: SyncCompetition; fixtures: FixtureSnapshot[] }> = [];
+    for (const competition of this.competitions) {
+      try {
+        const fixtures = await this.client.fetchLeague(competition.shortcut, competition.season);
+        fixturesByCompetition[`${competition.shortcut}/${competition.season}`] = fixtures.length;
+        fetched.push({ competition, fixtures });
+      } catch {
+        // One dead league must not kill the whole sync; count it and continue.
+        fetchErrorCount += 1;
+      }
+    }
+    if (fetched.length === 0 && fetchErrorCount > 0) {
+      throw new Error(`OpenLigaDB sync failed: all ${fetchErrorCount} competition fetches failed`);
+    }
+    const allFixtures = fetched.flatMap((entry) => entry.fixtures);
+    await this.repository.saveFixtures(allFixtures);
+    const isUpcoming = (fixture: FixtureSnapshot) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now;
+    const upcoming = allFixtures.filter(isUpcoming);
     if (!this.oddsClient) {
       for (const fixture of upcoming) {
         await this.repository.saveOdds(platformPredictionMarket(fixture, now));
         if (!(await this.repository.getCorrectScoreOdds(fixture.id))) await this.repository.saveOdds(correctScoreMarket(fixture, now));
       }
-      return { fixturesSynced: fixtures.length, marketsSynced: upcoming.length, oddsRequestMade: false };
+      return { fixturesSynced: allFixtures.length, marketsSynced: upcoming.length, oddsRequestMade: false, fixturesByCompetition, fetchErrorCount };
     }
     for (const fixture of upcoming) {
       if (!(await this.repository.getOdds(fixture.id))) await this.repository.saveOdds(platformPredictionMarket(fixture, now));
       if (!(await this.repository.getCorrectScoreOdds(fixture.id))) await this.repository.saveOdds(correctScoreMarket(fixture, now));
     }
-    if (upcoming.length === 0 || !(await this.repository.claimExternalSync("the-odds-api:world-cup:h2h:eu", now, REAL_ODDS_SYNC_INTERVAL_MS))) {
-      return { fixturesSynced: fixtures.length, marketsSynced: 0, oddsRequestMade: false };
+    // Fetch real odds once per distinct sport key, matched only against the upcoming fixtures of that key's competitions.
+    const upcomingBySportKey = new Map<string, FixtureSnapshot[]>();
+    for (const entry of fetched) {
+      const sportKey = entry.competition.oddsSportKey;
+      if (!sportKey) continue;
+      const upcomingFixtures = entry.fixtures.filter(isUpcoming);
+      if (upcomingFixtures.length === 0) continue;
+      upcomingBySportKey.set(sportKey, [...(upcomingBySportKey.get(sportKey) ?? []), ...upcomingFixtures]);
     }
-    const quotes = await this.oddsClient.fetchWorldCupOdds();
     let marketsSynced = 0;
-    for (const fixture of upcoming) {
-      const quote = quotes.find((candidate) => candidate.homeTeam === fixture.homeTeam.name && candidate.awayTeam === fixture.awayTeam.name && Math.abs(new Date(candidate.commenceTime).getTime() - new Date(fixture.kickoffAt).getTime()) <= 3 * 60 * 60_000);
-      if (!quote) continue;
-      const capturedAt = now.toISOString();
-      const marketWithoutVersion = {
-        productMarketId: `${fixture.id}:bookmaker:${quote.bookmakerId}:market:1`, fixtureId: fixture.id, supplier: "THE_ODDS_API" as const,
-        supplierFixtureId: fixture.supplierFixtureId, bookmakerId: quote.bookmakerId, bookmakerName: quote.bookmakerName, marketId: 1,
-        marketName: "胜平负真实赔率", dataAsOf: quote.dataAsOf, capturedAt, outcomes: quote.outcomes,
-      };
-      await this.repository.saveOdds({ ...marketWithoutVersion, version: etagOf(marketWithoutVersion).slice(1, -1) });
-      marketsSynced += 1;
+    let oddsRequestMade = false;
+    for (const [sportKey, sportUpcoming] of upcomingBySportKey) {
+      if (!(await this.repository.claimExternalSync(`the-odds-api:${sportKey}:h2h:eu`, now, REAL_ODDS_SYNC_INTERVAL_MS))) continue;
+      let quotes: RealOddsQuote[];
+      try {
+        quotes = await this.oddsClient.fetchOdds(sportKey);
+        oddsRequestMade = true;
+      } catch {
+        fetchErrorCount += 1;
+        continue;
+      }
+      for (const fixture of sportUpcoming) {
+        const quote = quotes.find((candidate) => candidate.homeTeam === fixture.homeTeam.name && candidate.awayTeam === fixture.awayTeam.name && Math.abs(new Date(candidate.commenceTime).getTime() - new Date(fixture.kickoffAt).getTime()) <= 3 * 60 * 60_000);
+        if (!quote) continue;
+        const capturedAt = now.toISOString();
+        const marketWithoutVersion = {
+          productMarketId: `${fixture.id}:bookmaker:${quote.bookmakerId}:market:1`, fixtureId: fixture.id, supplier: "THE_ODDS_API" as const,
+          supplierFixtureId: fixture.supplierFixtureId, bookmakerId: quote.bookmakerId, bookmakerName: quote.bookmakerName, marketId: 1,
+          marketName: "胜平负真实赔率", dataAsOf: quote.dataAsOf, capturedAt, outcomes: quote.outcomes,
+        };
+        await this.repository.saveOdds({ ...marketWithoutVersion, version: etagOf(marketWithoutVersion).slice(1, -1) });
+        marketsSynced += 1;
+      }
     }
-    return { fixturesSynced: fixtures.length, marketsSynced, oddsRequestMade: true };
+    return { fixturesSynced: allFixtures.length, marketsSynced, oddsRequestMade, fixturesByCompetition, fetchErrorCount };
   }
 }
+
+/** Back-compat alias: the sync used to be World Cup 2026 only. */
+export const OpenLigaDbWorldCupSync = OpenLigaDbCompetitionSync;
+export type OpenLigaDbWorldCupSync = OpenLigaDbCompetitionSync;
 
 export class SupplierSyncError extends Error {
   constructor(readonly code: "SUPPLIER_BUDGET_EXHAUSTED" | "SUPPLIER_DATA_UNAVAILABLE", message: string) {
@@ -331,6 +418,27 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   private lineups = new Map<string, import("@football-predictor/domain").LineupSnapshot>();
   private syncStates = new Map<string, SyncState>();
   private externalSyncs = new Map<string, number>();
+  private readonly now: () => Date;
+
+  constructor(input: { now?: () => Date } = {}) { this.now = input.now ?? (() => new Date()); }
+
+  async getFreshness(): Promise<SupplierFreshness> {
+    const now = this.now();
+    const fixtures = [...this.fixtures.values()];
+    const upcoming = fixtures
+      .filter((fixture) => fixture.status === "SCHEDULED" && new Date(fixture.kickoffAt) > now)
+      .sort((a, b) => a.kickoffAt.localeCompare(b.kickoffAt));
+    const next = upcoming[0] ?? null;
+    const finishedCutoff = now.getTime() - 14 * 24 * 60 * 60_000;
+    return {
+      lastCapturedAt: fixtures.map((fixture) => fixture.capturedAt).sort().at(-1) ?? null,
+      nextKickoffAt: next?.kickoffAt ?? null,
+      nextKickoffCompetition: next?.competitionName ?? null,
+      upcomingCount: upcoming.length,
+      liveCount: fixtures.filter((fixture) => fixture.status === "LIVE").length,
+      finishedRecentCount: fixtures.filter((fixture) => fixture.status === "FINISHED" && new Date(fixture.kickoffAt).getTime() >= finishedCutoff).length,
+    };
+  }
 
   async saveFixtures(fixtures: FixtureSnapshot[]): Promise<void> { for (const fixture of fixtures) this.fixtures.set(fixture.id, structuredClone(fixture)); }
   async saveOdds(odds: OddsSnapshot): Promise<void> { this.odds.set(`${odds.fixtureId}:${odds.marketId}`, structuredClone(odds)); }

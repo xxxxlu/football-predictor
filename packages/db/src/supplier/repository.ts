@@ -290,6 +290,54 @@ export class PostgresMatchSnapshotRepository {
   }
 
   /**
+   * SQL-side kickoff window for the bulk list read model only. Full-season
+   * competition syncs put ~1000 future fixtures in supplier.fixtures, and the
+   * unbounded list read already took 35-80s at 228 rows on the hosted
+   * database. Single-fixture reads (getFixture/getOdds/...) stay unbounded.
+   */
+  static readonly LIST_WINDOW_PAST_DAYS = 14;
+  static readonly LIST_WINDOW_FUTURE_DAYS = 60;
+
+  private async listFixturesInListWindow(): Promise<FixtureSnapshotRecord[]> {
+    const rows = await this.sql<FixtureRow[]>`SELECT id,supplier,supplier_fixture_id AS "supplierFixtureId",competition_id AS "competitionId",
+      competition_name AS "competitionName",season,kickoff_at AS "kickoffAt",status,home_team_id AS "homeTeamId",home_team_name AS "homeTeamName",
+      away_team_id AS "awayTeamId",away_team_name AS "awayTeamName",current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",
+      result_confirmed AS "resultConfirmed",home_score AS "homeScore",away_score AS "awayScore",result_version AS "resultVersion",latest_market."oddsDataAsOf"
+      FROM supplier.fixtures
+      LEFT JOIN LATERAL (SELECT data_as_of AS "oddsDataAsOf" FROM supplier.markets WHERE fixture_id=supplier.fixtures.id ORDER BY data_as_of DESC LIMIT 1) latest_market ON true
+      WHERE kickoff_at BETWEEN now() - make_interval(days => ${PostgresMatchSnapshotRepository.LIST_WINDOW_PAST_DAYS}) AND now() + make_interval(days => ${PostgresMatchSnapshotRepository.LIST_WINDOW_FUTURE_DAYS})
+      ORDER BY kickoff_at,id`;
+    return rows.map(mapFixture);
+  }
+
+  /**
+   * Aggregate freshness metadata for the fixture cache in a single SQL pass.
+   * Powers the "how stale is this data" banner on the match list without
+   * shipping every fixture row to the client.
+   */
+  async getFreshness(): Promise<{ lastCapturedAt: string | null; nextKickoffAt: string | null; nextKickoffCompetition: string | null; upcomingCount: number; liveCount: number; finishedRecentCount: number }> {
+    const [row] = await this.sql<Array<{
+      lastCapturedAt: Date | string | null; nextKickoffAt: Date | string | null; nextKickoffCompetition: string | null;
+      upcomingCount: string | number; liveCount: string | number; finishedRecentCount: string | number;
+    }>>`SELECT
+        max(captured_at) AS "lastCapturedAt",
+        count(*) FILTER (WHERE status='SCHEDULED' AND kickoff_at > now()) AS "upcomingCount",
+        count(*) FILTER (WHERE status='LIVE') AS "liveCount",
+        count(*) FILTER (WHERE status='FINISHED' AND kickoff_at >= now() - interval '14 days') AS "finishedRecentCount",
+        (SELECT kickoff_at FROM supplier.fixtures WHERE status='SCHEDULED' AND kickoff_at > now() ORDER BY kickoff_at LIMIT 1) AS "nextKickoffAt",
+        (SELECT competition_name FROM supplier.fixtures WHERE status='SCHEDULED' AND kickoff_at > now() ORDER BY kickoff_at LIMIT 1) AS "nextKickoffCompetition"
+      FROM supplier.fixtures`;
+    return {
+      lastCapturedAt: row?.lastCapturedAt ? isoTimestamp(row.lastCapturedAt) : null,
+      nextKickoffAt: row?.nextKickoffAt ? isoTimestamp(row.nextKickoffAt) : null,
+      nextKickoffCompetition: row?.nextKickoffCompetition ?? null,
+      upcomingCount: Number(row?.upcomingCount ?? 0),
+      liveCount: Number(row?.liveCount ?? 0),
+      finishedRecentCount: Number(row?.finishedRecentCount ?? 0),
+    };
+  }
+
+  /**
    * Bulk read model for the match list. The previous implementation made up to
    * five database round trips per fixture, which turned the 228-match history
    * into a request timeout on the production function. Keep detail reads
@@ -297,7 +345,7 @@ export class PostgresMatchSnapshotRepository {
    */
   async listViewData() {
     const [fixtures, marketRows, liveRows, lineupRows, syncRows] = await Promise.all([
-      this.listFixtures(),
+      this.listFixturesInListWindow(),
       this.sql<OddsRow[]>`SELECT id AS "productMarketId",fixture_id AS "fixtureId",supplier,supplier_fixture_id AS "supplierFixtureId",
         bookmaker_id AS "bookmakerId",bookmaker_name AS "bookmakerName",supplier_market_id AS "supplierMarketId",market_name AS "marketName",
         current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",outcomes

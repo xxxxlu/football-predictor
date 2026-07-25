@@ -1,4 +1,4 @@
-import type { MatchView } from "./types.js";
+import type { FreshnessMeta, MatchView } from "./types.js";
 
 export type MatchStatusFilter = "ALL" | "PREDICTABLE" | "FINISHED";
 export type MatchFilter = { competition?: string; date?: string; timeZone?: string; status?: MatchStatusFilter };
@@ -73,6 +73,34 @@ export function matchAvailability(match: MatchView) {
 
 export function summarizeMatches(matches: MatchView[]) {
   return { total: matches.length, open: matches.filter((match) => matchAvailability(match).predictable).length, finished: matches.filter((match) => match.state === "FINISHED").length, stale: matches.filter((match) => match.stale).length };
+}
+
+/** Supplier data older than this is surfaced as a health warning in the banner. */
+export const SUPPLIER_STALE_THRESHOLD_MS = 48 * 60 * 60_000;
+
+export type FreshnessNotice = {
+  /** Valid ISO timestamp of the newest cached fixture, or null when unknown. */
+  lastCapturedAt: string | null;
+  /** True when the supplier cache has not been updated for over 48 hours. */
+  stale: boolean;
+  /** Set only when nothing is live and nothing is predictable but a future kickoff exists. */
+  nextMatch: { kickoffAt: string; competitionName: string | null } | null;
+};
+
+// 纯决策函数：根据真实 freshness 元数据 + 当前列表决定横幅要展示哪些行，不产出任何编造数据。
+export function freshnessNotice(input: { freshness: FreshnessMeta | null | undefined; matches: MatchView[]; now: Date }): FreshnessNotice | null {
+  const { freshness, matches, now } = input;
+  if (!freshness) return null;
+  const capturedTime = freshness.lastCapturedAt ? new Date(freshness.lastCapturedAt).getTime() : Number.NaN;
+  const lastCapturedAt = Number.isFinite(capturedTime) ? freshness.lastCapturedAt : null;
+  const stale = lastCapturedAt !== null && now.getTime() - capturedTime > SUPPLIER_STALE_THRESHOLD_MS;
+  const nothingLive = freshness.liveCount === 0;
+  const nothingPredictable = !matches.some((match) => matchAvailability(match).predictable);
+  const kickoffTime = freshness.nextKickoffAt ? new Date(freshness.nextKickoffAt).getTime() : Number.NaN;
+  const nextMatch = nothingLive && nothingPredictable && freshness.nextKickoffAt && Number.isFinite(kickoffTime)
+    ? { kickoffAt: freshness.nextKickoffAt, competitionName: freshness.nextKickoffCompetition }
+    : null;
+  return { lastCapturedAt, stale, nextMatch };
 }
 
 export function datasetNotice(matches: MatchView[]) {

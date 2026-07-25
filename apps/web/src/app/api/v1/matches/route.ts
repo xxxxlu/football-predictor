@@ -4,6 +4,8 @@ import { getMatchApiRuntime, type MatchReadAccess } from "./runtime";
 
 export interface MatchListCachePort {
   list(): Promise<{ views: unknown[]; etag: string }>;
+  /** Optional freshness metadata; responses fall back to null when absent or failing. */
+  freshness?(): Promise<unknown | null>;
 }
 
 function correlationId(request: Request): string {
@@ -20,7 +22,8 @@ export function createMatchesGet(cache: MatchListCachePort, access: MatchReadAcc
       const result = await cache.list();
       const headers = { etag: result.etag, "cache-control": "private, max-age=30", "x-correlation-id": requestId };
       if (request.headers.get("if-none-match") === result.etag) return new Response(null, { status: 304, headers });
-      return Response.json({ data: result.views, meta: { correlationId: requestId, source: "product-cache" } }, { status: 200, headers });
+      const freshness = await cache.freshness?.().catch(() => null) ?? null;
+      return Response.json({ data: result.views, meta: { correlationId: requestId, source: "product-cache", freshness } }, { status: 200, headers });
     } catch {
       return Response.json({ error: { code: "DATA_UNAVAILABLE", message: "Match cache is temporarily unavailable", correlationId: requestId } }, { status: 503, headers: { "cache-control": "no-store", "x-correlation-id": requestId } });
     }

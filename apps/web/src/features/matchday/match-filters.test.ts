@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { datasetNotice, filterMatches, groupMatches, matchAvailability, matchDateKey, paginateMatches, sortMatchesForDisplay, summarizeMatches } from "./match-filters.js";
-import type { MatchView } from "./types.js";
+import { datasetNotice, filterMatches, freshnessNotice, groupMatches, matchAvailability, matchDateKey, paginateMatches, sortMatchesForDisplay, summarizeMatches } from "./match-filters.js";
+import type { FreshnessMeta, MatchView } from "./types.js";
 
 const match = (id: string, competitionName: string, kickoffAt: string, state: MatchView["state"], stale = false): MatchView => ({
   id,
@@ -85,6 +85,36 @@ describe("multi-match filters", () => {
       },
       { name: "La Liga", dates: [{ date: "2026-07-14", ids: ["1"] }] },
     ]);
+  });
+
+  it("decides the freshness banner lines from real metadata only", () => {
+    const now = new Date("2026-07-24T10:00:00Z");
+    const meta = (overrides: Partial<FreshnessMeta> = {}): FreshnessMeta => ({
+      lastCapturedAt: "2026-07-24T08:00:00.000Z", nextKickoffAt: null, nextKickoffCompetition: null,
+      upcomingCount: 0, liveCount: 0, finishedRecentCount: 0, ...overrides,
+    });
+
+    // 1. Fresh data with predictable upcoming matches: capture time only, no "next match" line, no warning.
+    expect(freshnessNotice({ freshness: meta({ upcomingCount: 3, nextKickoffAt: "2026-07-25T12:00:00.000Z", nextKickoffCompetition: "德国足球甲级联赛" }), matches, now }))
+      .toEqual({ lastCapturedAt: "2026-07-24T08:00:00.000Z", stale: false, nextMatch: null });
+
+    // 2. Nothing live or predictable but a future kickoff exists: announce the next match.
+    expect(freshnessNotice({ freshness: meta({ upcomingCount: 1, nextKickoffAt: "2026-08-07T18:30:00.000Z", nextKickoffCompetition: "德国足球甲级联赛" }), matches: [], now }))
+      .toEqual({ lastCapturedAt: "2026-07-24T08:00:00.000Z", stale: false, nextMatch: { kickoffAt: "2026-08-07T18:30:00.000Z", competitionName: "德国足球甲级联赛" } });
+
+    // 3. Supplier cache older than 48 hours: raise the health warning (boundary at exactly 48h stays calm).
+    expect(freshnessNotice({ freshness: meta({ lastCapturedAt: "2026-07-21T10:00:00.000Z" }), matches: [], now })).toMatchObject({ stale: true });
+    expect(freshnessNotice({ freshness: meta({ lastCapturedAt: "2026-07-22T10:00:00.000Z" }), matches: [], now })).toMatchObject({ stale: false });
+
+    // 4. All-finished historical archive with no next kickoff: nothing is invented.
+    const finishedOnly = [match("2", "La Liga", "2026-07-15T12:00:00.000Z", "FINISHED")];
+    expect(freshnessNotice({ freshness: meta({ finishedRecentCount: 1 }), matches: finishedOnly, now }))
+      .toEqual({ lastCapturedAt: "2026-07-24T08:00:00.000Z", stale: false, nextMatch: null });
+
+    // No metadata at all: the banner extension stays hidden.
+    expect(freshnessNotice({ freshness: null, matches, now })).toBeNull();
+    // A live match blocks the "no ongoing competition" line even when nothing is predictable locally.
+    expect(freshnessNotice({ freshness: meta({ liveCount: 1, nextKickoffAt: "2026-08-07T18:30:00.000Z" }), matches: [], now })).toMatchObject({ nextMatch: null });
   });
 
   it("reveals large result sets in deterministic mobile-friendly batches", () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemoryMatchSnapshotRepository, MatchCacheReader, OpenLigaDbClient, OpenLigaDbWorldCupSync, SupplierSyncService, TheOddsApiClient, planNextLiveSync } from "./index.js";
+import { InMemoryMatchSnapshotRepository, MatchCacheReader, OpenLigaDbClient, OpenLigaDbCompetitionSync, OpenLigaDbWorldCupSync, SupplierSyncService, TheOddsApiClient, planNextLiveSync, type RealOddsQuote } from "./index.js";
 import { InMemorySupplierBudget, emptyBudgetState } from "@football-predictor/domain";
 
 const now = new Date("2026-07-13T10:05:00Z");
@@ -18,7 +18,7 @@ describe("supplier synchronization", () => {
     const oddsClient = new TheOddsApiClient({ apiKey: "test-key", fetcher: async () => Response.json(oddsPayload), now: () => new Date("2026-07-14T10:00:00Z") });
     const sync = new OpenLigaDbWorldCupSync({ repository, client, oddsClient, now: () => new Date("2026-07-14T10:00:00Z") });
 
-    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1, oddsRequestMade: true });
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1, oddsRequestMade: true, fixturesByCompetition: { "wm26/2026": 1 }, fetchErrorCount: 0 });
     await expect(repository.getOdds("openligadb:7001")).resolves.toMatchObject({
       supplier: "THE_ODDS_API", bookmakerName: "Real Book", marketName: "胜平负真实赔率", dataAsOf: "2026-07-14T09:58:00.000Z",
       outcomes: [{ selection: "HOME", decimalOdds: "2.25" }, { selection: "DRAW", decimalOdds: "3.20" }, { selection: "AWAY", decimalOdds: "3.05" }],
@@ -52,7 +52,7 @@ describe("supplier synchronization", () => {
     const client = new OpenLigaDbClient({ fetcher: async () => Response.json(source), now: () => new Date("2026-07-14T10:00:00Z") });
     const sync = new OpenLigaDbWorldCupSync({ repository, client, now: () => new Date("2026-07-14T10:00:00Z") });
 
-    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1, oddsRequestMade: false });
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1, oddsRequestMade: false, fixturesByCompetition: { "wm26/2026": 1 }, fetchErrorCount: 0 });
     expect(await repository.getFixture("openligadb:7001")).toMatchObject({ supplier: "OPENLIGADB", competitionName: "世界杯", homeTeam: { name: "法国" }, awayTeam: { name: "西班牙" } });
     const market = await repository.getOdds("openligadb:7001");
     expect(market).toMatchObject({ supplier: "PLATFORM", bookmakerName: "平台固定虚拟积分", marketName: "胜平负固定积分倍率" });
@@ -65,9 +65,95 @@ describe("supplier synchronization", () => {
     const client = new OpenLigaDbClient({ fetcher: async () => Response.json([match(1, "2026-06-11T19:00:00Z", true), match(2, "2026-07-14T08:00:00Z", true), match(3, "2026-07-15T19:00:00Z", false)]), now: () => new Date("2026-07-14T10:00:00Z") });
     const sync = new OpenLigaDbWorldCupSync({ repository, client, now: () => new Date("2026-07-14T10:00:00Z") });
 
-    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 3, marketsSynced: 1, oddsRequestMade: false });
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 3, marketsSynced: 1, oddsRequestMade: false, fixturesByCompetition: { "wm26/2026": 3 }, fetchErrorCount: 0 });
     expect(await repository.getFixture("openligadb:1")).toMatchObject({ status: "FINISHED", result: { confirmed: true } });
     expect(await repository.getFixture("openligadb:2")).toMatchObject({ status: "FINISHED", result: { confirmed: true, homeScore: 1, awayScore: 2 } });
+  });
+
+  it("fetches an arbitrary OpenLigaDB league with a URL-encoded shortcut", async () => {
+    const urls: string[] = [];
+    const client = new OpenLigaDbClient({ fetcher: async (input) => { urls.push(String(input)); return Response.json([]); }, now: () => new Date("2026-07-24T10:00:00Z") });
+    await expect(client.fetchLeague("bl1", 2026)).resolves.toEqual([]);
+    await expect(client.fetchLeague("BLSupercup/..", 2026)).resolves.toEqual([]);
+    await client.fetchWorldCup2026();
+    expect(urls).toEqual([
+      "https://api.openligadb.de/getmatchdata/bl1/2026",
+      "https://api.openligadb.de/getmatchdata/BLSupercup%2F../2026",
+      "https://api.openligadb.de/getmatchdata/wm26/2026",
+    ]);
+  });
+
+  it("continues past a dead league, counts the failure, and reports per-competition fixture counts", async () => {
+    const source = (matchID: number, shortcut: string, leagueName: string) => ({ matchID, leagueId: 4711, leagueName, leagueSeason: 2026, leagueShortcut: shortcut, matchDateTimeUTC: "2026-08-28T18:30:00Z", lastUpdateDateTime: "2026-07-24T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: "FC Bayern München" }, team2: { teamId: 20, teamName: "RB Leipzig" }, matchResults: [] });
+    const repository = new InMemoryMatchSnapshotRepository();
+    const client = new OpenLigaDbClient({ fetcher: async (input) => String(input).includes("/dfb/") ? new Response("boom", { status: 500 }) : Response.json([source(9001, "bl1", "1. Fußball-Bundesliga")]), now: () => new Date("2026-07-24T10:00:00Z") });
+    const sync = new OpenLigaDbCompetitionSync({ repository, client, competitions: [{ shortcut: "bl1", season: 2026 }, { shortcut: "dfb", season: 2026 }], now: () => new Date("2026-07-24T10:00:00Z") });
+
+    await expect(sync.run()).resolves.toEqual({ fixturesSynced: 1, marketsSynced: 1, oddsRequestMade: false, fixturesByCompetition: { "bl1/2026": 1 }, fetchErrorCount: 1 });
+    expect(await repository.getFixture("openligadb:9001")).toMatchObject({ supplier: "OPENLIGADB", status: "SCHEDULED" });
+    expect(await repository.getOdds("openligadb:9001")).toMatchObject({ supplier: "PLATFORM" });
+  });
+
+  it("throws when every configured competition fetch fails", async () => {
+    const repository = new InMemoryMatchSnapshotRepository();
+    const client = new OpenLigaDbClient({ fetcher: async () => new Response("down", { status: 503 }) });
+    const sync = new OpenLigaDbCompetitionSync({ repository, client, competitions: [{ shortcut: "bl1", season: 2026 }, { shortcut: "bl2", season: 2026 }] });
+
+    await expect(sync.run()).rejects.toThrow("all 2 competition fetches failed");
+  });
+
+  it("fetches real odds once per distinct sport key and matches quotes only within that competition", async () => {
+    const now = () => new Date("2026-07-24T10:00:00Z");
+    const match = (matchID: number, shortcut: string, leagueName: string, home: string, away: string, kickoff: string) => ({ matchID, leagueId: 4711, leagueName, leagueSeason: 2026, leagueShortcut: shortcut, matchDateTimeUTC: kickoff, lastUpdateDateTime: "2026-07-24T09:00:00Z", matchIsFinished: false, team1: { teamId: 10, teamName: home }, team2: { teamId: 20, teamName: away }, matchResults: [] });
+    const bySlug: Record<string, unknown[]> = {
+      "/bl1/": [match(9001, "bl1", "1. Fußball-Bundesliga", "Werder Bremen", "1. FC Union Berlin", "2026-08-28T18:30:00Z")],
+      "/bl2/": [match(9002, "bl2", "2. Fußball-Bundesliga", "Hertha BSC", "SC Paderborn 07", "2026-08-28T18:30:00Z")],
+      "/dfb/": [match(9003, "dfb", "DFB-Pokal", "FC St. Pauli", "Holstein Kiel", "2026-08-21T18:45:00Z")],
+    };
+    const repository = new InMemoryMatchSnapshotRepository();
+    const client = new OpenLigaDbClient({ fetcher: async (input) => Response.json(bySlug[Object.keys(bySlug).find((slug) => String(input).includes(slug)) ?? ""] ?? []), now });
+    const fetchedKeys: string[] = [];
+    const quote = (home: string, away: string): RealOddsQuote => ({ eventId: `${home}-${away}`, commenceTime: "2026-08-28T18:30:00Z", homeTeam: home, awayTeam: away, bookmakerId: 7, bookmakerName: "Real Book", dataAsOf: "2026-07-24T09:59:00.000Z", outcomes: [{ selection: "HOME", supplierLabel: home, decimalOdds: "2.10" }, { selection: "DRAW", supplierLabel: "Draw", decimalOdds: "3.30" }, { selection: "AWAY", supplierLabel: away, decimalOdds: "3.60" }] });
+    const oddsClient = { fetchOdds: async (sportKey: string) => { fetchedKeys.push(sportKey); return sportKey === "soccer_germany_bundesliga" ? [quote("Werder Bremen", "1. FC Union Berlin")] : [quote("Hertha BSC", "SC Paderborn 07")]; } };
+    const sync = new OpenLigaDbCompetitionSync({
+      repository, client, oddsClient, now,
+      competitions: [
+        { shortcut: "bl1", season: 2026, oddsSportKey: "soccer_germany_bundesliga" },
+        { shortcut: "bl2", season: 2026, oddsSportKey: "soccer_germany_bundesliga2" },
+        { shortcut: "dfb", season: 2026 },
+      ],
+    });
+
+    const result = await sync.run();
+
+    expect(fetchedKeys.sort()).toEqual(["soccer_germany_bundesliga", "soccer_germany_bundesliga2"]);
+    expect(result).toMatchObject({ fixturesSynced: 3, oddsRequestMade: true, fetchErrorCount: 0, fixturesByCompetition: { "bl1/2026": 1, "bl2/2026": 1, "dfb/2026": 1 } });
+    await expect(repository.getOdds("openligadb:9001")).resolves.toMatchObject({ supplier: "THE_ODDS_API", bookmakerName: "Real Book" });
+    await expect(repository.getOdds("openligadb:9002")).resolves.toMatchObject({ supplier: "THE_ODDS_API" });
+    // The cup has no odds sport key: platform-labelled virtual odds only, never a real-bookmaker market.
+    await expect(repository.getOdds("openligadb:9003")).resolves.toMatchObject({ supplier: "PLATFORM" });
+  });
+
+  it("aggregates cache freshness from stored fixtures without inventing data", async () => {
+    const repository = new InMemoryMatchSnapshotRepository({ now: () => new Date("2026-07-24T10:00:00Z") });
+    const stored = (id: string, status: "SCHEDULED" | "LIVE" | "FINISHED", kickoffAt: string, capturedAt: string, competitionName: string) =>
+      ({ ...fixture, id, status, kickoffAt, capturedAt, competitionName });
+    await repository.saveFixtures([
+      stored("openligadb:1", "FINISHED", "2026-06-11T19:00:00.000Z", "2026-07-20T10:00:00.000Z", "世界杯"),
+      stored("openligadb:2", "FINISHED", "2026-07-19T19:00:00.000Z", "2026-07-20T10:00:00.000Z", "世界杯"),
+      stored("openligadb:3", "LIVE", "2026-07-24T09:00:00.000Z", "2026-07-24T09:30:00.000Z", "德国足球乙级联赛"),
+      stored("openligadb:4", "SCHEDULED", "2026-08-07T18:30:00.000Z", "2026-07-24T09:30:00.000Z", "德国足球乙级联赛"),
+      stored("openligadb:5", "SCHEDULED", "2026-08-28T18:30:00.000Z", "2026-07-24T09:30:00.000Z", "德国足球甲级联赛"),
+    ]);
+
+    await expect(repository.getFreshness()).resolves.toEqual({
+      lastCapturedAt: "2026-07-24T09:30:00.000Z",
+      nextKickoffAt: "2026-08-07T18:30:00.000Z",
+      nextKickoffCompetition: "德国足球乙级联赛",
+      upcomingCount: 2,
+      liveCount: 1,
+      finishedRecentCount: 1,
+    });
   });
 
   it("charges the budget before fetching and version-saves fixture snapshots", async () => {

@@ -13,6 +13,32 @@ export type MatchView = {
 export type BalanceView = { availablePoints: string; frozenPoints: string; correctionDebt?: string };
 export type ApiEnvelope<T> = { data: T; meta?: Record<string, unknown> };
 export type ApiFailure = { error?: { code?: string; message?: string; correlationId?: string } };
+export type FreshnessMeta = {
+  lastCapturedAt: string | null;
+  nextKickoffAt: string | null;
+  nextKickoffCompetition: string | null;
+  upcomingCount: number;
+  liveCount: number;
+  finishedRecentCount: number;
+};
+
+// meta.freshness 载荷 → FreshnessMeta；缺失或形状不对时返回 null，不猜测任何数据。
+export function normalizeFreshness(value: unknown): FreshnessMeta | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Record<string, unknown>;
+  const isoOrNull = (candidate: unknown): string | null =>
+    typeof candidate === "string" && Number.isFinite(new Date(candidate).getTime()) ? candidate : null;
+  const count = (candidate: unknown): number =>
+    typeof candidate === "number" && Number.isFinite(candidate) && candidate >= 0 ? candidate : 0;
+  return {
+    lastCapturedAt: isoOrNull(raw.lastCapturedAt),
+    nextKickoffAt: isoOrNull(raw.nextKickoffAt),
+    nextKickoffCompetition: typeof raw.nextKickoffCompetition === "string" && raw.nextKickoffCompetition.trim() ? raw.nextKickoffCompetition : null,
+    upcomingCount: count(raw.upcomingCount),
+    liveCount: count(raw.liveCount),
+    finishedRecentCount: count(raw.finishedRecentCount),
+  };
+}
 
 type ProductMarket = { id?: string | null; marketStatus?: string; dataState?: string; dataAsOf?: string; odds?: unknown; trace?: { marketId?: string | number | null; oddsVersion?: string | null } };
 type ProductMatch = {
