@@ -69,6 +69,21 @@ pnpm build
 - `GET /api/health/live`: process liveness only; never calls databases or suppliers.
 - `GET /api/health/ready`: validates dependencies introduced so far (currently runtime configuration); returns 503 when unready and never calls API-FOOTBALL.
 
+## Deployment and scheduled operations
+
+Production runs on Tencent CloudBase function-style hosting; the release
+procedure, verification steps and known failure modes are in
+[`docs/runbooks/cloudbase-production-deploy.md`](docs/runbooks/cloudbase-production-deploy.md).
+`render.yaml` and `vercel.json` are unused alternatives kept for portability.
+
+No resident worker runs in production. `.github/workflows/supplier-sync.yml` is
+the only production automation: every two hours it applies migrations, imports
+official F1 session results, refreshes football fixtures and odds, closes the
+markets of started F1 sessions, and settles every ticket whose result is
+confirmed. The competition list must always name a live season — a finished
+competition turns the sweep into a silent no-op that freezes the match list and
+starves settlement.
+
 ## Workspace boundaries
 
 - `apps/web`: Next.js App Router web/PWA and HTTP transport.

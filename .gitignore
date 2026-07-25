@@ -9,6 +9,10 @@ coverage/
 .vercel
 .agents/
 skills-lock.json
+# Browser-verification screenshots and Playwright report output
+apps/web/output/
+playwright-report/
+test-results/
 # Tencent Cloud EdgeOne
 .edgeone/
 .tef_dist/
