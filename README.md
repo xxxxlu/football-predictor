@@ -39,11 +39,25 @@ The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of tr
 
 Authorization is enforced on the server (domain services, repositories and SQL) — never by hiding UI. Room detail, members, balances, ledger, leaderboard and predictions require room membership; there is no super-admin bypass of private-room content. Prediction selections stay hidden from other members until kickoff. The two seeded super-admins can list and disable/restore normal users, moderate reported rooms (restrict/close/restore) and read system health, each sensitive write requiring a fresh same-origin re-authentication proof valid for at most five minutes. Super-admins cannot modify points, delete predictions or ledger entries, read passwords/recovery codes/session tokens, view pre-kickoff selections, or disable/replace another super-admin, and the product cannot mint a third. `GET /api/v1/admin/audit` returns a single time-ordered governance trail consolidated from the account, room and operations audit stores, with secret-bearing metadata redacted. See `docs/reviews/2026-07-15-admin-rbac-audit.md` for the full permission matrix and audit.
 
-## Current real match data
+## Rooms are scoped to one sport
 
-The production match list synchronizes the complete **2026 World Cup** schedule from OpenLigaDB before cache reads (at most once every five minutes per warm server instance). OpenLigaDB needs no API key. Finished, live, and future fixtures remain available in the public match list; users can switch between all, predictable, and finished matches. Current fixtures are shown first, while completed fixtures are ordered newest-first. Competition and World Cup team names are localized to Chinese.
+A room predicts exactly one sport, chosen at creation and immutable afterwards (`FOOTBALL` or `FORMULA_1`, migration `0018`). The server refuses a ticket whose event belongs to the other sport (`ROOM_SPORT_MISMATCH`); legacy mixed rooms keep their history, and the gate applies to new submissions only. Room pages, the lobby and the prediction slips all render only the chosen sport's events.
 
-OpenLigaDB does not provide bookmaker odds. To keep the non-cash prediction flow testable without fabricating betting data, upcoming matches receive a clearly labeled platform rule: fixed virtual-points multiplier `3.00` for home/draw/away. Kickoff times and results remain supplier data and are never invented. If the community source is temporarily unavailable, reads degrade to the latest database cache.
+## Current real football data
+
+The football feed synchronizes the **German 2026/27 competitions** from OpenLigaDB — Bundesliga, 2. Bundesliga, 3. Liga, DFB-Pokal and the Supercup — driven by `OPENLIGADB_COMPETITIONS` (`shortcut:season[:oddsSportKey]`, comma-separated). OpenLigaDB needs no API key. The configured list must always name a live season: a competition that has finished produces no upcoming fixtures, which freezes the match list *and* starves settlement of results. The 2026 World Cup ended 2026-07-19 and is history, not a feed.
+
+Finished, live, and future fixtures remain available in the public match list; users can switch between all, predictable, and finished matches. List reads are bounded to a kickoff window (`now-14d .. now+60d`) so the payload stays well under the CloudBase gateway's ~2 MB response cap. Competition and team names are localized to Chinese.
+
+Real 1X2 odds come from The-Odds-API, one request per distinct sport key per refresh interval (`ODDS_SYNC_INTERVAL_MINUTES`, six hours by default — three sport keys then cost about 360 credits a month, inside the free allowance). Fixtures without a verified bookmaker snapshot receive a clearly labeled platform rule instead: fixed virtual-points multiplier `3.00` for home/draw/away. Kickoff times and results remain supplier data and are never invented. If a source is temporarily unavailable, reads degrade to the latest database cache and the match list says so.
+
+## Formula 1
+
+F1 race weekends carry sessions (qualifying, sprint qualifying, sprint, grand prix) with their own markets: qualifying offers 杆位 (pole), race sessions offer 冠军 (winner) and 领奖台之争 — an exact-podium market where any three drivers can be ordered P1→P2→P3. That market stores per-driver base odds (`DRV:<code>`) and derives each combination's multiplier from a shared domain formula, so all 9,240 ordered combinations are priceable without enumerating them in a snapshot; a `DRV:` entry is a pricing input and is never a bettable selection. The retired `PODIUM` and `H2H` markets are no longer offered, while existing tickets on them still settle.
+
+F1 enforces **one bet per market**: a second unsettled ticket on the same market is refused (`MARKET_TICKET_EXISTS`), and `GET /api/v1/rooms/:roomId/tickets/mine?fixtureId=` lets the slip restore that placed state after a reload. Football does not currently share this rule.
+
+Session results are imported from Jolpica (the maintained Ergast successor) by `pnpm db:import:f1-results-2026` — idempotent, versioned, never touching a session that has not started, and reporting sprint qualifying as uncovered rather than fabricating a classification. A super-admin can also enter a result by hand. Sessions whose start time has passed are locked (markets closed) by the scheduled sweep.
 
 When a verified bookmaker-odds snapshot has been stored, that exact version remains available for non-cash predictions until the server-recorded kickoff time. Snapshot age and supplier-sync health remain visible operational signals, but they do not close a prematch market by themselves. A missing, unverifiable, future-dated, cancelled, postponed, live, or finished market remains unavailable.
 
@@ -64,10 +78,25 @@ pnpm test
 pnpm build
 ```
 
+End-to-end journeys (Playwright) and the axe accessibility scan run against a real
+server and database. They need migrations plus the F1 and football fixtures
+(`pnpm db:migrate`, `pnpm db:seed:f1-2026`, `pnpm db:seed:e2e`, `pnpm db:seed:super-admins`)
+and `APP_ENV=test`, which keeps the session cookie usable over plain HTTP:
+
+```bash
+pnpm test:e2e
+```
+
+`pnpm verify:production-health` asserts read-only data invariants against a
+deployed database — a live football feed, recent fixture captures, no ticket left
+pending on a confirmed result, no started F1 session left unlocked. The scheduled
+sweep runs it every time, because a green pipeline is not by itself proof that the
+product is working.
+
 ## Health endpoints
 
 - `GET /api/health/live`: process liveness only; never calls databases or suppliers.
-- `GET /api/health/ready`: validates dependencies introduced so far (currently runtime configuration); returns 503 when unready and never calls API-FOOTBALL.
+- `GET /api/health/ready`: validates runtime configuration, database reachability, and that the migration files shipped in the artifact match `app_schema_migrations` exactly; returns 503 when unready and never calls a supplier. That exact comparison is why a deploy must carry any new `.sql` file, not only the rebuilt app.
 
 ## Deployment and scheduled operations
 
@@ -87,9 +116,9 @@ starves settlement.
 ## Workspace boundaries
 
 - `apps/web`: Next.js App Router web/PWA and HTTP transport.
-- `apps/worker`: scheduled/background process entrypoint.
-- `packages/domain`: framework-free domain boundary.
-- `packages/db`: future SQL/repository boundary; no business schema in Story 1.1.
+- `apps/worker`: the resident scheduler plus the `scheduled-sweep` job that stands in for it where only scheduled invocations run.
+- `packages/domain`: framework-free domain boundary — prediction, settlement, F1 pricing and every authorization rule.
+- `packages/db`: SQL schema, migrations and repositories.
 - `packages/config`: shared runtime configuration validation.
 - `packages/contracts`: shared API schemas/contracts.
 - `packages/testkit`: shared test builders/fakes added only when needed.
