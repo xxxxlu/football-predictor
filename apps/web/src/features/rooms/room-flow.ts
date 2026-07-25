@@ -1,6 +1,9 @@
 export type RoomRole = "member" | "room_owner";
 export type RoomVisibility = "PUBLIC" | "PRIVATE";
 export type RoomTier = "STANDARD" | "ADVANCED";
+export type RoomSport = "FOOTBALL" | "FORMULA_1";
+
+export const ROOM_SPORT_LABELS: Record<RoomSport, string> = { FOOTBALL: "足球", FORMULA_1: "F1 赛车" };
 
 export type RoomSummaryRecord = {
   id: string;
@@ -8,6 +11,7 @@ export type RoomSummaryRecord = {
   status?: "ACTIVE" | "RESTRICTED" | "CLOSED";
   visibility: RoomVisibility;
   tier?: RoomTier;
+  sport?: RoomSport;
   role: RoomRole;
   memberCount?: number;
   preMatchStakeVisible?: boolean;
@@ -18,6 +22,7 @@ export type PublicRoomSummaryRecord = {
   id: string;
   name: string;
   ownerName: string;
+  sport?: RoomSport;
   memberCount: number;
   joined: boolean;
 };
@@ -34,14 +39,14 @@ export type RoomBalanceRecord = {
   correctionDebt?: string;
 };
 
-export function createRoomRequest(name: string, visibility: RoomVisibility, tier: RoomTier = "STANDARD") {
+export function createRoomRequest(name: string, visibility: RoomVisibility, tier: RoomTier = "STANDARD", sport: RoomSport = "FOOTBALL") {
   return {
     url: "/api/v1/rooms",
     init: {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin" as const,
-      body: JSON.stringify({ name: name.trim(), visibility, tier, rulesAccepted: true }),
+      body: JSON.stringify({ name: name.trim(), visibility, tier, sport, rulesAccepted: true }),
     },
   };
 }
@@ -85,6 +90,7 @@ export function normalizeRoomDetail(input: {
     status: input.room.status ?? "ACTIVE",
     visibility: input.room.visibility,
     tier: input.room.tier ?? "STANDARD",
+    sport: input.room.sport ?? "FOOTBALL",
     memberCount: input.room.memberCount ?? input.members.length,
     isOwner: input.room.role === "room_owner",
     preMatchStakeVisible: input.room.preMatchStakeVisible === true,

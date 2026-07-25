@@ -12,7 +12,7 @@ export class DrizzleRoomRepository implements RoomRepository {
 
   async createRoom(input: Parameters<RoomRepository["createRoom"]>[0]) {
     await this.db.transaction(async (tx) => {
-      await tx.insert(rooms).values({ id: input.id, name: input.name, visibility: input.visibility, tier: input.tier, inviteTokenHash: input.inviteTokenHash, createdBy: input.ownerId, createdAt: input.now, updatedAt: input.now });
+      await tx.insert(rooms).values({ id: input.id, name: input.name, visibility: input.visibility, tier: input.tier, sport: input.sport, inviteTokenHash: input.inviteTokenHash, createdBy: input.ownerId, createdAt: input.now, updatedAt: input.now });
       await tx.insert(roomMembers).values({ roomId: input.id, userId: input.ownerId, role: "OWNER", acceptedRulesVersion: input.rulesVersion, acceptedRulesAt: input.now, joinedAt: input.now });
       await tx.insert(pointAccounts).values({ roomId: input.id, userId: input.ownerId, availablePoints: input.initialPoints, frozenPoints: "0.00", correctionDebt: "0.00", createdAt: input.now, updatedAt: input.now });
       await tx.insert(pointLedgerEntries).values({ id: input.auditId, roomId: input.id, userId: input.ownerId, kind: "INITIAL_GRANT", amount: input.initialPoints, availableDeltaPoints: input.initialPoints, idempotencyKey: `initial-grant:${input.id}:${input.ownerId}`, auditId: input.auditId, createdAt: input.now });
@@ -52,13 +52,14 @@ export class DrizzleRoomRepository implements RoomRepository {
       id: rooms.id,
       name: rooms.name,
       ownerName: sql<string>`COALESCE(${identityUsers.nickname}, ${identityUsers.usernameCanonical})`,
+      sport: rooms.sport,
       memberCount: count(roomMembers.userId),
       joined: sql<boolean>`BOOL_OR(${roomMembers.userId} = ${userId})`,
     }).from(rooms)
       .innerJoin(identityUsers, eq(identityUsers.id, rooms.createdBy))
       .innerJoin(roomMembers, eq(roomMembers.roomId, rooms.id))
       .where(and(eq(rooms.visibility, "PUBLIC"), eq(rooms.status, "ACTIVE")))
-      .groupBy(rooms.id, rooms.name, identityUsers.nickname, identityUsers.usernameCanonical, rooms.createdAt)
+      .groupBy(rooms.id, rooms.name, identityUsers.nickname, identityUsers.usernameCanonical, rooms.sport, rooms.createdAt)
       .orderBy(rooms.createdAt);
     return rows.map((row) => ({ ...row, memberCount: Number(row.memberCount), joined: Boolean(row.joined) }));
   }
@@ -74,17 +75,17 @@ export class DrizzleRoomRepository implements RoomRepository {
 
   async listRooms(userId: string): Promise<RoomSummaryRecord[]> {
     const allMembers = alias(roomMembers, "all_members");
-    const rows = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
+    const rows = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, sport: rooms.sport, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(eq(roomMembers.userId, userId)).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).orderBy(rooms.createdAt);
+      .where(eq(roomMembers.userId, userId)).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).orderBy(rooms.createdAt);
     return rows.map((row) => ({ ...row, memberCount: Number(row.memberCount) }));
   }
 
   async getRoomForMember(roomId: string, userId: string): Promise<RoomSummaryRecord | null> {
     const allMembers = alias(roomMembers, "all_members");
-    const [row] = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
+    const [row] = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, sport: rooms.sport, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).limit(1);
+      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).limit(1);
     return row ? { ...row, memberCount: Number(row.memberCount) } : null;
   }
 

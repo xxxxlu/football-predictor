@@ -8,6 +8,7 @@ export const roomStatus = pgEnum("room_status", ["ACTIVE", "RESTRICTED", "CLOSED
 export const roomRole = pgEnum("room_role", ["OWNER", "MEMBER"]);
 export const roomVisibility = pgEnum("room_visibility", ["PUBLIC", "PRIVATE"]);
 export const roomTier = pgEnum("room_tier", ["STANDARD", "ADVANCED"]);
+export const roomSport = pgEnum("room_sport", ["FOOTBALL", "FORMULA_1"]);
 
 export const rooms = roomSchema.table("rooms", {
   id: uuid("id").primaryKey(),
@@ -15,6 +16,7 @@ export const rooms = roomSchema.table("rooms", {
   status: roomStatus("status").notNull().default("ACTIVE"),
   visibility: roomVisibility("visibility").notNull().default("PRIVATE"),
   tier: roomTier("tier").notNull().default("STANDARD"),
+  sport: roomSport("sport").notNull().default("FOOTBALL"),
   preMatchStakeVisible: boolean("pre_match_stake_visible").notNull().default(false),
   postMatchTicketVisible: boolean("post_match_ticket_visible").notNull().default(true),
   inviteTokenHash: text("invite_token_hash"),

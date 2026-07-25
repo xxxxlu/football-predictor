@@ -26,7 +26,7 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
 
   async run<T>(scope: IdempotencyScope, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
     return this.db.transaction(async (tx) => {
-      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId, roomStatus: rooms.status, roomTier: rooms.tier }).from(pointAccounts).innerJoin(rooms, eq(rooms.id, pointAccounts.roomId))
+      const [lockedAccount] = await tx.select({ userId: pointAccounts.userId, roomStatus: rooms.status, roomTier: rooms.tier, roomSport: rooms.sport }).from(pointAccounts).innerJoin(rooms, eq(rooms.id, pointAccounts.roomId))
         .where(and(eq(pointAccounts.roomId, scope.roomId), eq(pointAccounts.userId, scope.userId))).for("update").limit(1);
       if (!lockedAccount) throw new RoomError("ROOM_NOT_FOUND", 404);
       if (!roomAllowsPredictions(lockedAccount.roomStatus)) throw new RoomError("ROOM_RESTRICTED", 403, "This room is not accepting predictions.");
@@ -47,6 +47,7 @@ export class DrizzleTicketSubmissionPort implements TicketSubmissionTransactionP
         },
         getMarket: (marketId) => this.snapshots.getMarket(marketId, tx as IdentityDatabase),
         getRoomTier: async () => lockedAccount.roomTier,
+        getRoomSport: async () => lockedAccount.roomSport,
         hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => {
           const existing = await tx.select({ id: predictionTickets.id }).from(predictionTickets)
             .innerJoin(predictionLegs, and(eq(predictionLegs.ticketId, predictionTickets.id), eq(predictionLegs.legNumber, 1)))

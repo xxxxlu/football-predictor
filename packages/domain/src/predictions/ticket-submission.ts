@@ -1,4 +1,4 @@
-import type { RoomTier } from "../rooms/service.js";
+import type { RoomSport, RoomTier } from "../rooms/service.js";
 import { marketKindFromSupplierMarketId } from "./markets.js";
 import { f1MarketKindFromSupplierMarketId } from "../f1/markets.js";
 
@@ -11,6 +11,7 @@ export type TicketSubmissionErrorCode =
   | "INSUFFICIENT_POINTS"
   | "INVALID_STAKE"
   | "ADVANCED_ROOM_REQUIRED"
+  | "ROOM_SPORT_MISMATCH"
   | "SCORE_TICKET_EXISTS";
 
 export class TicketSubmissionError extends Error {
@@ -102,6 +103,8 @@ export interface TicketSubmissionTransaction {
   getMarket(marketId: string): Promise<MarketForSubmission | null>;
   /** Room tier gate for correct-score markets; read under the account row lock. */
   getRoomTier(roomId: string): Promise<RoomTier>;
+  /** Room sport gate: every room predicts exactly one sport; read under the account row lock. */
+  getRoomSport(roomId: string): Promise<RoomSport>;
   /** Whether the user already holds an unsettled correct-score ticket on the fixture; read under the account row lock. */
   hasOpenCorrectScoreTicket(userId: string, roomId: string, fixtureId: string): Promise<boolean>;
   /** Must enforce the idempotency unique key and account row lock itself. */
@@ -177,6 +180,13 @@ export class TicketSubmissionService {
       assertMarketAvailable(market, now);
 
       const f1Kind = f1MarketKindFromSupplierMarketId(market.snapshot.marketId);
+      /* A room predicts exactly one sport: F1 markets only settle F1 rooms and
+         football markets only settle football rooms. Legacy mixed rooms keep
+         their history; the gate applies to new submissions only. */
+      const eventSport: RoomSport = f1Kind === null ? "FOOTBALL" : "FORMULA_1";
+      if ((await transaction.getRoomSport(command.roomId)) !== eventSport) {
+        throw new TicketSubmissionError("ROOM_SPORT_MISMATCH");
+      }
       if (f1Kind === null && marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE") {
         if ((await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
           throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");

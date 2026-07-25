@@ -8,7 +8,7 @@ class MemoryRoomRepository implements RoomRepository {
   ledger: Array<{ roomId: string; userId: string; kind: string; amount: string }> = [];
 
   async createRoom(input: Parameters<RoomRepository["createRoom"]>[0]) {
-    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, tier: input.tier, preMatchStakeVisible: false, postMatchTicketVisible: true, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId });
+    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, tier: input.tier, sport: input.sport, preMatchStakeVisible: false, postMatchTicketVisible: true, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId });
     this.members.set(`${input.id}:${input.ownerId}`, { userId: input.ownerId, role: "OWNER", rulesVersion: input.rulesVersion });
     this.balances.set(`${input.id}:${input.ownerId}`, { availablePoints: input.initialPoints, frozenPoints: "0.00", correctionDebt: "0.00" });
     this.ledger.push({ roomId: input.id, userId: input.ownerId, kind: "INITIAL_GRANT", amount: input.initialPoints });
@@ -39,7 +39,7 @@ class MemoryRoomRepository implements RoomRepository {
   }
   async listPublicRooms(userId: string) {
     return [...this.rooms.values()].filter((room) => room.visibility === "PUBLIC" && room.status === "ACTIVE").map((room) => ({
-      id: room.id, name: room.name, ownerName: room.ownerId, memberCount: room.memberCount, joined: this.members.has(`${room.id}:${userId}`),
+      id: room.id, name: room.name, ownerName: room.ownerId, sport: room.sport, memberCount: room.memberCount, joined: this.members.has(`${room.id}:${userId}`),
     }));
   }
   async joinPublicRoom(input: Parameters<RoomRepository["joinPublicRoom"]>[0]) {
@@ -90,7 +90,7 @@ function setup() { const repository = new MemoryRoomRepository(); return { repos
 describe("RoomService", () => {
   it("atomically creates a private room, owner membership and isolated initial balance", async () => {
     const { repository, service } = setup();
-    const created = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const created = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     expect(created).toMatchObject({ name: "决赛之夜", role: "room_owner", inviteToken: expect.stringMatching(/^invite-/) });
     await expect(service.getBalance(created.id, "alice")).resolves.toEqual({ availablePoints: "10000.00", frozenPoints: "0.00", correctionDebt: "0.00" });
     expect(repository.ledger).toEqual([{ roomId: created.id, userId: "alice", kind: "INITIAL_GRANT", amount: "10000.00" }]);
@@ -98,16 +98,28 @@ describe("RoomService", () => {
 
   it("defaults new rooms to the standard tier and can create advanced-tier rooms", async () => {
     const { service } = setup();
-    const standard = await service.create({ userId: "alice", name: "标准房", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const standard = await service.create({ userId: "alice", name: "标准房", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     expect(standard).toMatchObject({ tier: "STANDARD" });
-    const advanced = await service.create({ userId: "alice", name: "高级房", visibility: "PRIVATE", tier: "ADVANCED", rulesAccepted: true });
+    const advanced = await service.create({ userId: "alice", name: "高级房", visibility: "PRIVATE", tier: "ADVANCED", sport: "FOOTBALL", rulesAccepted: true });
     expect(advanced).toMatchObject({ tier: "ADVANCED" });
     await expect(service.getRoom(advanced.id, "alice")).resolves.toMatchObject({ tier: "ADVANCED" });
   });
 
+  it("defaults new rooms to football and carries an explicit F1 sport through create, get and list views", async () => {
+    const { service } = setup();
+    const football = await service.create({ userId: "alice", name: "足球房", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
+    expect(football).toMatchObject({ sport: "FOOTBALL" });
+    const f1 = await service.create({ userId: "alice", name: "车迷房", visibility: "PRIVATE", tier: "STANDARD", sport: "FORMULA_1", rulesAccepted: true });
+    expect(f1).toMatchObject({ sport: "FORMULA_1" });
+    await expect(service.getRoom(f1.id, "alice")).resolves.toMatchObject({ sport: "FORMULA_1" });
+    const listed = await service.listRooms("alice");
+    expect(listed.find((room) => room.id === f1.id)).toMatchObject({ sport: "FORMULA_1" });
+    expect(listed.find((room) => room.id === football.id)).toMatchObject({ sport: "FOOTBALL" });
+  });
+
   it("creates a public room without exposing an invitation token", async () => {
     const { repository, service } = setup();
-    const created = await service.create({ userId: "alice", name: "公开看球局", visibility: "PUBLIC", tier: "STANDARD", rulesAccepted: true });
+    const created = await service.create({ userId: "alice", name: "公开看球局", visibility: "PUBLIC", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     expect(created).toMatchObject({ name: "公开看球局", visibility: "PUBLIC" });
     expect(created).not.toHaveProperty("inviteToken");
     expect(repository.rooms.get(created.id)).toMatchObject({ visibility: "PUBLIC", inviteHash: null });
@@ -115,8 +127,8 @@ describe("RoomService", () => {
 
   it("lists and idempotently joins active public rooms after rules confirmation", async () => {
     const { repository, service } = setup();
-    const room = await service.create({ userId: "alice", name: "公开看球局", visibility: "PUBLIC", tier: "STANDARD", rulesAccepted: true });
-    await expect(service.listPublic("bob")).resolves.toEqual([{ id: room.id, name: "公开看球局", ownerName: "alice", memberCount: 1, joined: false }]);
+    const room = await service.create({ userId: "alice", name: "公开看球局", visibility: "PUBLIC", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
+    await expect(service.listPublic("bob")).resolves.toEqual([{ id: room.id, name: "公开看球局", ownerName: "alice", sport: "FOOTBALL", memberCount: 1, joined: false }]);
     await expect(service.joinPublic({ roomId: room.id, userId: "bob", rulesAccepted: true })).resolves.toEqual({ roomId: room.id, joined: true });
     await expect(service.joinPublic({ roomId: room.id, userId: "bob", rulesAccepted: true })).resolves.toEqual({ roomId: room.id, joined: false });
     expect(repository.ledger.filter((entry) => entry.userId === "bob")).toHaveLength(1);
@@ -124,12 +136,12 @@ describe("RoomService", () => {
 
   it("requires current room rules before creating or joining", async () => {
     const { service } = setup();
-    await expect(service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: false })).rejects.toMatchObject({ code: "ROOM_RULES_REQUIRED" });
+    await expect(service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: false })).rejects.toMatchObject({ code: "ROOM_RULES_REQUIRED" });
   });
 
   it("reset invalidates the old invite without changing members or balances", async () => {
     const { service } = setup();
-    const created = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const created = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     const rotated = await service.resetInvite(created.id, "alice");
     await expect(service.previewInvite(created.inviteToken!)).rejects.toMatchObject({ code: "INVITE_INVALID" });
     await expect(service.previewInvite(rotated.inviteToken)).resolves.toMatchObject({ id: created.id });
@@ -138,7 +150,7 @@ describe("RoomService", () => {
 
   it("concurrent repeated joins create one membership, one account and one grant", async () => {
     const { repository, service } = setup();
-    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     const results = await Promise.all(Array.from({ length: 8 }, () => service.join({ userId: "bob", inviteToken: room.inviteToken!, rulesAccepted: true })));
     expect(results.filter((result) => result.joined)).toHaveLength(1);
     expect(repository.ledger.filter((entry) => entry.userId === "bob")).toHaveLength(1);
@@ -147,14 +159,14 @@ describe("RoomService", () => {
 
   it("does not reveal whether a room exists to non-members", async () => {
     const { service } = setup();
-    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     await expect(service.getRoom(room.id, "mallory")).rejects.toEqual(new RoomError("ROOM_NOT_FOUND", 404));
     await expect(service.getRoom("missing", "mallory")).rejects.toEqual(new RoomError("ROOM_NOT_FOUND", 404));
   });
 
   it("lets only the room owner control post-kickoff ticket visibility", async () => {
     const { service } = setup();
-    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true });
+    const room = await service.create({ userId: "alice", name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
     await expect(service.updatePostMatchTicketVisibility(room.id, "alice", false)).resolves.toMatchObject({ roomId: room.id, postMatchTicketVisible: false });
     await expect(service.getRoom(room.id, "alice")).resolves.toMatchObject({ preMatchStakeVisible: false, postMatchTicketVisible: false });
     await expect(service.updatePostMatchTicketVisibility(room.id, "mallory", true)).rejects.toMatchObject({ code: "ROOM_OWNER_REQUIRED", status: 403 });

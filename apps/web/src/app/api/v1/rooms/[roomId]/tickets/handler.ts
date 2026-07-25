@@ -49,7 +49,7 @@ export function createTicketPost(identity: IdentityLookup, tickets: TicketApplic
 function ticketError(error: TicketSubmissionError) {
   const status = error.code === "DATA_UNAVAILABLE" ? 503
     : error.code === "MARKET_CLOSED" || error.code === "ODDS_CHANGED" || error.code === "SCORE_TICKET_EXISTS" ? 409
-    : error.code === "ADVANCED_ROOM_REQUIRED" ? 403 : 422;
+    : error.code === "ADVANCED_ROOM_REQUIRED" || error.code === "ROOM_SPORT_MISMATCH" ? 403 : 422;
   const messages: Record<TicketSubmissionError["code"], string> = {
     MARKET_CLOSED: "This market is closed. No points were frozen.",
     ODDS_CHANGED: "Odds changed. Confirm the latest odds and submit again.",
@@ -57,6 +57,7 @@ function ticketError(error: TicketSubmissionError) {
     INSUFFICIENT_POINTS: "The room account does not have enough available points.",
     INVALID_STAKE: "Use a whole-number stake from 1 to 20,000 points.",
     ADVANCED_ROOM_REQUIRED: "Correct-score predictions are available in advanced rooms only.",
+    ROOM_SPORT_MISMATCH: "This room predicts a different sport. Pick an event that matches the room's sport.",
     SCORE_TICKET_EXISTS: "You already have an open correct-score prediction on this match.",
   };
   return failure(error.code, messages[error.code], status);

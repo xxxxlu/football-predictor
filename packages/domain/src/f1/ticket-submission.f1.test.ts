@@ -9,7 +9,7 @@ import {
   type TicketSubmissionTransaction,
   type TicketSubmissionTransactionPort,
 } from "../predictions/ticket-submission.js";
-import type { RoomTier } from "../rooms/service.js";
+import type { RoomSport, RoomTier } from "../rooms/service.js";
 import { F1_SUPPLIER, F1_SUPPLIER_MARKET_IDS, f1FixtureId, f1MarketId } from "./markets.js";
 
 const serverTime = new Date("2026-07-13T10:00:00.000Z");
@@ -39,6 +39,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
   account: PointsAccount = { userId: "user-1", roomId: "room-1", availablePoints: 10_000, frozenPoints: 0 };
   market: MarketForSubmission | null = null;
   tier: RoomTier = "STANDARD";
+  sport: RoomSport = "FORMULA_1";
   correctScoreTierReads = 0;
 
   async run<T>(_scope: { userId: string; roomId: string; idempotencyKey: string }, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
@@ -47,6 +48,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
       getPointsAccount: async () => structuredClone(this.account),
       getMarket: async () => structuredClone(this.market),
       getRoomTier: async () => this.tier,
+      getRoomSport: async () => this.sport,
       hasOpenCorrectScoreTicket: async () => {
         this.correctScoreTierReads += 1;
         return false;
@@ -154,6 +156,23 @@ describe("TicketSubmissionService F1 markets", () => {
         acceptedDecimalOdds: odds,
       })).resolves.toMatchObject({ status: "PENDING" });
     }
+  });
+
+  it("rejects an F1 ticket in a football room without freezing points", async () => {
+    const { fake, service } = setup(f1Market("WINNER", [{ selection: "DRV:NOR", decimalOdds: "2.40" }]));
+    fake.sport = "FOOTBALL";
+    await expect(service.submit({
+      userId: "user-1",
+      roomId: "room-1",
+      idempotencyKey: "idem-f1-sport",
+      marketId: "f1:session-9:WINNER",
+      selection: "DRV:NOR",
+      stakePoints: 100,
+      acceptedOddsVersion: "f1-odds-v1",
+      acceptedDecimalOdds: "2.40",
+    })).rejects.toMatchObject({ name: "TicketSubmissionError", code: "ROOM_SPORT_MISMATCH" });
+    expect(fake.writes).toHaveLength(0);
+    expect(fake.account).toMatchObject({ availablePoints: 10_000, frozenPoints: 0 });
   });
 
   it("still rejects stale odds versions on F1 markets", async () => {

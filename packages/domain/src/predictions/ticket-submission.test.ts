@@ -10,7 +10,7 @@ import {
   type TicketSubmissionTransactionPort,
 } from "./ticket-submission.js";
 import { CORRECT_SCORE_SUPPLIER_MARKET_ID } from "./markets.js";
-import type { RoomTier } from "../rooms/service.js";
+import type { RoomSport, RoomTier } from "../rooms/service.js";
 
 const serverTime = new Date("2026-07-13T10:00:00.000Z");
 const defaultMarket: MarketForSubmission = {
@@ -41,6 +41,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
   account: PointsAccount = { userId: "user-1", roomId: "room-1", availablePoints: 10_000, frozenPoints: 0 };
   market: MarketForSubmission | null = structuredClone(defaultMarket);
   tier: RoomTier = "STANDARD";
+  sport: RoomSport = "FOOTBALL";
   readonly openCorrectScore = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
 
@@ -55,6 +56,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
         getPointsAccount: async () => structuredClone(this.account),
         getMarket: async () => structuredClone(this.market),
         getRoomTier: async () => this.tier,
+        getRoomSport: async () => this.sport,
         hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => this.openCorrectScore.has(`${userId}:${roomId}:${fixtureId}`),
         persistFreeze: async (write) => {
           const key = `${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.idempotencyKey}`;
@@ -153,6 +155,14 @@ describe("TicketSubmissionService validation", () => {
     fake.market!.snapshot.supplier = "THE_ODDS_API";
     fake.market!.snapshot.dataAsOf = "2026-07-12T10:00:00.000Z";
     await expect(service.submit(command)).resolves.toMatchObject({ status: "PENDING" });
+  });
+
+  it("rejects a football ticket in an F1 room without freezing points", async () => {
+    const { service, command, fake } = setup();
+    fake.sport = "FORMULA_1";
+    await expectCode(service.submit(command), "ROOM_SPORT_MISMATCH");
+    expect(fake.writes).toHaveLength(0);
+    expect(fake.account).toMatchObject({ availablePoints: 10_000, frozenPoints: 0 });
   });
 
   it("requires the accepted version and decimal odds string to match current odds", async () => {

@@ -15,6 +15,7 @@ const ticketErrors: Record<string, string> = {
   INSUFFICIENT_POINTS: "可用积分不足，请降低投入。",
   DUPLICATE_SUBMISSION: "你已经提交过这场判断。",
   ADVANCED_ROOM_REQUIRED: "买比分玩法仅在高级房间开放。",
+  ROOM_SPORT_MISMATCH: "当前房间是 F1 竞猜房，不能提交足球判断；请切换到足球房间。",
   SCORE_TICKET_EXISTS: "本场比赛你已有一张未结算的比分预测。",
 };
 

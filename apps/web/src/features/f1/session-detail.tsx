@@ -24,6 +24,7 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
   const [notFound, setNotFound] = useState(false);
   const [roomTier, setRoomTier] = useState<"STANDARD" | "ADVANCED">("STANDARD");
   const [roomActive, setRoomActive] = useState(true);
+  const [roomSportOk, setRoomSportOk] = useState(true);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const response = await fetch(`/api/v1/f1/sessions/${encodeURIComponent(sessionId)}`, { credentials: "same-origin", signal, cache: "no-store" });
@@ -55,10 +56,11 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
     void (async () => {
       try {
         const response = await fetch(`/api/v1/rooms/${encodeURIComponent(roomId)}`, { credentials: "same-origin", signal: controller.signal });
-        const result = await response.json().catch(() => ({})) as ApiEnvelope<{ tier?: string; status?: string }> & ApiFailure;
+        const result = await response.json().catch(() => ({})) as ApiEnvelope<{ tier?: string; status?: string; sport?: string }> & ApiFailure;
         if (!response.ok) return;
         setRoomTier(result.data?.tier === "ADVANCED" ? "ADVANCED" : "STANDARD");
         setRoomActive(result.data?.status === undefined || result.data.status === "ACTIVE");
+        setRoomSportOk(result.data?.sport === undefined || result.data.sport === "FORMULA_1");
       } catch { /* 房间信息拉不到时按标准房处理，服务端仍会复核 */ }
     })();
     return () => controller.abort();
@@ -101,6 +103,8 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
                 : session.kind === "SPRINT_QUALIFYING"
                   ? "冲刺排位的完整分类不在当前官方数据源（Ergast/Jolpica）覆盖范围内，我们不会用推算数据顶替官方结果。"
                   : "场次已结束，官方结果确认后会在这里展示完整完赛名次。"} />
+          : roomId && !roomSportOk
+            ? <div className="grid gap-4"><DataStatePanel state="empty" title="当前房间是足球竞猜房" description="该房间只围绕足球竞猜，不能在这里提交 F1 判断；请切换到 F1 房间后再打开本场次。" /><ReadOnlyMarkets detail={detail} driverIndex={driverIndex} /></div>
           : roomId
             ? <F1PredictionSlip roomId={roomId} detail={detail} advanced={roomTier === "ADVANCED"} interactive={roomActive} onRefresh={() => load().catch(() => {})} />
             : <ReadOnlyMarkets detail={detail} driverIndex={driverIndex} />}

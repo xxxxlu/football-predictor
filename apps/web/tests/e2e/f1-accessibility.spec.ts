@@ -69,7 +69,7 @@ test.describe("F1 surfaces accessibility", () => {
     // against and gives the room page an F1-capable investment wall.
     const createRoom = await page.request.post("/api/v1/rooms", {
       headers: { origin: baseURL ?? "http://127.0.0.1:3001" },
-      data: { name: "F1 无障碍扫描房", visibility: "PRIVATE", tier: "STANDARD", rulesAccepted: true },
+      data: { name: "F1 无障碍扫描房", visibility: "PRIVATE", tier: "STANDARD", sport: "FORMULA_1", rulesAccepted: true },
     });
     expect(createRoom.status(), "room creation for the a11y fixture").toBe(201);
     roomId = ((await createRoom.json()) as { data?: { id?: string } }).data?.id ?? "";

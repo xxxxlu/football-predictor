@@ -3,13 +3,13 @@ import { z } from "zod";
 import { readSessionToken } from "../../auth/_lib/handlers";
 import { assertSameOrigin } from "../../_lib/request-origin";
 
-const createSchema = z.object({ name: z.string(), visibility: z.enum(["PUBLIC", "PRIVATE"]), tier: z.enum(["STANDARD", "ADVANCED"]).default("STANDARD"), rulesAccepted: z.literal(true) });
+const createSchema = z.object({ name: z.string(), visibility: z.enum(["PUBLIC", "PRIVATE"]), tier: z.enum(["STANDARD", "ADVANCED"]).default("STANDARD"), sport: z.enum(["FOOTBALL", "FORMULA_1"]).default("FOOTBALL"), rulesAccepted: z.literal(true) });
 const joinSchema = z.object({ rulesAccepted: z.literal(true) });
 const settingsSchema = z.object({ postMatchTicketVisible: z.boolean() }).strict();
 
 interface IdentityLookup { authenticate(token: string): Promise<{ id: string } | null> }
 interface RoomsApplication {
-  create(input: { userId: string; name: string; visibility: "PUBLIC" | "PRIVATE"; tier: "STANDARD" | "ADVANCED"; rulesAccepted: boolean }): Promise<unknown>;
+  create(input: { userId: string; name: string; visibility: "PUBLIC" | "PRIVATE"; tier: "STANDARD" | "ADVANCED"; sport: "FOOTBALL" | "FORMULA_1"; rulesAccepted: boolean }): Promise<unknown>;
   listRooms(userId: string): Promise<unknown>;
   getRoom(roomId: string, userId: string): Promise<unknown>;
   getBalance(roomId: string, userId: string): Promise<unknown>;
@@ -32,7 +32,7 @@ export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplica
   return {
     create: (request: Request) => execute(async () => {
       assertSameOrigin(request); const accountId = await userId(request); const input = createSchema.parse(await request.json());
-      return json({ data: await rooms.create({ userId: accountId, name: input.name, visibility: input.visibility, tier: input.tier, rulesAccepted: input.rulesAccepted }) }, 201);
+      return json({ data: await rooms.create({ userId: accountId, name: input.name, visibility: input.visibility, tier: input.tier, sport: input.sport, rulesAccepted: input.rulesAccepted }) }, 201);
     }),
     list: (request: Request) => execute(async () => json({ data: await rooms.listRooms(await userId(request)) })),
     detail: (request: Request, roomId: string) => execute(async () => json({ data: await rooms.getRoom(roomId, await userId(request)) })),

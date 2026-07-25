@@ -19,6 +19,7 @@ const ticketErrors: Record<string, string> = {
   DATA_UNAVAILABLE: "数据暂不可用，本次提交未扣分。",
   INSUFFICIENT_POINTS: "可用积分不足，请降低投入。",
   ADVANCED_ROOM_REQUIRED: "精确前三玩法仅在高级房间开放。",
+  ROOM_SPORT_MISMATCH: "当前房间是足球竞猜房，不能提交 F1 判断；请切换到 F1 房间。",
   INVALID_STAKE: "投入必须是 1 – 20,000 的整数。",
 };
 
