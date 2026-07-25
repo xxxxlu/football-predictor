@@ -6,7 +6,7 @@ import { DataStatePanel } from "@/components/data-state-panel";
 import { PulseLine } from "@/components/pulse";
 import { PulseCircuit } from "@/components/pulse-circuit";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
-import { normalizeWeekend, SESSION_KIND_LABELS, SESSION_STATE_LABELS, sessionPredictable, type F1SessionView, type F1WeekendView } from "./types";
+import { normalizeWeekend, SESSION_KIND_LABELS, SESSION_STATE_LABELS, sessionPredictable, weekendPhase, type F1SessionView, type F1WeekendView, type WeekendPhaseFilter } from "./types";
 
 function sessionHref(sessionId: string, roomId?: string): string {
   return roomId ? `/matches/f1/${sessionId}?roomId=${encodeURIComponent(roomId)}` : `/matches/f1/${sessionId}`;
@@ -29,6 +29,7 @@ export function WeekendList({ roomId }: { roomId?: string }) {
   const [weekends, setWeekends] = useState<F1WeekendView[] | null>(null);
   const [error, setError] = useState("");
   const [retry, setRetry] = useState(0);
+  const [phase, setPhase] = useState<WeekendPhaseFilter>("UPCOMING");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -62,8 +63,27 @@ export function WeekendList({ roomId }: { roomId?: string }) {
   }
   if (!weekends.length) return <DataStatePanel state="empty" title="目前没有 F1 分站" description="赛程发布后，Race Weekend 会出现在这里。" />;
 
-  return <div className="grid gap-6 xl:grid-cols-2">
-    {weekends.map((weekend, index) => <WeekendCard key={weekend.id} weekend={weekend} roomId={roomId} index={index} />)}
+  const upcoming = weekends.filter((weekend) => weekendPhase(weekend) === "UPCOMING");
+  const history = weekends.filter((weekend) => weekendPhase(weekend) === "HISTORY").reverse();
+  const shown = phase === "UPCOMING" ? upcoming : history;
+
+  return <div>
+    <div role="group" aria-label="按赛段筛选分站" className="mb-6 inline-grid grid-cols-2 gap-2">
+      {([["UPCOMING", `即将到来 ${upcoming.length}`], ["HISTORY", `历史 ${history.length}`]] as const).map(([value, label]) => (
+        <button
+          key={value}
+          type="button"
+          aria-pressed={phase === value}
+          onClick={() => setPhase(value)}
+          className={`min-h-10 rounded-full border-2 px-5 text-sm font-bold transition ${phase === value ? "border-[var(--ink)] bg-[var(--ink)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--ink)]"}`}
+        >{label}</button>
+      ))}
+    </div>
+    {!shown.length
+      ? <DataStatePanel state="empty" title={phase === "UPCOMING" ? "暂无即将到来的分站" : "还没有已完成的分站"} description={phase === "UPCOMING" ? "本赛季剩余分站发布后会出现在这里。" : "分站结束并确认官方结果后会进入历史。"} />
+      : <div className="grid gap-6 xl:grid-cols-2">
+          {shown.map((weekend, index) => <WeekendCard key={weekend.id} weekend={weekend} roomId={roomId} index={index} />)}
+        </div>}
   </div>;
 }
 
@@ -93,6 +113,11 @@ function WeekendCard({ weekend, roomId, index }: { weekend: F1WeekendView; roomI
                 <time dateTime={session.startsAt} className="tabular mt-0.5 block text-xs text-[var(--muted)]">
                   {new Date(session.startsAt).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                 </time>
+                {session.podium && session.podium.length > 0 && (
+                  <p className="tabular mt-0.5 truncate text-xs font-bold text-[var(--ink)]">
+                    🏆 {session.podium.map((entry) => entry.driverCode).join(" · ")}
+                  </p>
+                )}
               </div>
               <span className={`pulse-weekend-session__state ${stateChipClass(session)}`}>{stateChipLabel(session)}</span>
               <span className="pulse-weekend-session__arrow" aria-hidden="true">→</span>

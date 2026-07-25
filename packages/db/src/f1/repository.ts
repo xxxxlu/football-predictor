@@ -5,6 +5,8 @@ import {
   parseF1MarketId,
   parseF1Selection,
   f1FixtureId,
+  type F1ClassificationEntry,
+  type F1ClassificationStatus,
   type F1Constructor,
   type F1Driver,
   type F1MarketKind,
@@ -17,7 +19,7 @@ import {
 } from "@football-predictor/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import type { MarketSnapshotPort } from "../predictions/repository.js";
-import { f1Constructors, f1Drivers, f1MarketOdds, f1Markets, f1RaceWeekends, f1Sessions } from "./schema.js";
+import { f1Constructors, f1Drivers, f1MarketOdds, f1Markets, f1RaceWeekends, f1SessionResults, f1Sessions } from "./schema.js";
 
 export interface F1WeekendUpsert {
   id: string;
@@ -153,8 +155,29 @@ export class DrizzleF1Repository {
     }).from(f1Markets)
       .innerJoin(f1MarketOdds, and(eq(f1MarketOdds.marketId, f1Markets.id), eq(f1MarketOdds.version, f1Markets.currentVersion)))
       .where(eq(f1Markets.sessionId, sessionId));
+    const session = mapSession(row.session);
+    let result: F1SessionDetail["result"] = null;
+    // State guard: a confirmed classification is only presentable once the session
+    // itself is FINISHED — inconsistent rows (e.g. crossed seeds) must not leak a
+    // "result" onto a predictable session.
+    if (session.resultVersion !== null && session.resultConfirmed && session.state === "FINISHED") {
+      const [resultRow] = await this.db.select({
+        version: f1SessionResults.version,
+        confirmedAt: f1SessionResults.confirmedAt,
+        classification: f1SessionResults.classification,
+      }).from(f1SessionResults)
+        .where(and(eq(f1SessionResults.sessionId, sessionId), eq(f1SessionResults.version, session.resultVersion)))
+        .limit(1);
+      if (resultRow) {
+        result = {
+          version: resultRow.version,
+          confirmedAt: resultRow.confirmedAt ? resultRow.confirmedAt.toISOString() : null,
+          classification: parseClassificationEntries(resultRow.classification),
+        };
+      }
+    }
     return {
-      session: mapSession(row.session),
+      session,
       weekend: {
         id: row.weekend.id,
         season: row.weekend.season,
@@ -172,8 +195,102 @@ export class DrizzleF1Repository {
         dataAsOf: market.dataAsOf.toISOString(),
         outcomes: decodeRawOutcomes(market.kind as F1MarketKind, market.outcomes),
       })),
+      result,
     };
   }
+
+  /** Entry list with team identity, sorted like the timing tower. */
+  async listDrivers(): Promise<F1DriverWithTeam[]> {
+    const drivers = await this.db.select({
+      code: f1Drivers.code,
+      number: f1Drivers.number,
+      name: f1Drivers.name,
+      constructorKey: f1Drivers.constructorKey,
+      constructorName: f1Constructors.name,
+      color: f1Constructors.color,
+      seasonPoints: f1Drivers.seasonPoints,
+    }).from(f1Drivers)
+      .innerJoin(f1Constructors, eq(f1Constructors.key, f1Drivers.constructorKey))
+      .where(eq(f1Drivers.active, true));
+    return drivers.sort((a, b) => b.seasonPoints - a.seasonPoints || a.number - b.number);
+  }
+
+  /** Confirmed session results for one season, oldest first — the read model behind
+   *  weekend podium chips and driver/team season pages. */
+  async listConfirmedSessionResults(season: number): Promise<F1ConfirmedSessionResult[]> {
+    const rows = await this.db.select({
+      sessionId: f1Sessions.id,
+      kind: f1Sessions.kind,
+      startsAt: f1Sessions.startsAt,
+      round: f1RaceWeekends.round,
+      weekendId: f1RaceWeekends.id,
+      weekendName: f1RaceWeekends.name,
+      circuitKey: f1RaceWeekends.circuitKey,
+      classification: f1SessionResults.classification,
+    }).from(f1SessionResults)
+      .innerJoin(f1Sessions, and(eq(f1Sessions.id, f1SessionResults.sessionId), eq(f1Sessions.resultVersion, f1SessionResults.version)))
+      .innerJoin(f1RaceWeekends, eq(f1RaceWeekends.id, f1Sessions.weekendId))
+      .where(and(eq(f1RaceWeekends.season, season), eq(f1Sessions.resultConfirmed, true)))
+      .orderBy(asc(f1RaceWeekends.round), asc(f1Sessions.startsAt));
+    return rows.map((row) => ({
+      sessionId: row.sessionId,
+      kind: row.kind as F1SessionKind,
+      startsAt: row.startsAt.toISOString(),
+      round: row.round,
+      weekendId: row.weekendId,
+      weekendName: row.weekendName,
+      circuitKey: row.circuitKey,
+      classification: parseClassificationEntries(row.classification),
+    }));
+  }
+}
+
+export interface F1DriverWithTeam {
+  code: string;
+  number: number;
+  name: string;
+  constructorKey: string;
+  constructorName: string;
+  color: string;
+  seasonPoints: number;
+}
+
+export interface F1ConfirmedSessionResult {
+  sessionId: string;
+  kind: F1SessionKind;
+  startsAt: string;
+  round: number;
+  weekendId: string;
+  weekendName: string;
+  circuitKey: string;
+  classification: F1ClassificationEntry[];
+}
+
+const CLASSIFICATION_STATUSES: ReadonlySet<string> = new Set(["FINISHED", "DNF", "DNS", "DSQ"]);
+
+/** Defensive jsonb → classification parse: a malformed entry drops rather than
+ *  poisoning the whole result. */
+export function parseClassificationEntries(value: unknown): F1ClassificationEntry[] {
+  const decoded = typeof value === "string" ? safeParseJson(value) : value;
+  if (!Array.isArray(decoded)) return [];
+  return decoded.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const entry = candidate as Record<string, unknown>;
+    if (typeof entry.driverCode !== "string") return [];
+    if (typeof entry.status !== "string" || !CLASSIFICATION_STATUSES.has(entry.status)) return [];
+    const position = typeof entry.position === "number" && Number.isInteger(entry.position) ? entry.position : null;
+    const mapped: F1ClassificationEntry = {
+      driverCode: entry.driverCode,
+      position,
+      status: entry.status as F1ClassificationStatus,
+      lapsCompleted: typeof entry.lapsCompleted === "number" && Number.isInteger(entry.lapsCompleted) ? entry.lapsCompleted : 0,
+    };
+    if (typeof entry.points === "number" && Number.isFinite(entry.points)) mapped.points = entry.points;
+    if (typeof entry.timeText === "string") mapped.timeText = entry.timeText;
+    if (entry.fastestLap === true) mapped.fastestLap = true;
+    if (typeof entry.grid === "number" && Number.isInteger(entry.grid)) mapped.grid = entry.grid;
+    return [mapped];
+  });
 }
 
 export interface F1SessionDetail {
@@ -181,6 +298,8 @@ export interface F1SessionDetail {
   weekend: { id: string; season: number; round: number; name: string; circuitKey: string; isSprintWeekend: boolean };
   drivers: Array<{ code: string; number: number; name: string; constructorKey: string; constructorName: string; color: string; seasonPoints: number }>;
   markets: Array<{ id: string; kind: F1MarketKind; status: string; version: string; dataAsOf: string; outcomes: Array<{ selection: string; decimalOdds: string }> }>;
+  /** Confirmed official classification, null until a result version is confirmed. */
+  result: { version: number; confirmedAt: string | null; classification: F1ClassificationEntry[] } | null;
 }
 
 function decodeRawOutcomes(kind: F1MarketKind, value: unknown): Array<{ selection: string; decimalOdds: string }> {

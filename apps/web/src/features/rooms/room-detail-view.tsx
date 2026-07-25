@@ -8,6 +8,7 @@ import { RoomSwitcher } from "@/components/room-switcher";
 import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { MatchList } from "@/features/matchday/match-list";
+import { RoomF1Upcoming } from "@/features/f1/room-f1-upcoming";
 import { buildInvitePath, normalizeRoomDetail, type RoomBalanceRecord, type RoomMemberRecord, type RoomSummaryRecord } from "./room-flow";
 import { RoomTicketHistoryView } from "./room-ticket-history-view";
 
@@ -85,10 +86,11 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
 
     <section aria-labelledby="room-f1-title" className="surface flex flex-wrap items-center justify-between gap-4 p-5">
       <div>
-        <h2 id="room-f1-title" className="display text-2xl font-bold">F1 赛程</h2>
+        <h2 id="room-f1-title" className="display text-2xl font-bold">本房间 F1 竞赛</h2>
         <p className="mt-1 text-sm text-[var(--muted)]">在本房间投入积分预测 F1 场次：冠军、杆位、领奖台、车手对决{detail.tier === "ADVANCED" ? "、精确前三" : ""}。</p>
       </div>
       <Link href={`/matches/f1?roomId=${encodeURIComponent(roomId)}`} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--pulse-carbon)] px-5 font-bold text-[var(--pulse-ivory)] no-underline transition hover:brightness-125">进入 F1 赛程 →</Link>
+      <RoomF1Upcoming roomId={roomId} />
     </section>
   </div>;
 }

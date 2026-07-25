@@ -1,11 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { PulseLine } from "@/components/pulse";
 import { PulseCircuit } from "@/components/pulse-circuit";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { F1PredictionSlip } from "./prediction-slip";
+import { F1ResultsTable } from "./results-table";
 import {
   MARKET_KIND_LABELS,
   normalizeSessionDetail,
@@ -90,13 +92,22 @@ export function F1SessionDetail({ sessionId, roomId }: { sessionId: string; room
         <p className="pulse-session-hero__note pd-enter pd-enter--4">预测在场次开始（排位 Q1 / 正赛熄灯）时封盘；结果由管理员依据官方成绩录入并确认后自动结算。</p>
       </header>
 
-      {roomId
-        ? <F1PredictionSlip roomId={roomId} detail={detail} advanced={roomTier === "ADVANCED"} interactive={roomActive} onRefresh={() => load().catch(() => {})} />
-        : <ReadOnlyMarkets detail={detail} driverIndex={driverIndex} />}
+      {detail.result
+        ? <F1ResultsTable kind={session.kind} result={detail.result} driverIndex={driverIndex} />
+        : session.state === "FINISHED" || session.state === "CANCELLED"
+          ? <DataStatePanel state="empty" title={session.state === "CANCELLED" ? "本场次已取消" : "官方结果待录入"}
+              description={session.state === "CANCELLED"
+                ? "该场次已取消，相关判断按规则退还积分。"
+                : session.kind === "SPRINT_QUALIFYING"
+                  ? "冲刺排位的完整分类不在当前官方数据源（Ergast/Jolpica）覆盖范围内，我们不会用推算数据顶替官方结果。"
+                  : "场次已结束，官方结果确认后会在这里展示完整完赛名次。"} />
+          : roomId
+            ? <F1PredictionSlip roomId={roomId} detail={detail} advanced={roomTier === "ADVANCED"} interactive={roomActive} onRefresh={() => load().catch(() => {})} />
+            : <ReadOnlyMarkets detail={detail} driverIndex={driverIndex} />}
 
       <TimingTower drivers={drivers} />
 
-      {!roomId && markets.length > 0 && (
+      {!roomId && !detail.result && session.state !== "FINISHED" && session.state !== "CANCELLED" && markets.length > 0 && (
         <p className="text-xs leading-5 text-[var(--muted)]">想提交判断？进入你的房间，从房间里的 F1 赛程打开本场次即可投入该房间的积分。</p>
       )}
     </div>
@@ -170,7 +181,10 @@ function TimingTower({ drivers }: { drivers: F1DriverView[] }) {
             <span className="pulse-timing-row__pos tabular">{String(index + 1).padStart(2, "0")}</span>
             <i aria-hidden className="pulse-timing-row__stripe" style={{ background: driver.color }} />
             <span className="pulse-timing-row__number tabular">{driver.number}</span>
-            <span className="pulse-timing-row__driver"><span className="block truncate font-bold">{driver.name}</span><span className="block truncate text-[10px] uppercase text-[var(--muted)]">{driver.constructorName}</span></span>
+            <span className="pulse-timing-row__driver">
+              <Link href={`/matches/f1/drivers/${driver.code}`} className="block truncate font-bold hover:underline">{driver.name}</Link>
+              <Link href={`/matches/f1/teams/${driver.constructorKey}`} className="block truncate text-[10px] uppercase text-[var(--muted)] hover:underline">{driver.constructorName}</Link>
+            </span>
             <span className="pulse-timing-row__points tabular">{driver.seasonPoints}<small>PTS</small></span>
           </li>
         ))}

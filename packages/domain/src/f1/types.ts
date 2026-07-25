@@ -65,6 +65,14 @@ export interface F1ClassificationEntry {
   status: F1ClassificationStatus;
   /** Laps completed — required to order double-DNF head-to-heads. */
   lapsCompleted: number;
+  /** Points scored in this session (display only; settlement never reads it). */
+  points?: number;
+  /** Finishing time / gap, or best qualifying lap (display only). */
+  timeText?: string | null;
+  /** True for the driver credited with the session's fastest lap (display only). */
+  fastestLap?: boolean;
+  /** Starting grid slot for race sessions (display only). */
+  grid?: number | null;
 }
 
 export interface F1SessionResult {
