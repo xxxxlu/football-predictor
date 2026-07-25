@@ -54,6 +54,12 @@ jobs:
         run: pnpm db:import:f1-results-2026
       - name: Sync football fixtures and odds, lock due F1 sessions, settle results
         run: pnpm supplier:sweep
+      # A green sweep is not proof of a healthy product: the 2026-07-25 outage ran
+      # green for six days while syncing a finished competition. These invariants
+      # are the alert, and they cost no extra scheduled run.
+      - name: Assert production data invariants
+        if: always()
+        run: pnpm verify:production-health
       - name: Report a deferred F1 result-import failure
         if: steps.f1-results.outcome == 'failure'
         run: |

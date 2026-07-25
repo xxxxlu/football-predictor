@@ -1,16 +1,20 @@
 name: smoke
 
-# Post-deploy smoke test against a running environment. Render triggers deploys
-# on its own (autoDeployTrigger: checksPass), so this is invoked manually after a
-# deploy completes, or chained from another workflow via workflow_call. It runs
-# only anonymous GETs and never mutates state.
+# Anonymous GET-only probe of a running environment: home page, liveness,
+# readiness (which also proves the deployed artifact's migrations match the
+# database) and that an unauthenticated API read is rejected. Never mutates state.
+#
+# Runs after a deploy (manually or via workflow_call) and on a schedule as the
+# outside-in uptime check — nothing else notices a production outage between
+# scheduled sweeps. The cadence is deliberately modest: this repository is
+# private, so every run bills Actions minutes.
 
 on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Base URL of the deployed web service (e.g. https://pulse-web.onrender.com)"
-        required: true
+        description: "Base URL of the deployed web service (defaults to the PRODUCTION_BASE_URL variable)"
+        required: false
         type: string
   workflow_call:
     inputs:
@@ -18,6 +22,9 @@ on:
         description: "Base URL of the deployed web service"
         required: true
         type: string
+  schedule:
+    # Every six hours, offset off the hour and off the sweep's :17 slot.
+    - cron: "43 */6 * * *"
 
 permissions:
   contents: read
@@ -31,5 +38,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Resolve the target base URL
+        id: target
+        env:
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          VAR_BASE_URL: ${{ vars.PRODUCTION_BASE_URL }}
+        run: |
+          BASE_URL="${INPUT_BASE_URL:-$VAR_BASE_URL}"
+          if [ -z "$BASE_URL" ]; then
+            echo "::error::No base URL. Pass one to the workflow or set the PRODUCTION_BASE_URL repository variable."
+            exit 1
+          fi
+          echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
       - name: Smoke test the deployed service
-        run: node scripts/smoke-test.mjs "${{ inputs.base_url }}"
+        run: node scripts/smoke-test.mjs "${{ steps.target.outputs.base_url }}"

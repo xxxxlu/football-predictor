@@ -44,6 +44,12 @@ test("free-tier deployment builds the web workspace and bounds the scheduled pro
   // live season explicitly instead of relying on whatever the default once was.
   assert.match(workflow, /OPENLIGADB_COMPETITIONS:/);
   assert.doesNotMatch(workflow, /wm26/, "the World Cup ended 2026-07-19");
+  // A green sweep is not proof of a healthy product; the data invariants are the alert.
+  assert.match(workflow, /pnpm verify:production-health/);
+
+  const smoke = await readFile(".github/workflows/smoke.yml", "utf8");
+  assert.match(smoke, /schedule:/, "production needs an outside-in probe between sweeps");
+  assert.match(smoke, /vars\.PRODUCTION_BASE_URL/);
   for (const secret of ["DATABASE_URL", "THE_ODDS_API_KEY"]) {
     assert.ok(workflow.includes(secret + ": ${{ secrets." + secret + " }}"));
   }
