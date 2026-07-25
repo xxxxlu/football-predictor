@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { MANIFEST_ICONS } from "./icons";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
@@ -13,10 +14,7 @@ export default function manifest(): MetadataRoute.Manifest {
     orientation: "portrait-primary",
     categories: ["sports", "social"],
     lang: "zh-CN",
-    icons: [
-      { src: "/app-icon.svg", sizes: "any", type: "image/svg+xml", purpose: "any" },
-      { src: "/app-icon-maskable.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
-    ],
+    icons: MANIFEST_ICONS,
     shortcuts: [
       { name: "赛事", short_name: "赛事", url: "/matches" },
       { name: "我的房间", short_name: "房间", url: "/rooms" },
