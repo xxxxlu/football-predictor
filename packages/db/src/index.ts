@@ -1,5 +1,5 @@
 /** db package boundary. Business modules are added by their owning stories. */
-export const packageName = "@football-predictor/db" as const;
+export const packageName = "@pulse/db" as const;
 export * from "./identity/schema.js";
 export * from "./identity/repository.js";
 export * from "./rooms/schema.js";

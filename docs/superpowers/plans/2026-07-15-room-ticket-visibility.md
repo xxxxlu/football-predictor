@@ -81,7 +81,7 @@ postMatchTicketVisible: boolean("post_match_ticket_visible").notNull().default(t
 
 - [ ] **Step 4: Run the focused test and DB build**
 
-Run: `pnpm vitest run packages/db/src/rooms/schema.test.ts && pnpm --filter @football-predictor/db build`
+Run: `pnpm vitest run packages/db/src/rooms/schema.test.ts && pnpm --filter @pulse/db build`
 
 Expected: PASS and TypeScript build exits 0.
 
@@ -157,7 +157,7 @@ Join `room.rooms`, reject non-members exactly as before, and pass the two boolea
 
 - [ ] **Step 5: Run focused tests and DB typecheck**
 
-Run: `pnpm vitest run packages/db/src/operations/privacy.test.ts && pnpm --filter @football-predictor/db typecheck`
+Run: `pnpm vitest run packages/db/src/operations/privacy.test.ts && pnpm --filter @pulse/db typecheck`
 
 Expected: PASS.
 
@@ -375,7 +375,7 @@ Place it after the match list so match prediction remains the primary action and
 
 - [ ] **Step 6: Run focused tests, lint, and web typecheck**
 
-Run: `pnpm vitest run apps/web/src/features/rooms/room-ticket-history.test.ts apps/web/src/features/rooms/room-flow.test.ts && pnpm --filter @football-predictor/web lint && pnpm --filter @football-predictor/web typecheck`
+Run: `pnpm vitest run apps/web/src/features/rooms/room-ticket-history.test.ts apps/web/src/features/rooms/room-flow.test.ts && pnpm --filter @pulse/web lint && pnpm --filter @pulse/web typecheck`
 
 Expected: PASS.
 
@@ -420,7 +420,7 @@ Load `/api/v1/admin/rooms` beside reports/audit. Render a dedicated “房间记
 
 - [ ] **Step 4: Run focused tests, lint, and web typecheck**
 
-Run: `pnpm vitest run apps/web/src/features/operations/admin-moderation.test.ts && pnpm --filter @football-predictor/web lint && pnpm --filter @football-predictor/web typecheck`
+Run: `pnpm vitest run apps/web/src/features/operations/admin-moderation.test.ts && pnpm --filter @pulse/web lint && pnpm --filter @pulse/web typecheck`
 
 Expected: PASS.
 

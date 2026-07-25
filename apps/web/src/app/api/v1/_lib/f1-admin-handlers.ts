@@ -1,5 +1,5 @@
-import { AuthError, F1ResultEntryError, type F1ClassificationEntry, type F1ResultReceipt } from "@football-predictor/domain";
-import { f1ClassificationEntrySchema } from "@football-predictor/contracts";
+import { AuthError, F1ResultEntryError, type F1ClassificationEntry, type F1ResultReceipt } from "@pulse/domain";
+import { f1ClassificationEntrySchema } from "@pulse/contracts";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";

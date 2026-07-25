@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import type { F1DueSession, F1SessionLockPort } from "@football-predictor/domain";
+import type { F1DueSession, F1SessionLockPort } from "@pulse/domain";
 
 /** Postgres implementation of the automatic lock-at-start port. Eligibility is
  *  re-checked inside a per-session row lock so the sweep serializes with admin

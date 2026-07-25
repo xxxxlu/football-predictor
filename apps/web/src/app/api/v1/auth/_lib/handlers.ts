@@ -1,8 +1,8 @@
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 import { z } from "zod";
 import { assertSameOrigin } from "../../_lib/request-origin";
 import { accessContext, sourceKey } from "./runtime";
-import type { AccessContext } from "@football-predictor/domain";
+import type { AccessContext } from "@pulse/domain";
 
 const registerSchema = z.object({
   username: z.string(),

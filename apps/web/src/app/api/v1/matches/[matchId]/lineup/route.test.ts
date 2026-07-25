@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LineupPlayer, LineupSnapshot, LineupStatus, TeamLineup } from "@football-predictor/domain";
+import type { LineupPlayer, LineupSnapshot, LineupStatus, TeamLineup } from "@pulse/domain";
 import { assessLineup, createLineupGet, GET } from "./route.js";
 
 const NOW = new Date("2026-07-19T18:30:00.000Z");
@@ -151,14 +151,14 @@ describe("GET /api/v1/matches/:matchId/lineup", () => {
       access,
       close: async () => undefined,
     };
-    (globalThis as unknown as { __footballPredictorMatchApiRuntime?: typeof runtime }).__footballPredictorMatchApiRuntime = runtime;
+    (globalThis as unknown as { __pulseMatchApiRuntime?: typeof runtime }).__pulseMatchApiRuntime = runtime;
     try {
       const response = await GET(request(), context);
       expect(response.status).toBe(200);
       expect(reads).toBe(1);
       expect(await response.json()).toMatchObject({ data: { status: "LINEUP_PENDING" } });
     } finally {
-      delete (globalThis as unknown as { __footballPredictorMatchApiRuntime?: typeof runtime }).__footballPredictorMatchApiRuntime;
+      delete (globalThis as unknown as { __pulseMatchApiRuntime?: typeof runtime }).__pulseMatchApiRuntime;
     }
   });
 });

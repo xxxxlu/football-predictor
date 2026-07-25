@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ConfigError, loadIdentityConfig, loadServerConfig } from "@football-predictor/config";
+import { ConfigError, loadIdentityConfig, loadServerConfig } from "@pulse/config";
 import { expectedMigrations, probeDatabase, type DatabaseProbeFactory } from "./readiness";
 
 type ReadinessDependencies = { migrations(): Promise<string[]>; probe(databaseUrl: string, expected: string[], factory?: DatabaseProbeFactory): ReturnType<typeof probeDatabase> };

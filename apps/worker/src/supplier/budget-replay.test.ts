@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InMemorySupplierBudget, emptyBudgetState, SUPPLIER_HARD_LIMIT } from "@football-predictor/domain";
+import { InMemorySupplierBudget, emptyBudgetState, SUPPLIER_HARD_LIMIT } from "@pulse/domain";
 import { createSupplierJobHandler, type MatchSnapshotRepositoryPort, type SupplierClientPort } from "./handler.js";
 
 // Story 7.5 / NFR42 gate G3 — "worst matchday" supplier-budget replay.

@@ -1,6 +1,6 @@
-# Football Predictor
+# PULSE
 
-BMAD-planned TypeScript monorepo for a non-cash football prediction PWA.
+BMAD-planned TypeScript monorepo for PULSE — a non-cash multi-sport (football + Formula 1) prediction PWA.
 
 ## Prerequisites
 
@@ -25,7 +25,7 @@ pnpm dev:web
 pnpm dev:worker
 ```
 
-Required runtime keys are validated by `@football-predictor/config`. Missing or invalid keys fail fast without printing secret values.
+Required runtime keys are validated by `@pulse/config`. Missing or invalid keys fail fast without printing secret values.
 
 Registered users can create either `PUBLIC` or `PRIVATE` rooms. Active public rooms appear in the authenticated lobby and can be joined directly after rules confirmation; private rooms remain invitation-only. Every room keeps its own one-time 10,000-point initial account, and repeat joins never issue another grant.
 

@@ -8,7 +8,7 @@
 // load environment and remain documented gaps for Story 7.5.
 //
 // Usage:
-//   node scripts/perf-smoke.mjs https://football-predictor-web.onrender.com
+//   node scripts/perf-smoke.mjs https://pulse-web.onrender.com
 //   PERF_SMOKE_BASE_URL=https://... node scripts/perf-smoke.mjs
 //   PERF_SMOKE_COOKIE="fp_session=..." node scripts/perf-smoke.mjs   # also probes /api/v1/matches
 // Defaults to the local dev server when no target is provided.

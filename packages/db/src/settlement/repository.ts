@@ -9,7 +9,7 @@ import {
   type SettlementTransaction,
   type SettlementTransactionPort,
   type SettlementWrite,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 
 export interface SettlementCandidateRecord {
   ticketId: string;

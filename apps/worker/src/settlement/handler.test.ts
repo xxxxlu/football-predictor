@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID } from "@football-predictor/domain";
+import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID } from "@pulse/domain";
 import { createSettlementJobHandler, createSettlementRetryService, outcomeForCandidate, type SettlementCandidate } from "./handler.js";
 
 const candidate = (overrides: Partial<SettlementCandidate> = {}): SettlementCandidate => ({

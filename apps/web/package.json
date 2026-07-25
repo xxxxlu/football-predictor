@@ -1,5 +1,5 @@
 {
-  "name": "@football-predictor/web",
+  "name": "@pulse/web",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -10,14 +10,14 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test",
-    "predev": "pnpm --filter @football-predictor/config build"
+    "predev": "pnpm --filter @pulse/config build"
   },
   "dependencies": {
-    "@football-predictor/config": "workspace:*",
-    "@football-predictor/contracts": "workspace:*",
-    "@football-predictor/db": "workspace:*",
-    "@football-predictor/domain": "workspace:*",
-    "@football-predictor/supplier": "workspace:*",
+    "@pulse/config": "workspace:*",
+    "@pulse/contracts": "workspace:*",
+    "@pulse/db": "workspace:*",
+    "@pulse/domain": "workspace:*",
+    "@pulse/supplier": "workspace:*",
     "@node-rs/argon2": "2.0.2",
     "next": "16.2.11",
     "postgres": "3.4.9",

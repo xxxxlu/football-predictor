@@ -1,6 +1,6 @@
-import { ApiFootballClient } from "@football-predictor/api-football";
-import { ConfigError, loadSupplierWorkerConfig } from "@football-predictor/config";
-import { createSupplierPersistence } from "@football-predictor/db";
+import { ApiFootballClient } from "@pulse/api-football";
+import { ConfigError, loadSupplierWorkerConfig } from "@pulse/config";
+import { createSupplierPersistence } from "@pulse/db";
 import { createSupplierWorkerComposition } from "./supplier/composition.js";
 import { PrewarmConfigurationError, runSupplierPrewarm, validatePrewarmEnvironment } from "./supplier/prewarm.js";
 

@@ -1,5 +1,5 @@
 {
-  "name": "@football-predictor/testkit",
+  "name": "@pulse/testkit",
   "version": "0.1.0",
   "private": true,
   "type": "module",

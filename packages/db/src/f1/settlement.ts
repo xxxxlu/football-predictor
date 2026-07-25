@@ -6,7 +6,7 @@ import type {
   F1Session,
   F1SessionState,
   F1SettlementCandidate,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 
 type CandidateRow = {
   ticketId: string;

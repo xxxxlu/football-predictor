@@ -1,5 +1,5 @@
-import { createSupplierPersistence } from "@football-predictor/db";
-import { OpenLigaDbCompetitionSync, TheOddsApiClient } from "@football-predictor/supplier";
+import { createSupplierPersistence } from "@pulse/db";
+import { OpenLigaDbCompetitionSync, TheOddsApiClient } from "@pulse/supplier";
 import { runCurrentWorldCupJob, validateCurrentWorldCupEnvironment } from "./current-world-cup.js";
 import { createPostgresSettlementWorkerComposition } from "./settlement/composition.js";
 

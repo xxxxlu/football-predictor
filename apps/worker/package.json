@@ -1,5 +1,5 @@
 {
-  "name": "@football-predictor/worker",
+  "name": "@pulse/worker",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -13,10 +13,10 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@football-predictor/api-football": "workspace:*",
-    "@football-predictor/config": "workspace:*",
-    "@football-predictor/db": "workspace:*",
-    "@football-predictor/domain": "workspace:*",
-    "@football-predictor/supplier": "workspace:*"
+    "@pulse/api-football": "workspace:*",
+    "@pulse/config": "workspace:*",
+    "@pulse/db": "workspace:*",
+    "@pulse/domain": "workspace:*",
+    "@pulse/supplier": "workspace:*"
   }
 }

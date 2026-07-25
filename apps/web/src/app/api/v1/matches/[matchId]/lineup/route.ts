@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { LineupSnapshot, TeamLineup } from "@football-predictor/domain";
+import type { LineupSnapshot, TeamLineup } from "@pulse/domain";
 import { authorizeMatchRead } from "../../access";
 import { getMatchApiRuntime, type LineupReadPort, type MatchReadAccess } from "../../runtime";
 

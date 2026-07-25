@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LineupSnapshot } from "@football-predictor/domain";
+import type { LineupSnapshot } from "@pulse/domain";
 import { createWorkerScheduler, type SchedulerTimerPort } from "./scheduler.js";
 import { createSupplierWorkerComposition } from "./supplier/composition.js";
 

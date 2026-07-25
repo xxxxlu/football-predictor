@@ -1,5 +1,5 @@
 import type postgres from "postgres";
-import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@football-predictor/domain";
+import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@pulse/domain";
 
 export class OperationError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); this.name = "OperationError"; }

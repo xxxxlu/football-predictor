@@ -1,5 +1,5 @@
 {
-  "name": "@football-predictor/config",
+  "name": "@pulse/config",
   "version": "0.1.0",
   "private": true,
   "type": "module",

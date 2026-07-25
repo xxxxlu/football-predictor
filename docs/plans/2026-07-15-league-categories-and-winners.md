@@ -17,7 +17,7 @@
 - Modify: `packages/db/src/supplier/repository.ts`
 
 1. Add a failing repository test whose row contains `resultConfirmed`, `homeScore`, `awayScore`, and `resultVersion`, expecting a populated `result` object.
-2. Run `pnpm --filter @football-predictor/db test -- repository.test.ts` and verify the assertion fails because `result` is absent.
+2. Run `pnpm --filter @pulse/db test -- repository.test.ts` and verify the assertion fails because `result` is absent.
 3. Extend `FixtureRow`, both fixture SELECT lists, and `mapFixture` to return the result fields.
 4. Re-run the focused test and verify it passes.
 
@@ -28,7 +28,7 @@
 - Modify: `apps/web/src/features/matchday/types.ts`
 
 1. Add failing tests for a confirmed `2-1` result and for ignored unconfirmed/invalid results.
-2. Run `pnpm --filter @football-predictor/web test -- src/features/matchday/types.test.ts` and verify failure because `MatchView.result` is missing.
+2. Run `pnpm --filter @pulse/web test -- src/features/matchday/types.test.ts` and verify failure because `MatchView.result` is missing.
 3. Add the result shape to `ProductMatch` and `MatchView`; normalize only confirmed, finite, non-negative integer scores.
 4. Re-run the focused test and verify it passes.
 
@@ -39,7 +39,7 @@
 - Modify: `apps/web/src/features/matchday/match-filters.ts`
 
 1. Replace/add a failing grouping test expecting `competition -> dates -> matches` ordering.
-2. Run `pnpm --filter @football-predictor/web test -- src/features/matchday/match-filters.test.ts` and verify the old date-first result fails.
+2. Run `pnpm --filter @pulse/web test -- src/features/matchday/match-filters.test.ts` and verify the old date-first result fails.
 3. Implement `groupMatchesByCompetition`, preserving current finished/open sorting rules inside each date.
 4. Re-run the focused test and verify it passes.
 
@@ -51,7 +51,7 @@
 - Modify: `apps/web/src/features/matchday/match-list.tsx`
 
 1. Add failing render tests for home win, away win, draw, and missing confirmed result.
-2. Run `pnpm --filter @football-predictor/web test -- src/features/matchday/match-card.test.ts` and verify failure.
+2. Run `pnpm --filter @pulse/web test -- src/features/matchday/match-card.test.ts` and verify failure.
 3. Render the final score and derived winner label for finished matches, while preserving the existing open-match odds presentation.
 4. Replace the league select with accessible league filter buttons and render outer league sections containing date subsections.
 5. Re-run the focused card and match-filter tests.

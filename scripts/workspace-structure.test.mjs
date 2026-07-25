@@ -29,7 +29,7 @@ test("free-tier deployment builds the web workspace and bounds current World Cup
   const vercel = JSON.parse(await readFile("vercel.json", "utf8"));
   assert.equal(vercel.framework, "nextjs");
   assert.match(vercel.buildCommand, /build:packages/);
-  assert.match(vercel.buildCommand, /@football-predictor\/web build/);
+  assert.match(vercel.buildCommand, /@pulse\/web build/);
   assert.equal(vercel.outputDirectory, "apps/web/.next");
 
   const workflow = await readFile(".github/workflows/supplier-sync.yml", "utf8");

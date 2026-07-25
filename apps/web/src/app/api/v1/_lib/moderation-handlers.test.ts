@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { OperationError } from "@football-predictor/db";
+import { OperationError } from "@pulse/db";
 import { createModerationHandlers } from "./moderation-handlers.js";
 
 const request = (path: string, method = "GET", body?: unknown) => new Request(`https://example.test${path}`, {

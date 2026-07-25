@@ -19,7 +19,7 @@ const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
   let created = 0;
   await sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtext('football_predictor_super_admin_seed'))`;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('pulse_super_admin_seed'))`;
     for (const account of accounts) {
       const [existing] = await tx`SELECT id,is_super_admin FROM identity.users WHERE username_canonical=${account.username} FOR UPDATE`;
       if (existing && !existing.is_super_admin) throw new Error(`Configured super-admin username is already owned by a normal account: ${account.username}`);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { F1SettlementCandidate } from "@football-predictor/domain";
+import type { F1SettlementCandidate } from "@pulse/domain";
 import { createF1SettlementJobHandler } from "./f1-handler.js";
 import { createSettlementWorkerComposition } from "./composition.js";
 

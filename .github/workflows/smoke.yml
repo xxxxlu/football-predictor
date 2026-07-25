@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: "Base URL of the deployed web service (e.g. https://football-predictor-web.onrender.com)"
+        description: "Base URL of the deployed web service (e.g. https://pulse-web.onrender.com)"
         required: true
         type: string
   workflow_call:

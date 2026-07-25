@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import { exactPodiumComboOdds } from "@football-predictor/domain";
+import { exactPodiumComboOdds } from "@pulse/domain";
 import { StatusMessage } from "@/components/status-message";
 import { discardOfflineDraft, loadOfflineDraft, revalidateDraft, saveOfflineDraft, type DraftVerdict, type OfflineDraft } from "@/features/pwa/offline-draft";
 import { useOnlineStatus } from "@/features/pwa/offline-status";

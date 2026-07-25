@@ -1,12 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, DrizzleRoomRepository } from "@football-predictor/db";
-import { RoomService } from "@football-predictor/domain";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, DrizzleRoomRepository } from "@pulse/db";
+import { RoomService } from "@pulse/domain";
 
-declare global { var __footballPredictorRoomService: RoomService | undefined; }
+declare global { var __pulseRoomService: RoomService | undefined; }
 
 export function getRoomService() {
-  if (globalThis.__footballPredictorRoomService) return globalThis.__footballPredictorRoomService;
+  if (globalThis.__pulseRoomService) return globalThis.__pulseRoomService;
   const config = loadIdentityConfig(process.env);
   const { db } = createIdentityDatabase(config.databaseUrl);
   const tokens = {
@@ -14,6 +14,6 @@ export function getRoomService() {
     hash: (value: string) => createHash("sha256").update(value, "utf8").digest("hex"),
     id: () => randomUUID(),
   };
-  globalThis.__footballPredictorRoomService = new RoomService(new DrizzleRoomRepository(db), tokens, () => new Date(), { rulesVersion: config.rulesVersion, initialPoints: "10000.00" });
-  return globalThis.__footballPredictorRoomService;
+  globalThis.__pulseRoomService = new RoomService(new DrizzleRoomRepository(db), tokens, () => new Date(), { rulesVersion: config.rulesVersion, initialPoints: "10000.00" });
+  return globalThis.__pulseRoomService;
 }

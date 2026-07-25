@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createPersistentSupplierJobRunner, type SupplierJobStorePort } from "./persistent-supplier.js";
 import type { SupplierJob, SupplierJobResult } from "../supplier/handler.js";
-import { JobClaimError } from "@football-predictor/db";
+import { JobClaimError } from "@pulse/db";
 
 const now = new Date("2026-07-14T10:00:00.000Z");
 const requestedJob: SupplierJob = {

@@ -1,6 +1,6 @@
 import { and, count, eq, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
-import type { RoomRepository, RoomSummaryRecord } from "@football-predictor/domain";
+import type { RoomRepository, RoomSummaryRecord } from "@pulse/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import { identityUsers } from "../identity/schema.js";
 import { pointAccounts, pointLedgerEntries, roomAuditEvents, roomMembers, rooms } from "./schema.js";

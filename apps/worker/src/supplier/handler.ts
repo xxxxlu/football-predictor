@@ -1,5 +1,5 @@
-import type { FixtureSnapshot, LineupSnapshot } from "@football-predictor/domain";
-import { LineupSyncService, lineupRefreshDecision, type LineupGateway } from "@football-predictor/supplier";
+import type { FixtureSnapshot, LineupSnapshot } from "@pulse/domain";
+import { LineupSyncService, lineupRefreshDecision, type LineupGateway } from "@pulse/supplier";
 
 export type SupplierRequestCategory = "STATIC" | "PREMATCH_ODDS" | "LIVE" | "SETTLEMENT";
 export type BudgetRejectionReason = "CATEGORY_EXHAUSTED" | "PROTECTED_RESERVE" | "HARD_LIMIT";

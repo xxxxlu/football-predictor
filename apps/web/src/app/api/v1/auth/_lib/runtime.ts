@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, DrizzleIdentityRepository } from "@football-predictor/db";
-import { IdentityService, type AccessContext, type PasswordHasher, type TokenFactory } from "@football-predictor/domain";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, DrizzleIdentityRepository } from "@pulse/db";
+import { IdentityService, type AccessContext, type PasswordHasher, type TokenFactory } from "@pulse/domain";
 
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 
@@ -29,11 +29,11 @@ export function createTokenFactory(): TokenFactory {
 }
 
 declare global {
-  var __footballPredictorIdentityService: IdentityService | undefined;
+  var __pulseIdentityService: IdentityService | undefined;
 }
 
 export function getIdentityService() {
-  if (globalThis.__footballPredictorIdentityService) return globalThis.__footballPredictorIdentityService;
+  if (globalThis.__pulseIdentityService) return globalThis.__pulseIdentityService;
   const config = loadIdentityConfig(process.env);
   const { db } = createIdentityDatabase(config.databaseUrl);
   const service = new IdentityService(
@@ -43,7 +43,7 @@ export function getIdentityService() {
     () => new Date(),
     { currentRulesVersion: config.rulesVersion, sessionTtlMs: config.sessionTtlMs },
   );
-  globalThis.__footballPredictorIdentityService = service;
+  globalThis.__pulseIdentityService = service;
   return service;
 }
 

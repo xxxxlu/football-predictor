@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { FixtureSnapshot, LineupSnapshot, LiveSnapshot, MatchStatus, OddsSnapshot, PlayerPosition, Selection, TeamLineup } from "@football-predictor/domain";
+import type { FixtureSnapshot, LineupSnapshot, LiveSnapshot, MatchStatus, OddsSnapshot, PlayerPosition, Selection, TeamLineup } from "@pulse/domain";
 
 export interface QuotaHeaders { supplierLimit?: number; supplierRemaining?: number }
 export interface SupplierResult<T> { data: T; quota: QuotaHeaders }

@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
-import { isCorrectScoreSelection } from "@football-predictor/domain";
-import type { MarketForSubmission, PredictionSelection } from "@football-predictor/domain";
+import { isCorrectScoreSelection } from "@pulse/domain";
+import type { MarketForSubmission, PredictionSelection } from "@pulse/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import type { MarketSnapshotPort } from "./repository.js";
 

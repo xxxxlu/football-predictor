@@ -1,4 +1,4 @@
-import { outcomeForF1Candidate, type F1SettlementCandidate } from "@football-predictor/domain";
+import { outcomeForF1Candidate, type F1SettlementCandidate } from "@pulse/domain";
 import type { SettlementApplicationPort } from "./handler.js";
 
 export interface F1SettlementCandidatePort {

@@ -1,6 +1,6 @@
-import { ApiFootballClient } from "@football-predictor/api-football";
-import { loadServerConfig, loadSupplierWorkerConfig } from "@football-predictor/config";
-import { createSupplierPersistence } from "@football-predictor/db";
+import { ApiFootballClient } from "@pulse/api-football";
+import { loadServerConfig, loadSupplierWorkerConfig } from "@pulse/config";
+import { createSupplierPersistence } from "@pulse/db";
 import { createWorkerRuntime, type LogEntry } from "./runtime.js";
 import { createWorkerScheduler } from "./scheduler.js";
 import { createPostgresSettlementWorkerComposition } from "./settlement/composition.js";

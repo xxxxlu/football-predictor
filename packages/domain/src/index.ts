@@ -1,5 +1,5 @@
 /** domain package boundary. Business modules are added by their owning stories. */
-export const packageName = "@football-predictor/domain" as const;
+export const packageName = "@pulse/domain" as const;
 export * from "./identity/service.js";
 export * from "./rooms/service.js";
 export * from "./rooms/submission-status.js";

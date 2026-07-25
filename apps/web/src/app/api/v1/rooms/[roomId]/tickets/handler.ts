@@ -1,4 +1,4 @@
-import { AuthError, RoomError, TicketSubmissionError, type PredictionSelection } from "@football-predictor/domain";
+import { AuthError, RoomError, TicketSubmissionError, type PredictionSelection } from "@pulse/domain";
 import { z } from "zod";
 import { readSessionToken } from "../../../auth/_lib/handlers";
 import { assertSameOrigin } from "../../../_lib/request-origin";

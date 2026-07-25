@@ -1,4 +1,4 @@
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
 import { assertSameOrigin } from "../../_lib/request-origin";

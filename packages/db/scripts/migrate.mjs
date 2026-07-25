@@ -12,7 +12,7 @@ const sql = postgres(databaseUrl, { max: 1, prepare: false });
 
 try {
   await sql.begin(async (transaction) => {
-    await transaction`SELECT pg_advisory_xact_lock(hashtext('football_predictor_migrations'))`;
+    await transaction`SELECT pg_advisory_xact_lock(hashtext('pulse_migrations'))`;
     await transaction`CREATE TABLE IF NOT EXISTS public.app_schema_migrations (name text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())`;
     const applied = new Set((await transaction`SELECT name FROM public.app_schema_migrations`).map((row) => row.name));
     for (const file of files) {

@@ -6,8 +6,8 @@ import {
   type SettlementClock,
   type SettlementIds,
   type SettlementTransactionPort,
-} from "@football-predictor/domain";
-import { createSettlementPersistence } from "@football-predictor/db";
+} from "@pulse/domain";
+import { createSettlementPersistence } from "@pulse/db";
 import {
   createSettlementJobHandler,
   createSettlementRetryService,

@@ -1,4 +1,4 @@
-import type { FixtureSnapshot, LineupSnapshot, MatchStatus } from "@football-predictor/domain";
+import type { FixtureSnapshot, LineupSnapshot, MatchStatus } from "@pulse/domain";
 
 /** Lineups are published close to kickoff; do not spend supplier quota on distant fixtures. */
 export const LINEUP_REFRESH_POLICY = {

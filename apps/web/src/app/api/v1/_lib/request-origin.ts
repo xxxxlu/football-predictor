@@ -1,4 +1,4 @@
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 
 /**
  * Same-origin guard for state-changing API requests.

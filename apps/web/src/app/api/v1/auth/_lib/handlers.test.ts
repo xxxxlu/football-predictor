@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 import { createAuthHandlers } from "./handlers.js";
 
 function request(path: string, body?: unknown, cookie?: string) {

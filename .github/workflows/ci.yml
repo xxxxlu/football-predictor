@@ -36,13 +36,13 @@ jobs:
       postgres:
         image: postgres:18-bookworm
         env:
-          POSTGRES_USER: football
-          POSTGRES_PASSWORD: football_ci
-          POSTGRES_DB: football_predictor_test
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse_ci
+          POSTGRES_DB: pulse_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U football -d football_predictor_test"
+          --health-cmd "pg_isready -U pulse -d pulse_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -51,7 +51,7 @@ jobs:
       APP_VERSION: ci
       LOG_LEVEL: info
       RULES_VERSION: phase-1-ci
-      DATABASE_URL: postgresql://football:football_ci@127.0.0.1:5432/football_predictor_test
+      DATABASE_URL: postgresql://pulse:pulse_ci@127.0.0.1:5432/pulse_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -68,7 +68,7 @@ jobs:
         run: |
           pnpm db:migrate
           pnpm db:migrate
-          pnpm --filter @football-predictor/db exec node --input-type=module -e '
+          pnpm --filter @pulse/db exec node --input-type=module -e '
             import { readdir } from "node:fs/promises";
             import postgres from "postgres";
             const expected = (await readdir("migrations")).filter((name) => name.endsWith(".sql")).length;
@@ -94,13 +94,13 @@ jobs:
       postgres:
         image: postgres:18-bookworm
         env:
-          POSTGRES_USER: football
-          POSTGRES_PASSWORD: football_ci
-          POSTGRES_DB: football_predictor_test
+          POSTGRES_USER: pulse
+          POSTGRES_PASSWORD: pulse_ci
+          POSTGRES_DB: pulse_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U football -d football_predictor_test"
+          --health-cmd "pg_isready -U pulse -d pulse_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -109,7 +109,7 @@ jobs:
       APP_VERSION: ci
       LOG_LEVEL: info
       RULES_VERSION: phase-1-ci
-      DATABASE_URL: postgresql://football:football_ci@127.0.0.1:5432/football_predictor_test
+      DATABASE_URL: postgresql://pulse:pulse_ci@127.0.0.1:5432/pulse_test
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3001
       # Throwaway credentials for this job's disposable database only — never used outside CI.
       # The seed script and the super-admin journey (super-admin-exception.spec.ts) read the same values.
@@ -139,9 +139,9 @@ jobs:
       - name: Seed the e2e football fixture (closing-race journey)
         run: pnpm db:seed:e2e
       - name: Install Playwright browser (chromium)
-        run: pnpm --filter @football-predictor/web exec playwright install --with-deps chromium
+        run: pnpm --filter @pulse/web exec playwright install --with-deps chromium
       - name: Run main-journey E2E and axe accessibility scan
-        run: pnpm --filter @football-predictor/web test:e2e
+        run: pnpm --filter @pulse/web test:e2e
       - name: Upload Playwright report
         if: always()
         uses: actions/upload-artifact@v4
@@ -157,7 +157,7 @@ jobs:
         # those remain documented gaps.
         if: always()
         run: |
-          pnpm --filter @football-predictor/web exec next start -p 3001 &
+          pnpm --filter @pulse/web exec next start -p 3001 &
           SERVER_PID=$!
           for _ in $(seq 1 30); do
             if curl -sf http://127.0.0.1:3001/api/health/live >/dev/null 2>&1; then break; fi

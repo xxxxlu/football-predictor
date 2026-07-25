@@ -11,7 +11,7 @@ describe("GET /api/v1/matches/:matchId", () => {
       },
       close: async () => undefined,
     };
-    (globalThis as unknown as { __footballPredictorMatchApiRuntime?: typeof runtime }).__footballPredictorMatchApiRuntime = runtime;
+    (globalThis as unknown as { __pulseMatchApiRuntime?: typeof runtime }).__pulseMatchApiRuntime = runtime;
     try {
       const response = await GET(
         new Request("http://localhost/api/v1/matches/postgres-match", { headers: { cookie: "fp_session=valid" } }),
@@ -20,7 +20,7 @@ describe("GET /api/v1/matches/:matchId", () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({ data: { id: "postgres-match" } });
     } finally {
-      delete (globalThis as unknown as { __footballPredictorMatchApiRuntime?: typeof runtime }).__footballPredictorMatchApiRuntime;
+      delete (globalThis as unknown as { __pulseMatchApiRuntime?: typeof runtime }).__pulseMatchApiRuntime;
     }
   });
 

@@ -1,4 +1,4 @@
-import { correctScoreSelectionForResult, marketKindFromSupplierMarketId } from "@football-predictor/domain";
+import { correctScoreSelectionForResult, marketKindFromSupplierMarketId } from "@pulse/domain";
 
 export type CandidateMatchStatus = "FINISHED" | "CANCELLED" | "POSTPONED" | "SUSPENDED" | "SCHEDULED" | "LIVE";
 

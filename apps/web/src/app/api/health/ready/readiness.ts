@@ -14,7 +14,7 @@ export const createPostgresProbe: DatabaseProbeFactory = (databaseUrl) => {
     connect_timeout: READINESS_DB_TIMEOUTS.connectSeconds,
     idle_timeout: 1,
     max_lifetime: 5,
-    connection: { application_name: "football-predictor-readiness", statement_timeout: READINESS_DB_TIMEOUTS.statementMilliseconds, lock_timeout: READINESS_DB_TIMEOUTS.lockMilliseconds },
+    connection: { application_name: "pulse-readiness", statement_timeout: READINESS_DB_TIMEOUTS.statementMilliseconds, lock_timeout: READINESS_DB_TIMEOUTS.lockMilliseconds },
   });
   return {
     ping: async () => { await sql`SELECT 1`; },

@@ -1,4 +1,4 @@
-import type { SyncCompetition } from "@football-predictor/supplier";
+import type { SyncCompetition } from "@pulse/supplier";
 
 /** Default when OPENLIGADB_COMPETITIONS is unset: exactly the historical World Cup 2026 behavior. */
 export const DEFAULT_OPENLIGADB_COMPETITIONS: readonly SyncCompetition[] = [

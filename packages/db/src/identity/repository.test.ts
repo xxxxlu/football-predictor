@@ -1,4 +1,4 @@
-import { AuthError, type IdentityAccount } from "@football-predictor/domain";
+import { AuthError, type IdentityAccount } from "@pulse/domain";
 import { describe, expect, it } from "vitest";
 
 import { DrizzleIdentityRepository, type IdentityDatabase } from "./repository.js";

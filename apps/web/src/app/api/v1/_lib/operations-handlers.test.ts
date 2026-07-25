@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { OperationError } from "@football-predictor/db";
+import { OperationError } from "@pulse/db";
 import { createOperationsHandlers } from "./operations-handlers.js";
 
 const get = (path: string) => new Request(`https://example.test${path}`, { headers: { cookie: "fp_session=token" } });

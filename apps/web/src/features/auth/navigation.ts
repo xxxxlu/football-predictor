@@ -5,8 +5,8 @@ export function safeReturnTo(target: string | null | undefined, fallback = DEFAU
   try {
     const decoded = decodeURIComponent(target);
     if (decoded.startsWith("//") || decoded.includes("\\")) return fallback;
-    const parsed = new URL(target, "https://football-predictor.local");
-    if (parsed.origin !== "https://football-predictor.local") return fallback;
+    const parsed = new URL(target, "https://pulse.local");
+    if (parsed.origin !== "https://pulse.local") return fallback;
     return `${parsed.pathname}${parsed.search}${parsed.hash}`;
   } catch {
     return fallback;

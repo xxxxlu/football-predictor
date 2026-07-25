@@ -1,4 +1,4 @@
-import { loadIdentityConfig } from "@football-predictor/config";
+import { loadIdentityConfig } from "@pulse/config";
 import { createAuthHandlers } from "./handlers";
 import { getIdentityService } from "./runtime";
 

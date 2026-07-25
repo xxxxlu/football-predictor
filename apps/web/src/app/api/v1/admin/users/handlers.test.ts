@@ -1,4 +1,4 @@
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 import { describe, expect, it, vi } from "vitest";
 import { createAdminIdentityHandlers } from "./handlers.js";
 

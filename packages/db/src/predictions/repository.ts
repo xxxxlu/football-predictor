@@ -10,7 +10,7 @@ import {
   type SubmittedTicket,
   type TicketSubmissionTransaction,
   type TicketSubmissionTransactionPort,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import { pointAccounts, pointLedgerEntries, rooms } from "../rooms/schema.js";
 import { roomAllowsPredictions } from "../operations/moderation-privacy.js";

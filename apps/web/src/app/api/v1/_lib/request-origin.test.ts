@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AuthError } from "@football-predictor/domain";
+import { AuthError } from "@pulse/domain";
 import { assertSameOrigin, isSameOrigin } from "./request-origin.js";
 
 function build(url: string, headers: Record<string, string>) {

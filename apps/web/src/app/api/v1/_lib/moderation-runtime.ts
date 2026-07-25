@@ -1,13 +1,13 @@
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, PostgresModerationPrivacyRepository } from "@football-predictor/db";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, PostgresModerationPrivacyRepository } from "@pulse/db";
 import { getIdentityService } from "../auth/_lib/runtime";
 import { createModerationHandlers } from "./moderation-handlers";
 
-declare global { var __footballPredictorModerationRepository: PostgresModerationPrivacyRepository | undefined; }
+declare global { var __pulseModerationRepository: PostgresModerationPrivacyRepository | undefined; }
 export function moderationHandlers() {
-  if (!globalThis.__footballPredictorModerationRepository) {
+  if (!globalThis.__pulseModerationRepository) {
     const config = loadIdentityConfig(process.env);
-    globalThis.__footballPredictorModerationRepository = new PostgresModerationPrivacyRepository(createIdentityDatabase(config.databaseUrl).sql);
+    globalThis.__pulseModerationRepository = new PostgresModerationPrivacyRepository(createIdentityDatabase(config.databaseUrl).sql);
   }
-  return createModerationHandlers(getIdentityService(), globalThis.__footballPredictorModerationRepository, { secureCookie: process.env.APP_ENV === "production" });
+  return createModerationHandlers(getIdentityService(), globalThis.__pulseModerationRepository, { secureCookie: process.env.APP_ENV === "production" });
 }

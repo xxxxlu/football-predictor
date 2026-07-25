@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID, type LineupPlayer, type LineupSnapshot, type LineupStatus, type TeamLineup } from "@football-predictor/domain";
+import { CORRECT_SCORE_SUPPLIER_MARKET_ID, ONE_X_TWO_SUPPLIER_MARKET_ID, type LineupPlayer, type LineupSnapshot, type LineupStatus, type TeamLineup } from "@pulse/domain";
 import type postgres from "postgres";
 
 export type SyncState = "IDLE" | "SYNCING" | "PAUSED" | "FAILED";

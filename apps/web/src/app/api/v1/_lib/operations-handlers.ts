@@ -1,5 +1,5 @@
-import { OperationError } from "@football-predictor/db";
-import { AuthError } from "@football-predictor/domain";
+import { OperationError } from "@pulse/db";
+import { AuthError } from "@pulse/domain";
 import { z } from "zod";
 import { readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";

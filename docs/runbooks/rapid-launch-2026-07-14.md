@@ -11,15 +11,15 @@ Keep Phase 2/3 disabled: public lobby, grants, parlays, Asian handicap, totals, 
 Build from the repository root:
 
 ```bash
-docker build -f Dockerfile.web -t football-predictor-web:$GIT_SHA .
-docker build -f Dockerfile.worker -t football-predictor-worker:$GIT_SHA .
+docker build -f Dockerfile.web -t pulse-web:$GIT_SHA .
+docker build -f Dockerfile.worker -t pulse-worker:$GIT_SHA .
 ```
 
 Run exactly one migration job before starting the new web/worker revision. Web and worker use the same immutable Git SHA. Both images use Node 24 and run as the non-root `node` user.
 
 | Process | Command in image | Port | Health |
 |---|---|---:|---|
-| web | `pnpm --filter @football-predictor/web start` | 3000 | `GET /api/health/ready` |
+| web | `pnpm --filter @pulse/web start` | 3000 | `GET /api/health/ready` |
 | worker | `node apps/worker/dist/main.js` | none | container PID check plus structured `worker.started` log |
 | migration job | `pnpm db:migrate` using the web image | none | exit code 0 and migration table verification |
 
@@ -96,13 +96,13 @@ Two super-admin accounts must be seeded by a separate audited one-shot operation
 ```bash
 # Local validation; override when 5432 is already occupied.
 POSTGRES_PORT=55432 docker compose up -d postgres
-DATABASE_URL=postgresql://football:football@127.0.0.1:55432/football_predictor pnpm db:migrate
+DATABASE_URL=postgresql://pulse:pulse@127.0.0.1:55432/pulse pnpm db:migrate
 
 # 1. Record current image digests and migration table.
-docker run --rm --env-file /secure/prod.env football-predictor-web:$GIT_SHA pnpm db:migrate
+docker run --rm --env-file /secure/prod.env pulse-web:$GIT_SHA pnpm db:migrate
 
 # 2. One-shot, audited seed; remove these secrets after both admins rotate passwords.
-docker run --rm --env-file /secure/admin-seed.env football-predictor-web:$GIT_SHA pnpm db:seed:super-admins
+docker run --rm --env-file /secure/admin-seed.env pulse-web:$GIT_SHA pnpm db:seed:super-admins
 
 # 3. Start/roll the web revision, then worker revision.
 # Platform-specific commands intentionally omitted: this runbook does not deploy.

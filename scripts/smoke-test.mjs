@@ -4,7 +4,7 @@
 // against any environment; performs only anonymous GETs and never mutates state.
 //
 // Usage:
-//   node scripts/smoke-test.mjs https://football-predictor-web.onrender.com
+//   node scripts/smoke-test.mjs https://pulse-web.onrender.com
 //   SMOKE_BASE_URL=https://... node scripts/smoke-test.mjs
 // Defaults to the local dev server when no target is provided.
 

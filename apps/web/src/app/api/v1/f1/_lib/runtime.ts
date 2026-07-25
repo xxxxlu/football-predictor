@@ -1,17 +1,17 @@
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, DrizzleF1Repository } from "@football-predictor/db";
-import { F1_SEASON_2026 } from "@football-predictor/domain";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, DrizzleF1Repository } from "@pulse/db";
+import { F1_SEASON_2026 } from "@pulse/domain";
 import { getIdentityService } from "../../auth/_lib/runtime";
 import { readSessionToken } from "../../auth/_lib/handlers";
 
-declare global { var __footballPredictorF1Repository: DrizzleF1Repository | undefined; }
+declare global { var __pulseF1Repository: DrizzleF1Repository | undefined; }
 
 export function getF1Repository() {
-  if (!globalThis.__footballPredictorF1Repository) {
+  if (!globalThis.__pulseF1Repository) {
     const config = loadIdentityConfig(process.env);
-    globalThis.__footballPredictorF1Repository = new DrizzleF1Repository(createIdentityDatabase(config.databaseUrl).db);
+    globalThis.__pulseF1Repository = new DrizzleF1Repository(createIdentityDatabase(config.databaseUrl).db);
   }
-  return globalThis.__footballPredictorF1Repository;
+  return globalThis.__pulseF1Repository;
 }
 
 export const CURRENT_F1_SEASON = F1_SEASON_2026;

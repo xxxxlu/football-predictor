@@ -1,9 +1,9 @@
 import type postgres from "postgres";
 import { createHash } from "node:crypto";
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@football-predictor/db";
-import type { LineupSnapshot } from "@football-predictor/domain";
-import { MatchCacheReader, type SupplierFreshness } from "@football-predictor/supplier";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, PostgresMatchSnapshotRepository } from "@pulse/db";
+import type { LineupSnapshot } from "@pulse/domain";
+import { MatchCacheReader, type SupplierFreshness } from "@pulse/supplier";
 import { getIdentityService } from "../auth/_lib/runtime";
 
 export interface MatchReadAccess {
@@ -69,7 +69,7 @@ export class CurrentMatchCache {
 }
 
 declare global {
-  var __footballPredictorMatchApiRuntime: MatchApiRuntime | undefined;
+  var __pulseMatchApiRuntime: MatchApiRuntime | undefined;
 }
 
 export function createMatchApiRuntime(input: {
@@ -96,16 +96,16 @@ export function createMatchApiRuntime(input: {
 }
 
 export function getMatchApiRuntime(): MatchApiRuntime {
-  if (globalThis.__footballPredictorMatchApiRuntime) return globalThis.__footballPredictorMatchApiRuntime;
+  if (globalThis.__pulseMatchApiRuntime) return globalThis.__pulseMatchApiRuntime;
   const config = loadIdentityConfig(process.env);
   const database = createIdentityDatabase(config.databaseUrl);
-  globalThis.__footballPredictorMatchApiRuntime = createMatchApiRuntime({ sql: database.sql, close: database.close });
-  return globalThis.__footballPredictorMatchApiRuntime;
+  globalThis.__pulseMatchApiRuntime = createMatchApiRuntime({ sql: database.sql, close: database.close });
+  return globalThis.__pulseMatchApiRuntime;
 }
 
 export async function closeMatchApiRuntime(): Promise<void> {
-  const runtime = globalThis.__footballPredictorMatchApiRuntime;
-  globalThis.__footballPredictorMatchApiRuntime = undefined;
+  const runtime = globalThis.__pulseMatchApiRuntime;
+  globalThis.__pulseMatchApiRuntime = undefined;
   await runtime?.close();
 }
 

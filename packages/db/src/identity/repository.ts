@@ -1,7 +1,7 @@
 import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { AuthError, type AccessContext, type AccessEventKind, type AudienceDimension, type AuthAttemptKind, type IdentityAccount, type IdentityRepository } from "@football-predictor/domain";
+import { AuthError, type AccessContext, type AccessEventKind, type AudienceDimension, type AuthAttemptKind, type IdentityAccount, type IdentityRepository } from "@pulse/domain";
 import { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions } from "./schema.js";
 
 const schema = { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, reauthProofs, ruleAcceptances, securityEvents, sessions };

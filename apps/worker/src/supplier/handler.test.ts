@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FixtureSnapshot, LineupSnapshot, TeamLineup } from "@football-predictor/domain";
+import type { FixtureSnapshot, LineupSnapshot, TeamLineup } from "@pulse/domain";
 import { createSupplierJobHandler, type MatchSnapshotRepositoryPort, type SupplierBudgetPort, type SupplierClientPort } from "./handler.js";
 
 const now = new Date("2026-07-13T23:50:00.000Z");

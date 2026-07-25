@@ -4,7 +4,7 @@
  *  entry list and H2H pricing formula are imported from it, not duplicated here. */
 import { createHash, randomUUID } from "node:crypto";
 import postgres from "postgres";
-import { F1_CONSTRUCTORS_2026, F1_DRIVERS_2026, f1MarketKindsForSession } from "@football-predictor/domain";
+import { F1_CONSTRUCTORS_2026, F1_DRIVERS_2026, f1MarketKindsForSession } from "@pulse/domain";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("DATABASE_URL is required");
@@ -73,7 +73,7 @@ const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
   const oddsVersion = `seed-${randomUUID().slice(0, 8)}`;
   await sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtext('football_predictor_f1_seed'))`;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('pulse_f1_seed'))`;
 
     for (const constructor of F1_CONSTRUCTORS_2026) {
       await tx`INSERT INTO f1.constructors (key, name, color) VALUES (${constructor.key}, ${constructor.name}, ${constructor.color})

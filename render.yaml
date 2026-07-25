@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: football-predictor-web
+    name: pulse-web
     runtime: docker
     region: singapore
     plan: starter
@@ -23,7 +23,7 @@ services:
         value: "30"
       - key: DATABASE_URL
         fromDatabase:
-          name: football-predictor-db
+          name: pulse-db
           property: connectionString
       - key: SUPER_ADMIN_1_USERNAME
         sync: false
@@ -35,7 +35,7 @@ services:
         sync: false
 
   - type: worker
-    name: football-predictor-worker
+    name: pulse-worker
     runtime: docker
     region: singapore
     plan: starter
@@ -53,7 +53,7 @@ services:
         value: "info"
       - key: DATABASE_URL
         fromDatabase:
-          name: football-predictor-db
+          name: pulse-db
           property: connectionString
       - key: API_FOOTBALL_KEY
         sync: false
@@ -83,8 +83,8 @@ services:
         value: "5"
 
 databases:
-  - name: football-predictor-db
+  - name: pulse-db
     region: singapore
     plan: basic-256mb
-    databaseName: football_predictor
-    user: football
+    databaseName: pulse
+    user: pulse

@@ -1,4 +1,4 @@
-import { JobClaimError, sanitizeJobFailureDetail, supplierJobKey, type JobPayload } from "@football-predictor/db";
+import { JobClaimError, sanitizeJobFailureDetail, supplierJobKey, type JobPayload } from "@pulse/db";
 import type { SupplierJob, SupplierJobResult } from "../supplier/handler.js";
 
 export interface SupplierJobStorePort {

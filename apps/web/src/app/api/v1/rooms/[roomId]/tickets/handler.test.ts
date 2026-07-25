@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { TicketSubmissionError } from "@football-predictor/domain";
+import { TicketSubmissionError } from "@pulse/domain";
 import { createTicketPost } from "./handler.js";
 
 const request = (body: unknown, idempotencyKey = "request-1", cookie = "fp_session=session-token") => new Request("https://example.test/api/v1/rooms/room-1/tickets", {

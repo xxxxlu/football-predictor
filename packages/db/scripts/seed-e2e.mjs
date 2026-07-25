@@ -28,7 +28,7 @@ const capturedAt = new Date().toISOString();
 const sql = postgres(databaseUrl, { max: 1, prepare: false });
 try {
   await sql.begin(async (tx) => {
-    await tx`SELECT pg_advisory_xact_lock(hashtext('football_predictor_e2e_seed'))`;
+    await tx`SELECT pg_advisory_xact_lock(hashtext('pulse_e2e_seed'))`;
 
     await tx`INSERT INTO supplier.fixtures
         (id, supplier, supplier_fixture_id, competition_id, competition_name, season, kickoff_at, status,

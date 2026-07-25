@@ -7,7 +7,7 @@ import {
   type SupplierJob,
   type SupplierJobResult,
 } from "./handler.js";
-import { createSupplierPersistence } from "@football-predictor/db";
+import { createSupplierPersistence } from "@pulse/db";
 
 export interface SupplierPersistence<Fixture, Odds, Live> {
   budget: SupplierBudgetPort;

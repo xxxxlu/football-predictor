@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { InMemoryMatchSnapshotRepository, MatchCacheReader, OpenLigaDbClient, OpenLigaDbCompetitionSync, OpenLigaDbWorldCupSync, SupplierSyncService, TheOddsApiClient, planNextLiveSync, type RealOddsQuote } from "./index.js";
-import { InMemorySupplierBudget, emptyBudgetState } from "@football-predictor/domain";
+import { InMemorySupplierBudget, emptyBudgetState } from "@pulse/domain";
 
 const now = new Date("2026-07-13T10:05:00Z");
 const fixture = { id: "api-football:101", supplier: "API_FOOTBALL" as const, supplierFixtureId: 101, competitionId: 1, competitionName: "World Cup", season: 2026, kickoffAt: "2026-07-13T12:00:00.000Z", status: "SCHEDULED" as const, homeTeam: { supplierTeamId: 10, name: "Home" }, awayTeam: { supplierTeamId: 20, name: "Away" }, version: "f1", dataAsOf: "2026-07-13T09:00:00.000Z", capturedAt: "2026-07-13T09:00:01.000Z" };

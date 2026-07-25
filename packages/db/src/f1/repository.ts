@@ -17,7 +17,7 @@ import {
   type F1SessionState,
   type MarketForSubmission,
   type PredictionSelection,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
 import type { MarketSnapshotPort } from "../predictions/repository.js";
 import { f1Constructors, f1Drivers, f1MarketOdds, f1Markets, f1RaceWeekends, f1SessionResults, f1Sessions } from "./schema.js";

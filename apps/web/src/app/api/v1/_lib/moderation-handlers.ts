@@ -1,5 +1,5 @@
-import { OperationError, type RoomModerationAction } from "@football-predictor/db";
-import { AuthError } from "@football-predictor/domain";
+import { OperationError, type RoomModerationAction } from "@pulse/db";
+import { AuthError } from "@pulse/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";

@@ -16,7 +16,7 @@ import {
   type SupplierRequestCategory,
   type SyncState,
   type LineupSnapshot,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 
 export * from "./lineups.js";
 
@@ -29,8 +29,8 @@ export interface MatchSnapshotRepository {
   getOdds(matchId: string): Promise<OddsSnapshot | null>;
   getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null>;
   getLive(matchId: string): Promise<LiveSnapshot | null>;
-  getLineup?(matchId: string): Promise<import("@football-predictor/domain").LineupSnapshot | null>;
-  saveLineup?(snapshot: import("@football-predictor/domain").LineupSnapshot): Promise<void>;
+  getLineup?(matchId: string): Promise<import("@pulse/domain").LineupSnapshot | null>;
+  saveLineup?(snapshot: import("@pulse/domain").LineupSnapshot): Promise<void>;
   setSyncState(matchId: string, state: SyncState): Promise<void>;
   getSyncState(matchId: string): Promise<SyncState>;
   /** Optional bulk projection used by list reads; avoids one query fan-out per fixture. */
@@ -415,7 +415,7 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   private fixtures = new Map<string, FixtureSnapshot>();
   private odds = new Map<string, OddsSnapshot>();
   private live = new Map<string, LiveSnapshot>();
-  private lineups = new Map<string, import("@football-predictor/domain").LineupSnapshot>();
+  private lineups = new Map<string, import("@pulse/domain").LineupSnapshot>();
   private syncStates = new Map<string, SyncState>();
   private externalSyncs = new Map<string, number>();
   private readonly now: () => Date;
@@ -448,8 +448,8 @@ export class InMemoryMatchSnapshotRepository implements MatchSnapshotRepository 
   async getOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${ONE_X_TWO_SUPPLIER_MARKET_ID}`) ?? null); }
   async getCorrectScoreOdds(matchId: string): Promise<OddsSnapshot | null> { return structuredClone(this.odds.get(`${matchId}:${CORRECT_SCORE_SUPPLIER_MARKET_ID}`) ?? null); }
   async getLive(matchId: string): Promise<LiveSnapshot | null> { return structuredClone(this.live.get(matchId) ?? null); }
-  async saveLineup(snapshot: import("@football-predictor/domain").LineupSnapshot): Promise<void> { this.lineups.set(snapshot.fixtureId, structuredClone(snapshot)); }
-  async getLineup(matchId: string): Promise<import("@football-predictor/domain").LineupSnapshot | null> { return structuredClone(this.lineups.get(matchId) ?? null); }
+  async saveLineup(snapshot: import("@pulse/domain").LineupSnapshot): Promise<void> { this.lineups.set(snapshot.fixtureId, structuredClone(snapshot)); }
+  async getLineup(matchId: string): Promise<import("@pulse/domain").LineupSnapshot | null> { return structuredClone(this.lineups.get(matchId) ?? null); }
   async setSyncState(matchId: string, state: SyncState): Promise<void> { this.syncStates.set(matchId, state); }
   async getSyncState(matchId: string): Promise<SyncState> { return this.syncStates.get(matchId) ?? "IDLE"; }
   async claimExternalSync(key: string, at: Date, minimumIntervalMs: number): Promise<boolean> {

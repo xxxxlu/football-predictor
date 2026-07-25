@@ -19,7 +19,7 @@ import {
   mapErgastQualifyingClassification,
   mapErgastRaceClassification,
   planSessionImport,
-} from "@football-predictor/domain";
+} from "@pulse/domain";
 
 const databaseUrl = process.env.DATABASE_URL?.trim();
 if (!databaseUrl) throw new Error("DATABASE_URL is required");

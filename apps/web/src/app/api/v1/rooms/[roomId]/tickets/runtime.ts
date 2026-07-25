@@ -1,15 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { loadIdentityConfig } from "@football-predictor/config";
-import { createIdentityDatabase, DrizzleTicketSubmissionPort, F1MarketSnapshotAdapter, PostgresSupplierSnapshotAdapter, SportDispatchingSnapshotAdapter } from "@football-predictor/db";
-import { TicketSubmissionService } from "@football-predictor/domain";
+import { loadIdentityConfig } from "@pulse/config";
+import { createIdentityDatabase, DrizzleTicketSubmissionPort, F1MarketSnapshotAdapter, PostgresSupplierSnapshotAdapter, SportDispatchingSnapshotAdapter } from "@pulse/db";
+import { TicketSubmissionService } from "@pulse/domain";
 
-declare global { var __footballPredictorTicketSubmissionService: TicketSubmissionService | undefined; }
+declare global { var __pulseTicketSubmissionService: TicketSubmissionService | undefined; }
 
 export function getTicketSubmissionService() {
-  if (globalThis.__footballPredictorTicketSubmissionService) return globalThis.__footballPredictorTicketSubmissionService;
+  if (globalThis.__pulseTicketSubmissionService) return globalThis.__pulseTicketSubmissionService;
   const config = loadIdentityConfig(process.env);
   const { db } = createIdentityDatabase(config.databaseUrl);
-  globalThis.__footballPredictorTicketSubmissionService = new TicketSubmissionService({
+  globalThis.__pulseTicketSubmissionService = new TicketSubmissionService({
     transaction: new DrizzleTicketSubmissionPort(db, new SportDispatchingSnapshotAdapter(
       new PostgresSupplierSnapshotAdapter(db),
       new F1MarketSnapshotAdapter(db),
@@ -17,5 +17,5 @@ export function getTicketSubmissionService() {
     clock: { now: () => new Date() },
     ids: { next: () => randomUUID() },
   });
-  return globalThis.__footballPredictorTicketSubmissionService;
+  return globalThis.__pulseTicketSubmissionService;
 }

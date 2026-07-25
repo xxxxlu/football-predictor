@@ -30,19 +30,19 @@ importers:
 
   apps/web:
     dependencies:
-      '@football-predictor/config':
+      '@pulse/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@football-predictor/contracts':
+      '@pulse/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@football-predictor/db':
+      '@pulse/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@football-predictor/domain':
+      '@pulse/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@football-predictor/supplier':
+      '@pulse/supplier':
         specifier: workspace:*
         version: link:../../packages/supplier
       '@node-rs/argon2':
@@ -97,25 +97,25 @@ importers:
 
   apps/worker:
     dependencies:
-      '@football-predictor/api-football':
+      '@pulse/api-football':
         specifier: workspace:*
         version: link:../../packages/api-football
-      '@football-predictor/config':
+      '@pulse/config':
         specifier: workspace:*
         version: link:../../packages/config
-      '@football-predictor/db':
+      '@pulse/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@football-predictor/domain':
+      '@pulse/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@football-predictor/supplier':
+      '@pulse/supplier':
         specifier: workspace:*
         version: link:../../packages/supplier
 
   packages/api-football:
     dependencies:
-      '@football-predictor/domain':
+      '@pulse/domain':
         specifier: workspace:*
         version: link:../domain
 
@@ -133,7 +133,7 @@ importers:
 
   packages/db:
     dependencies:
-      '@football-predictor/domain':
+      '@pulse/domain':
         specifier: workspace:*
         version: link:../domain
       '@node-rs/argon2':
@@ -150,7 +150,7 @@ importers:
 
   packages/supplier:
     dependencies:
-      '@football-predictor/domain':
+      '@pulse/domain':
         specifier: workspace:*
         version: link:../domain
 

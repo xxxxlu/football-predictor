@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { F1ResultEntryError } from "@football-predictor/domain";
+import { F1ResultEntryError } from "@pulse/domain";
 import { createF1AdminHandlers } from "./f1-admin-handlers.js";
 
 const classification = [
