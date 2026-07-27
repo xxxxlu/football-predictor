@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { SessionVerificationOverlay } from "@/components/session-verification-overlay";
 import { StatusMessage } from "@/components/status-message";
 import { syncPrivateCacheOwner } from "@/features/pwa/private-cache";
 import { loginHref } from "./navigation";
@@ -35,5 +36,5 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
     if (typeof navigator !== "undefined" && !navigator.onLine) return children;
     return <main className="mx-auto max-w-3xl px-4 py-20 md:px-8"><StatusMessage tone="error" title="暂时无法确认登录状态">请检查服务连接后重试，本页面没有执行任何写操作。</StatusMessage><button type="button" onClick={() => window.location.reload()} className="mt-5 min-h-12 border border-[var(--ink)] px-5 font-bold">重新加载</button></main>;
   }
-  return null;
+  return <SessionVerificationOverlay />;
 }

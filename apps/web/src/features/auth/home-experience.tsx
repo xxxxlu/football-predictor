@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
+import { SessionVerificationOverlay } from "@/components/session-verification-overlay";
 import { Marquee } from "@/components/marquee";
 import { PulseCircuit } from "@/components/pulse-circuit";
 import { PulseDrive } from "@/components/pulse-drive";
@@ -20,7 +21,7 @@ export function HomeExperience() {
   const [session, setSession] = useState<SessionState>();
   useEffect(() => { void loadSession().then(setSession); }, []);
 
-  if (!session) return <AppShell sessionPending><main id="main-content" aria-busy="true" /></AppShell>;
+  if (!session) return <SessionVerificationOverlay />;
   if (session.kind === "unavailable") return (
     <AppShell sessionPending>
       <main className="mx-auto max-w-3xl px-4 py-20 md:px-8">

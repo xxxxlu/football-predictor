@@ -1,7 +1,5 @@
-/**
- * Navigation loading is intentionally silent. Session confirmation stays in the
- * persistent header, so a second full-screen loader would duplicate feedback.
- */
+import { SessionVerificationOverlay } from "@/components/session-verification-overlay";
+
 export default function Loading() {
-  return null;
+  return <SessionVerificationOverlay />;
 }
