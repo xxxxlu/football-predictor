@@ -139,23 +139,29 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
       <strong>{notice.title}</strong>
       <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>
     </section>}
-    <section className="surface mb-8 rounded-xl p-4" aria-label="比赛筛选和数据状态">
-      <fieldset className="mb-4">
-        <legend className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">比赛状态</legend>
-        <div className="mt-2 grid grid-cols-3 gap-2 sm:inline-grid sm:min-w-[24rem]">
-          {([["ALL", "全部"], ["PREDICTABLE", "可预测"], ["FINISHED", "已结束"]] as const).map(([value, label]) => <button
-            key={value}
-            type="button"
-            aria-pressed={status === value}
-            onClick={() => { setStatus(value); resetBatch(); }}
-            className={`min-h-10 rounded-full border-2 px-4 text-sm font-bold transition ${status === value ? "border-[var(--ink)] bg-[var(--ink)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--ink)]"}`}
-          >{label}</button>)}
-        </div>
-      </fieldset>
+    <section className="pulse-filter mb-8" aria-label="比赛筛选和数据状态">
+      <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
+        <fieldset>
+          <legend className="pulse-filter__legend mb-2">比赛状态</legend>
+          {/* 斜切轨道自身会横移约 8px，负 margin 把左缘拉回和上下文对齐 */}
+          <div className="pulse-seg -ml-1">
+            {([["ALL", "全部"], ["PREDICTABLE", "可预测"], ["FINISHED", "已结束"]] as const).map(([value, label]) => <button
+              key={value}
+              type="button"
+              aria-pressed={status === value}
+              onClick={() => { setStatus(value); resetBatch(); }}
+            ><span>{label}</span></button>)}
+          </div>
+        </fieldset>
+        <p className="pulse-filter__count" aria-live="polite">
+          {summary.total}<i> / {matches.length}</i><span className="pulse-filter__unit">场命中</span>
+        </p>
+      </div>
+
       {/* fieldset defaults to min-width:min-content — min-w-0 lets the chip rail scroll */}
-      <fieldset className="mb-4 min-w-0">
-        <legend className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">联赛分类</legend>
-        <div className="mt-2 flex gap-2 overflow-x-auto pb-1" aria-label="按联赛筛选比赛">
+      <fieldset className="mt-5 min-w-0">
+        <legend className="pulse-filter__legend mb-2">联赛分类</legend>
+        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="按联赛筛选比赛">
           {[{ value: "", label: `全部联赛（${competitions.length}）` }, ...competitions.map((name) => ({ value: name, label: name }))].map((option) => <button
             key={option.value || "all"}
             type="button"
@@ -165,22 +171,24 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
           >{option.label}</button>)}
         </div>
       </fieldset>
-      <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
-        <label className="text-xs font-bold uppercase tracking-wide text-[var(--muted)]">比赛日期
-          <select value={date} onChange={(event) => { setDate(event.target.value); resetBatch(); }} className="mt-1 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case text-[var(--ink)]">
+
+      <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,22rem)_auto] sm:items-end">
+        <label className="pulse-filter__legend">比赛日期
+          {/* §8.2：表单输入框不做斜切 */}
+          <select value={date} onChange={(event) => { setDate(event.target.value); resetBatch(); }} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]">
             <option value="">全部日期（{dates.length}）</option>
             {dates.map((value) => <option key={value} value={value}>{formatDate(value)}</option>)}
           </select>
         </label>
-        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="mt-1 inline-flex min-h-11 items-center justify-center gap-2 self-end rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)]">刷新数据</button>
+        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)] sm:justify-self-start">刷新数据</button>
       </div>
-      <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1 border-t rule pt-3 text-xs text-[var(--muted)]" aria-live="polite">
-        <strong className="text-[var(--ink)]">筛选命中 {summary.total} / {matches.length} 场</strong>
-        <span>可预测 {summary.open}</span>
-        <span>已结束 {summary.finished}</span>
-        <span className={summary.stale ? "text-[var(--amber)]" : ""}>最后有效快照 {summary.stale}</span>
-        <span className="basis-full sm:ml-auto sm:basis-auto">数据截至 {newestDataAsOf ? new Date(newestDataAsOf).toLocaleString("zh-CN") : "未知"}</span>
-      </div>
+
+      <dl className="mt-5 flex flex-wrap items-baseline gap-x-6 gap-y-2 border-t rule pt-3" aria-live="polite">
+        <Stat label="可预测" value={summary.open}/>
+        <Stat label="已结束" value={summary.finished}/>
+        <Stat label="最后有效快照" value={summary.stale} tone={summary.stale ? "text-[var(--amber)]" : undefined}/>
+        <div className="basis-full text-xs text-[var(--muted)] sm:ml-auto sm:basis-auto">数据截至 {newestDataAsOf ? new Date(newestDataAsOf).toLocaleString("zh-CN") : "未知"}</div>
+      </dl>
     </section>
 
     {page.total ? <>
@@ -237,6 +245,15 @@ function formatDate(value: string) {
 
 function formatKickoff(value: string) {
   return new Date(value).toLocaleString("zh-CN", { month: "long", day: "numeric", weekday: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+/* §7.3：数字取标签的 1.8 倍以上（10px 标签 / 18px 数字），标签在上、数字在下，
+   而不是像原来那样把两者压成同一号灰字。 */
+function Stat({ label, value, tone }: { label: string; value: number; tone?: string }) {
+  return <div className={tone}>
+    <dt className="text-[10px] font-bold uppercase tracking-[0.14em] text-[var(--muted)]">{label}</dt>
+    <dd className="tabular mt-0.5 text-lg font-bold leading-none">{value}</dd>
+  </div>;
 }
 
 function Empty({ title, text, action }: { title: string; text: string; action?: React.ReactNode }) {

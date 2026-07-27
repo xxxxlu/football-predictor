@@ -16,5 +16,55 @@ export function AccountProfile() {
   async function deleteAccount() { if (!window.confirm("删除后无法恢复。积分账本会以匿名身份保留，是否继续？")) return; setDeletePending(true); setError(""); try { const response = await fetch("/api/v1/account", { method: "DELETE", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ confirmation: "DELETE" }) }); const result = await response.json().catch(() => ({})) as ApiFailure; if (!response.ok) throw new Error(result.error?.message || "无法删除账户"); await purgePrivateCaches().catch(() => {}); window.location.assign("/login?deleted=1"); } catch (reason) { setError((reason as Error).message || "无法删除账户"); setDeletePending(false); } }
   if (loading) return <DataStatePanel state="loading" title="正在加载账户" description=""/>;
   if (!profile) return <DataStatePanel state="error" title="账户资料暂不可用" description={error || "请重新登录后重试。"}/>;
-  return <div className="grid gap-5 lg:grid-cols-[1fr_.7fr]"><section className="surface p-5 sm:p-7"><h2 className="display text-2xl font-bold">公开昵称</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">昵称会显示给同一房间的成员，用户名仍用于登录。</p>{error && <div className="mt-4"><StatusMessage tone="error" title="操作失败">{error}</StatusMessage></div>}{saved && <div className="mt-4"><StatusMessage tone="success" title="昵称已更新"/></div>}<form onSubmit={save} className="mt-5"><label htmlFor="nickname" className="mb-2 block text-sm font-bold">昵称</label><input id="nickname" name="nickname" required minLength={2} maxLength={32} value={nickname} onChange={event => setNickname(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3"/><p className="mt-2 text-xs text-[var(--muted)]">2–32 个字符</p><button disabled={saving || nickname.trim() === profile.nickname} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[var(--field)] px-6 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{saving ? "正在保存…" : "保存昵称"}</button></form>{profile.roles?.includes("super_admin") && <div className="mt-8 border-t border-[var(--line)] pt-6"><p className="eyebrow">ADMIN</p><h3 className="mt-1 font-bold">管理入口</h3><p className="mt-2 text-xs leading-5 text-[var(--muted)]">注册由用户自助完成；管理员可在用户管理中禁用或恢复账户，在运行状态中查看系统异常。为保证账本不可篡改，超级管理员不能直接覆盖用户余额。</p><div className="mt-4 flex flex-wrap gap-3"><Link href="/admin/users" className="rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-bold text-white">用户管理</Link><Link href="/admin/status" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold">运行状态</Link></div></div>}</section><aside className="surface p-5 sm:p-7"><h2 className="display text-2xl font-bold">当前会话</h2><dl className="mt-5 space-y-3 text-sm"><div><dt className="text-xs text-[var(--muted)]">用户名</dt><dd className="mt-1 font-bold">{profile.username}</dd></div><div><dt className="text-xs text-[var(--muted)]">账户权限</dt><dd className="mt-1 font-bold">{profile.roles?.includes("super_admin") ? "超级管理员" : "普通用户"}</dd></div></dl><button type="button" onClick={logout} disabled={logoutPending} className="mt-8 min-h-12 w-full rounded-full border-2 border-[var(--coral)] px-4 font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-45">{logoutPending ? "正在安全退出…" : "退出当前会话"}</button><p className="mt-3 text-xs leading-5 text-[var(--muted)]">退出只撤销当前浏览器会话，不会删除账户、房间或账本。</p>{!profile.roles?.includes("super_admin") && <div className="mt-8 border-t border-[var(--line)] pt-6"><h3 className="font-bold text-[var(--coral)]">删除账户</h3><p className="mt-2 text-xs leading-5 text-[var(--muted)]">公开身份将匿名化，所有会话立即撤销；为保证房间积分可核验，仅保留最小账本和审计记录。</p><button type="button" onClick={deleteAccount} disabled={deletePending} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[var(--coral)] px-4 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{deletePending ? "正在处理…" : "申请并立即删除账户"}</button></div>}</aside></div>;
+  const isAdmin = Boolean(profile.roles?.includes("super_admin"));
+  return <div className="space-y-6">
+    {/* 通行证：昵称是这页唯一属于本人的东西，让它当主体，用户名当证件号。 */}
+    <section className="surface overflow-hidden" aria-label="会员通行证">
+      <div className="pulse-pass">
+        <span aria-hidden="true" className="pulse-pass__wedge"/>
+        <span aria-hidden="true" className="pulse-pass__mark">P</span>
+        <p className="pulse-pass__eyebrow">PULSE SPORTS CLUB / MEMBER PASS</p>
+        <p className="pulse-pass__name">{profile.nickname}</p>
+        <div className="pulse-pass__foot">
+          <p className="pulse-pass__no">NO. <b>{profile.username}</b></p>
+          <span className={`pulse-pass__stamp${isAdmin ? " pulse-pass__stamp--admin" : ""}`}><span>{isAdmin ? "超级管理员" : "普通用户"}</span></span>
+        </div>
+      </div>
+    </section>
+
+    {error && <StatusMessage tone="error" title="操作失败">{error}</StatusMessage>}
+    {saved && <StatusMessage tone="success" title="昵称已更新"/>}
+
+    <div className="grid gap-5 lg:grid-cols-[1fr_.7fr]">
+      <section className="surface p-5 sm:p-7">
+        <p className="eyebrow">DISPLAY NAME</p>
+        <h2 className="display mt-1 text-2xl font-bold">改一个房间里的名字</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">昵称会显示给同一房间的成员；用户名不会变，登录仍然用它。</p>
+        <form onSubmit={save} className="mt-6">
+          <label htmlFor="nickname" className="mb-2 block text-sm font-bold">昵称</label>
+          <input id="nickname" name="nickname" required minLength={2} maxLength={32} value={nickname} onChange={event => setNickname(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--line)] bg-white px-3"/>
+          <p className="mt-2 text-xs text-[var(--muted)]">2–32 个字符</p>
+          <button disabled={saving || nickname.trim() === profile.nickname} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[var(--field)] px-6 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{saving ? "正在保存…" : "保存昵称"}</button>
+        </form>
+        {isAdmin && <div className="mt-8 border-t border-[var(--line)] pt-6">
+          <p className="eyebrow">ADMIN</p>
+          <h3 className="mt-1 font-bold">管理入口</h3>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">注册由用户自助完成；管理员可在用户管理中禁用或恢复账户，在运行状态中查看系统异常。为保证账本不可篡改，超级管理员不能直接覆盖用户余额。</p>
+          <div className="mt-4 flex flex-wrap gap-3"><Link href="/admin/users" className="rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-bold text-white no-underline">用户管理</Link><Link href="/admin/status" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">运行状态</Link></div>
+        </div>}
+      </section>
+
+      <aside className="surface h-fit p-5 sm:p-7">
+        <p className="eyebrow">SESSION</p>
+        <h2 className="display mt-1 text-2xl font-bold">离开这台设备</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">退出只撤销当前浏览器的会话，不会删除账户、房间或账本；本机的私有缓存会一并清除。</p>
+        <button type="button" onClick={logout} disabled={logoutPending} className="mt-6 min-h-12 w-full rounded-full border-2 border-[var(--coral)] px-4 font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-45">{logoutPending ? "正在安全退出…" : "退出当前会话"}</button>
+        {!isAdmin && <div className="mt-8 border-t border-[var(--line)] pt-6">
+          <h3 className="font-bold text-[var(--coral)]">删除账户</h3>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">公开身份将匿名化，所有会话立即撤销；为保证房间积分可核验，仅保留最小账本和审计记录。</p>
+          <button type="button" onClick={deleteAccount} disabled={deletePending} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[var(--coral)] px-4 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{deletePending ? "正在处理…" : "申请并立即删除账户"}</button>
+        </div>}
+      </aside>
+    </div>
+  </div>;
 }

@@ -834,6 +834,72 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-season__meter { margin-top: 1.1rem; height: 4px; background: rgb(244 241 232 / 14%); }
 .pulse-season__meter i { display: block; height: 100%; background: var(--pulse-red); transform: scaleX(var(--pulse-hit-rate, 0)); transform-origin: left; transition: transform .9s var(--pd-ease-out) .2s; }
 
+/* ---- 账户会员通行证 --------------------------------------------------
+   账户页原本是两张等重的白卡：左边一个昵称输入框，右边一个 dl 列表，
+   全页最大的字是「公开昵称」四个字。昵称是这页唯一真正属于本人的东西，
+   所以把它提成通行证主体，用户名降级为证件号，权限做成印章。
+   §8.2：斜切只出现在角标和印章上，表单输入框一律不切。 */
+.pulse-pass {
+  position: relative; overflow: hidden;
+  padding: clamp(1.4rem, 3.4vw, 2.6rem);
+  color: var(--pulse-ivory); background: var(--pulse-carbon);
+  border-bottom: 3px solid var(--pulse-red);
+}
+/* 角标用 clip-path 而不是 skewX 条：斜切条会随高度横移（height × tan11°），
+   到这个尺寸就滑进文字里了；clip-path 不产生位移。 */
+.pulse-pass__wedge { position: absolute; inset: 0 0 auto auto; width: clamp(4.5rem, 13vw, 9rem); aspect-ratio: 1; background: var(--pulse-red); clip-path: polygon(100% 0, 100% 58%, 0 0); }
+.pulse-pass__mark { position: absolute; right: -.75rem; bottom: -2.75rem; color: var(--pulse-red); font: 900 clamp(7rem, 18vw, 13rem)/.7 var(--pd-font-display); opacity: .1; transform: skewX(calc(var(--pd-cut) * -1)); pointer-events: none; }
+/* 排除装饰层：它们和这条规则同特异度时会被覆盖成 relative 而回到文档流。 */
+.pulse-pass > *:not(.pulse-pass__wedge):not(.pulse-pass__mark) { position: relative; z-index: 2; }
+.pulse-pass__eyebrow { font: 700 .62rem/1 var(--pd-font-mono); letter-spacing: .2em; text-transform: uppercase; color: rgb(244 241 232 / 62%); }
+.pulse-pass__name { margin-top: clamp(.9rem, 2.4vw, 1.5rem); font: 800 clamp(2.4rem, 7vw, 4.75rem)/.9 var(--pd-font-display); letter-spacing: -.035em; overflow-wrap: anywhere; }
+.pulse-pass__foot { margin-top: clamp(1rem, 2.6vw, 1.6rem); display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1.1rem; }
+.pulse-pass__no { font: 600 .8rem/1.4 var(--pd-font-mono); letter-spacing: .1em; color: rgb(244 241 232 / 72%); overflow-wrap: anywhere; }
+.pulse-pass__no b { color: var(--pulse-ivory); font-weight: 700; }
+.pulse-pass__stamp { display: inline-block; padding: .42rem .95rem; font: 700 .66rem/1 var(--pd-font-mono); letter-spacing: .16em; color: var(--pulse-carbon); background: var(--pulse-ivory); transform: skewX(calc(var(--pd-cut) * -1)); }
+.pulse-pass__stamp > span { display: inline-block; transform: skewX(var(--pd-cut)); }
+.pulse-pass__stamp--admin { color: var(--pulse-ivory); background: var(--pulse-red-deep); }
+
+/* ---- 赛事筛选控制条 ---------------------------------------------------
+   原本是一张和比赛卡片同款的白卡：三组 fieldset 上下堆叠、胶囊全是同一种、
+   命中数和「数据截至」挤成一行同号小灰字。筛选是工具不是内容，所以撤掉卡片
+   外壳，改成上下规线夹住的控制条；命中数按 §7.3 提成这条里的主数字。 */
+.pulse-filter { border-top: 2px solid var(--pulse-carbon); border-bottom: 1px solid var(--line); padding: 1.15rem 0 1rem; }
+.pulse-filter__legend { display: block; font: 700 .62rem/1 var(--pd-font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+.pulse-filter__count { font: 800 clamp(1.45rem, 3.4vw, 2rem)/1 var(--pd-font-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.pulse-filter__count i { font-style: normal; color: var(--muted); }
+.pulse-filter__unit { margin-left: .38rem; font: 700 .66rem/1 var(--pd-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+
+/* 分段控件：整条轨道斜切，标签各自反向切回来。若改成逐个按钮斜切，
+   两端会按 height × tan(11°) ≈ 8px 探出轨道外。 */
+.pulse-seg { display: inline-flex; overflow: hidden; gap: 1px; padding: 2px; background: var(--pulse-carbon); transform: skewX(calc(var(--pd-cut) * -1)); }
+.pulse-seg button { min-height: 2.5rem; padding: 0 1.2rem; font: 700 .8rem/1 var(--pd-font-mono); letter-spacing: .06em; color: rgb(244 241 232 / 74%); background: transparent; transition: background 140ms, color 140ms; }
+.pulse-seg button > span { display: inline-block; transform: skewX(var(--pd-cut)); }
+.pulse-seg button:hover { color: var(--pulse-ivory); }
+.pulse-seg button[aria-pressed="true"] { color: var(--pulse-ivory); background: var(--pulse-red-deep); }
+
+/* ---- 语言切换器 -------------------------------------------------------
+   这个控件同时出现在碳黑导航条和登录页的浅色页头上，原本一律写死成
+   白色系（text-white/70、border-white/25），在浅色页头上未选中项几乎
+   看不见——axe 在 /login、/register、/recover 三页都报 serious 对比度。
+   改成一组随所在表面翻转的变量：默认按浅色算，落进 .night 再翻成白色系。 */
+.pd-lang {
+  --lang-border: var(--line); --lang-idle: var(--muted);
+  --lang-hover-bg: var(--wash-neutral); --lang-hover-fg: var(--ink);
+  --lang-active-bg: var(--pulse-carbon); --lang-active-fg: var(--pulse-ivory);
+  display: inline-flex; align-items: center; padding: 2px;
+  border: 1px solid var(--lang-border); border-radius: 999px;
+  font: 700 11px/1 var(--font-sans); letter-spacing: .08em;
+}
+.night .pd-lang, .pd-header .pd-lang, .pd-lang--dark {
+  --lang-border: rgb(255 255 255 / 25%); --lang-idle: rgb(244 241 232 / 74%);
+  --lang-hover-bg: rgb(255 255 255 / 10%); --lang-hover-fg: #fff;
+  --lang-active-bg: #fff; --lang-active-fg: #000;
+}
+.pd-lang button { min-height: 2rem; padding: 0 .625rem; border-radius: 999px; color: var(--lang-idle); transition: background-color 140ms, color 140ms; }
+.pd-lang button:hover:not(:disabled) { color: var(--lang-hover-fg); background: var(--lang-hover-bg); }
+.pd-lang button[aria-pressed="true"] { color: var(--lang-active-fg); background: var(--lang-active-bg); cursor: default; }
+
 /* ============================================================
    Scroll progress — quiet, information-bearing rail. Full-screen route
    wipes are intentionally not used: they obscure content and flash during
