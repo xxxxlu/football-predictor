@@ -1,5 +1,5 @@
 import { driverSeason } from "@/features/f1/stats";
-import { authorizeF1Read, CURRENT_F1_SEASON, f1Failure, f1Json, getF1Repository } from "../../_lib/runtime";
+import { authorizeF1Read, CURRENT_F1_SEASON, f1Failure, f1Json, getF1Repository, refreshF1ReadModel } from "../../_lib/runtime";
 
 export const runtime = "nodejs";
 
@@ -11,6 +11,7 @@ export async function GET(request: Request, context: { params: Promise<{ code: s
   const { code } = await context.params;
   if (!DRIVER_CODE.test(code)) return f1Failure("DRIVER_NOT_FOUND", "The requested driver was not found.", 404);
   try {
+    await refreshF1ReadModel();
     const repository = getF1Repository();
     const drivers = await repository.listDrivers();
     const driver = drivers.find((candidate) => candidate.code === code);

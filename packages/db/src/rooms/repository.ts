@@ -85,7 +85,7 @@ export class DrizzleRoomRepository implements RoomRepository {
     const allMembers = alias(roomMembers, "all_members");
     const [row] = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, sport: rooms.sport, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).limit(1);
+      .where(and(eq(roomMembers.roomId, roomId), eq(roomMembers.userId, userId), ne(rooms.status, "CLOSED"))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).limit(1);
     return row ? { ...row, memberCount: Number(row.memberCount) } : null;
   }
 

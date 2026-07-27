@@ -16,7 +16,8 @@ describe("account activity presentation", () => {
   });
 
   it("formats point deltas with an explicit positive sign", () => {
-    expect(signedPoints("25")).toBe("+25.00");
-    expect(signedPoints("-10")).toBe("-10.00");
+    expect(signedPoints("25")).toBe("+25");
+    expect(signedPoints("-10")).toBe("-10");
+    expect(signedPoints(null)).toBe("0");
   });
 });

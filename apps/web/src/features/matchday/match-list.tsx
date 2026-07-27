@@ -135,7 +135,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
         </div>}
       </div>
     </section>
-    {notice && <section className="mb-6 rounded-xl border-l-4 border-[var(--amber)] bg-[#fff5d6] p-4" aria-label={notice.title}>
+    {notice && <section className="mb-6 rounded-xl border-l-4 border-[var(--amber)] bg-[var(--panel-alert)] p-4" aria-label={notice.title}>
       <strong>{notice.title}</strong>
       <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>
     </section>}

@@ -15,6 +15,11 @@
   --pulse-red-deep: #b8170d;
   --pulse-ivory: #f4f1e8;
   --pulse-paper: #fbf9f2;
+  /* ⚠️ 荧光黄绿是保留色（§6.2）：只允许出现在 LIVE、OPEN、数据刚更新、当前最快
+     这类真实实时状态上，不做装饰、不做普通 CTA、不做选中态。当前合法落点仅
+     .pd-live-badge / .pulse-home__rail-kind--open / .pulse-weekend-session__marker.is-open
+     / .pulse-session-hero__state.is-open。新增用法前先确认它表达的是实时状态。
+     另外它在暖白底上只有 1.11:1，任何浅色区块都不能用。 */
   --pulse-lime: #d2ff00;
   --pulse-lime-deep: #a8cc00;
   --pulse-muted: #5f635e;
@@ -51,7 +56,21 @@
   --line: #d5d0c2;
   --muted: var(--pulse-muted);
   --focus: #315f9e;
-  --shadow: 0 12px 34px rgb(10 11 11 / 10%);
+  /* 暖白页面上的阴影必须带碳黑的暖调，纯黑投影会在象牙底色上发灰（§6.1） */
+  --shadow: 0 12px 34px rgb(26 20 14 / 12%);
+  --shadow-raised: 0 2px 4px rgb(26 20 14 / 5%), 0 18px 44px rgb(26 20 14 / 13%);
+
+  /* ---- 中性/语义淡底 (§6.2 配比) ----
+     此前散落在各 feature 组件里的硬编码色（旧品牌的藏青 rgb(23 35 59)、
+     球场绿 rgb(23 107 77)、薄荷 #edf7f1）是暖白体系里的冷色杂质。
+     统一收敛成从碳黑/赛车红/琥珀派生的暖色淡底。 */
+  --wash-neutral: rgb(26 20 14 / 8%);
+  --wash-neutral-soft: rgb(26 20 14 / 5%);
+  --wash-brand: rgb(184 23 13 / 8%);
+  --wash-brand-soft: rgb(184 23 13 / 5%);
+  --wash-alert: rgb(154 100 28 / 12%);
+  --panel-brand: #fbeee9;
+  --panel-alert: #fbf1dc;
 
   /* live/realtime — lime, never red (§6.4) */
   --live: var(--pulse-lime-deep);
@@ -488,7 +507,11 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
    or fixture data. Motion is transform/opacity only.
    ============================================================ */
 .pd-page-lead { border-bottom: 1px solid var(--night-line); }
-.pd-page-lead__index { color: var(--pulse-lime); font: 600 .68rem/1 var(--pd-font-mono); letter-spacing: .16em; text-transform: uppercase; }
+/* 索引行用赛车红，不用荧光黄绿：§6.2 把荧光严格留给 LIVE / 刚更新这类实时状态，
+   而 page lead 出现在每一个页面顶部，拿它当装饰会让真正的实时信号彻底失效。
+   红色同时让深色页头的 eyebrow 和浅色区块的 .eyebrow（--field）成为同一套写法。
+   #ff3b20 on #0a0b0b = 5.54:1，小字号也过 AA。 */
+.pd-page-lead__index { color: var(--pulse-red); font: 600 .68rem/1 var(--pd-font-mono); letter-spacing: .16em; text-transform: uppercase; }
 .pd-page-lead [data-pulse-reveal] { opacity: 0; transform: translateY(26px); transition: opacity .7s var(--pd-ease-out), transform .7s var(--pd-ease-out); }
 .pd-page-lead [data-pulse-reveal][data-pulse-revealed="true"] { opacity: 1; transform: none; }
 
@@ -497,7 +520,10 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-drive__spot { position: absolute; z-index: 1; inset: 0; pointer-events: none; opacity: .55; background: radial-gradient(circle at var(--pulse-pointer-x) var(--pulse-pointer-y), rgb(255 59 32 / 10%), transparent min(28rem, 42vw)); transition: opacity .35s ease; }
 .pulse-drive__rail { position: absolute; z-index: 4; right: clamp(1rem, 2.8vw, 2.5rem); top: clamp(4.5rem, 12vh, 8rem); bottom: clamp(4rem, 8vh, 6rem); display: flex; width: 1.1rem; flex-direction: column; align-items: center; justify-content: space-between; color: rgb(244 241 232 / 44%); pointer-events: none; }
 .pulse-drive__rail span, .pulse-drive__rail b { writing-mode: vertical-rl; font: .58rem/1 var(--pd-font-mono); letter-spacing: .12em; }
-.pulse-drive__rail b { color: var(--pulse-lime); font-weight: 500; }
+/* 这条侧栏浮在碳黑 hero 上（z-index 4），所以取亮赛车红，和下面进度块 ::after
+   的 --pulse-red 同色；#ff3b20 on #0a0b0b = 5.54:1。原来的荧光黄绿在这里
+   一半压在暖白纸底上，只有 1.11:1，等于看不见。 */
+.pulse-drive__rail b { color: var(--pulse-red); font-weight: 500; }
 .pulse-drive__rail i { position: relative; display: block; width: 1px; flex: 1; margin: .8rem 0; background: linear-gradient(to bottom, rgb(244 241 232 / 18%), rgb(244 241 232 / 7%)); }
 .pulse-drive__rail i::after { content: ""; position: absolute; left: -2px; top: calc(var(--pulse-drive-progress) * (100% - 1.25rem)); width: 5px; height: 1.25rem; background: var(--pulse-red); box-shadow: 0 0 16px rgb(255 59 32 / 65%); }
 .pulse-drive > .pulse-home__hero { position: relative; z-index: 2; }
@@ -517,7 +543,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__guest-art { position: relative; min-height: 380px; display: flex; flex-direction: column; justify-content: flex-end; gap: 1rem; padding: clamp(1.5rem, 4vw, 3rem); background: linear-gradient(135deg, var(--pulse-carbon-2), var(--pulse-carbon)); border: 1px solid var(--night-line); clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%, 0 10%); }
 .pulse-home__guest-art::before { content: ""; position: absolute; inset: 1rem; border: 1px solid rgb(244 241 232 / 10%); clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%, 0 10%); }
 .pulse-home__art-copy { position: relative; display: grid; gap: 1.25rem; }
-.pulse-home__art-copy span { color: var(--pulse-lime); font-size: .68rem; letter-spacing: .16em; }
+.pulse-home__art-copy span { color: var(--pulse-red); font-size: .68rem; letter-spacing: .16em; }
 .pulse-home__art-copy strong { font: 800 clamp(2.5rem, 6vw, 5.5rem)/.85 var(--pd-font-display); letter-spacing: -.03em; }
 .pulse-home__art-copy em { color: var(--pulse-red); font-style: normal; }
 .pulse-home__art-mark { position: absolute; right: 1rem; top: 2rem; color: var(--pulse-red); font: 900 clamp(10rem, 22vw, 18rem)/.7 var(--pd-font-display); opacity: .12; transform: skewX(-11deg); }
@@ -538,7 +564,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__section-intro { display: flex; align-items: end; justify-content: space-between; gap: 1.5rem; max-width: 1440px; margin: 0 auto; padding: 2.1rem clamp(1rem, 4vw, 3.5rem) 1.4rem; }
 .pulse-home__section-intro h2 { margin: 0; font: 800 clamp(2.2rem, 5vw, 4.5rem)/.9 var(--pd-font-display); text-transform: uppercase; }
 .pulse-home__section-intro .pd-num { color: var(--pulse-muted); font-size: .68rem; letter-spacing: .14em; }
-.pulse-home__data-error { display: flex; flex-wrap: wrap; gap: 1rem; max-width: 1440px; margin: 0 auto; padding: .9rem clamp(1rem, 4vw, 3.5rem); color: var(--pulse-lime); font: .68rem/1.5 var(--pd-font-mono); border-top: 1px solid var(--night-line); }
+.pulse-home__data-error { display: flex; flex-wrap: wrap; gap: 1rem; max-width: 1440px; margin: 0 auto; padding: .9rem clamp(1rem, 4vw, 3.5rem); color: var(--pulse-red); font: .68rem/1.5 var(--pd-font-mono); border-top: 1px solid var(--night-line); }
 .pulse-home__rail-row { display: grid; grid-template-columns: 5rem minmax(0, 1fr) auto 1.5rem; gap: 1.25rem; align-items: center; max-width: 1440px; margin: 0 auto; padding: 1rem clamp(1rem, 4vw, 3.5rem); color: inherit; text-decoration: none; border-top: 1px solid var(--night-line); transition: background .2s, transform .2s var(--pd-ease-out); }
 .pulse-home__rail-row:hover, .pulse-home__rail-row:focus-visible { background: rgb(255 255 255 / 4%); }
 .pulse-home__rail-row:hover .pulse-home__rail-arrow { transform: translateX(5px); }
@@ -567,7 +593,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__arena strong, .pulse-home__arena span { position: relative; z-index: 1; }
 .pulse-home__arena strong { margin-top: 1rem; font: 800 clamp(2.5rem, 6vw, 5rem)/.85 var(--pd-font-display); letter-spacing: -.03em; }
 .pulse-home__arena > span:not(.pulse-home__arena-index) { margin-top: .75rem; color: var(--pulse-muted); font: .72rem var(--pd-font-mono); letter-spacing: .04em; }
-.pulse-home__arena-index { color: var(--pulse-lime); font: .68rem var(--pd-font-mono); letter-spacing: .16em; }
+.pulse-home__arena-index { color: var(--pulse-red); font: .68rem var(--pd-font-mono); letter-spacing: .16em; }
 .pulse-home__arena i { position: absolute; right: 1.5rem; top: 1.3rem; z-index: 1; color: var(--pulse-red); font: 1.3rem var(--pd-font-mono); font-style: normal; transition: transform .25s var(--pd-ease-out); }
 .pulse-home__arena:hover i { transform: translate(5px, -5px); }
 .pulse-home__arena-glyph { position: absolute; right: 11%; top: 12%; width: clamp(7rem, 20vw, 16rem); height: clamp(7rem, 20vw, 16rem); color: var(--pulse-red-deep); opacity: .75; transition: transform .5s var(--pd-ease-out), color .25s; }
@@ -581,7 +607,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__mode-switch button { position: relative; display: grid; min-width: 9.5rem; gap: .35rem; padding: .9rem 1rem; color: var(--pulse-muted); text-align: left; background: transparent; border: 0; cursor: pointer; transition: color .2s, background .2s; }
 .pulse-home__mode-switch button::after { content: ""; position: absolute; left: 1rem; right: 1rem; bottom: .45rem; height: 2px; background: transparent; transform: scaleX(0); transform-origin: left; transition: transform .3s var(--pd-ease-out), background .2s; }
 .pulse-home__mode-switch button:hover, .pulse-home__mode-switch button:focus-visible { color: var(--pulse-ivory); }
-.pulse-home__mode-switch button.is-active { color: var(--pulse-carbon); background: var(--pulse-lime); }
+.pulse-home__mode-switch button.is-active { color: var(--pulse-carbon); background: var(--pulse-red); }
 .pulse-home__mode-switch button.is-active::after { background: var(--pulse-carbon); transform: scaleX(1); }
 .pulse-home__mode-switch button span { font: 800 1rem/1 var(--pd-font-display); letter-spacing: .04em; }
 .pulse-home__mode-switch button small { font: .58rem var(--pd-font-mono); letter-spacing: .08em; }
@@ -590,7 +616,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__mode-copy > strong { margin-top: 1rem; color: var(--pulse-ivory); font: 800 clamp(3rem, 8vw, 7rem)/.82 var(--pd-font-display); letter-spacing: -.04em; }
 .pulse-home__mode-copy > p:not(.pulse-home__arena-index) { max-width: 27rem; margin: 1.5rem 0 0; color: rgb(244 241 232 / 62%); line-height: 1.7; }
 .pulse-home__mode-meta { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin: 1.5rem 0 2rem; color: var(--pulse-muted); font: .64rem var(--pd-font-mono); letter-spacing: .08em; text-transform: uppercase; }
-.pulse-home__mode-meta b { color: var(--pulse-lime); font-size: 1.1rem; }
+.pulse-home__mode-meta b { color: var(--pulse-red); font-size: 1.1rem; }
 .pulse-home__mode-visual { position: relative; display: grid; min-height: 20rem; place-items: center; overflow: hidden; background: linear-gradient(135deg, var(--pulse-carbon-2), var(--pulse-carbon)); border-left: 1px solid var(--night-line); clip-path: polygon(8% 0, 100% 0, 100% 100%, 0 100%, 0 10%); }
 .pulse-home__mode-visual::before { content: ""; position: absolute; inset: 0; opacity: .45; background: repeating-linear-gradient(100deg, transparent 0 25px, rgb(255 255 255 / 4%) 26px 27px); transform: translateX(calc(var(--pulse-drive-progress) * 22px)); transition: transform .5s var(--pd-ease-out); }
 .pulse-home__mode-visual .pulse-circuit { position: absolute; inset: 0; min-height: 100%; background: transparent; }
@@ -609,7 +635,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-circuit img { object-fit: contain; padding: 1rem; filter: grayscale(1) contrast(1.2) brightness(1.2); opacity: .72; transition: transform .55s var(--pd-ease-out), filter .3s, opacity .3s; }
 .pulse-circuit:hover img { transform: scale(1.06) rotate(-2deg); filter: grayscale(.35) contrast(1.1) brightness(1.1); opacity: .95; }
 .pulse-circuit::before { content: ""; position: absolute; inset: 0; z-index: 1; background: repeating-linear-gradient(100deg, transparent 0 25px, rgb(255 255 255 / 5%) 26px 27px); pointer-events: none; }
-.pulse-circuit__country { position: absolute; z-index: 2; right: 1rem; top: .8rem; color: var(--pulse-lime); font: .65rem var(--pd-font-mono); letter-spacing: .2em; }
+.pulse-circuit__country { position: absolute; z-index: 2; right: 1rem; top: .8rem; color: var(--pulse-red); font: .65rem var(--pd-font-mono); letter-spacing: .2em; }
 .pulse-circuit__scan { position: absolute; z-index: 2; left: 0; right: 0; top: 30%; height: 1px; background: var(--pulse-red); opacity: .62; transform: translateY(-100px); animation: pulse-scan 3.5s ease-in-out infinite; }
 .pulse-circuit--empty { display: grid; place-items: center; min-height: 12rem; color: var(--pulse-muted); font: .7rem var(--pd-font-mono); letter-spacing: .16em; }
 @keyframes pulse-scan { 0%, 100% { opacity: 0; transform: translateY(-70px); } 45%, 55% { opacity: .7; transform: translateY(90px); } }
@@ -634,7 +660,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-session-hero__grid { display: grid; gap: 0; }
 @media (min-width: 800px) { .pulse-session-hero__grid { grid-template-columns: 1.15fr .85fr; } }
 .pulse-session-hero__copy { padding: clamp(1.5rem, 4vw, 3.2rem); }
-.pulse-session-hero__index { color: var(--pulse-lime); font: .65rem var(--pd-font-mono); letter-spacing: .14em; }
+.pulse-session-hero__index { color: var(--pulse-red); font: .65rem var(--pd-font-mono); letter-spacing: .14em; }
 .pulse-session-hero__state { display: inline-flex; align-items: center; gap: .45rem; color: var(--pulse-muted); font: .68rem var(--pd-font-mono); letter-spacing: .08em; }
 .pulse-session-hero__state i { width: .45rem; height: .45rem; border-radius: 50%; background: currentColor; }
 .pulse-session-hero__state.is-open { color: var(--pulse-lime); }
@@ -657,7 +683,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-market-panel[open] summary::after { content: "−"; }
 .pulse-timing-tower { overflow: hidden; color: var(--pulse-ivory); background: var(--pulse-carbon); border: 1px solid var(--night-line); }
 .pulse-timing-tower__head { display: flex; align-items: end; justify-content: space-between; gap: 1rem; padding: 1.25rem; border-bottom: 1px solid var(--night-line); }
-.pulse-timing-tower__head .pd-eyebrow { color: var(--pulse-lime); }
+.pulse-timing-tower__head .pd-eyebrow { color: var(--pulse-red); }
 .pulse-timing-row { display: grid; grid-template-columns: 2.4rem .25rem 2.4rem minmax(0, 1fr) auto; gap: .8rem; align-items: center; min-height: 3.8rem; padding: .55rem 1.25rem; border-bottom: 1px solid var(--night-line); transition: background .2s, transform .2s var(--pd-ease-out); }
 .pulse-timing-row:last-child { border-bottom: 0; }
 .pulse-timing-row:hover { background: rgb(255 255 255 / 4%); transform: translateX(4px); }

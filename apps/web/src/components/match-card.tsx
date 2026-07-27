@@ -56,7 +56,7 @@ export function MatchCard({ match, action }: { match: MatchView; action?: React.
             </time>
           </div>
           <div className="flex flex-col items-center gap-2 text-center">
-            <TeamCrest name={match.awayTeam} className="size-12 text-base md:size-14 md:text-lg" />
+            <TeamCrest name={match.awayTeam} avoid={match.homeTeam} className="size-12 text-base md:size-14 md:text-lg" />
             <span className="display text-sm font-bold leading-tight md:text-base">{match.awayTeam}</span>
           </div>
         </div>

@@ -55,14 +55,35 @@ export function Trophy({ className }: { className?: string }) {
   );
 }
 
-function crestColor(name: string) {
+/* 队徽底色取自品牌色板，不再按队名散列到整个色轮。
+   旧实现 `hsl(hash % 360 ...)` 会给每支球队发一个任意色相——实测出过紫色和
+   青绿——在碳黑/暖白/赛车红的三色体系里（§6.2 配比：辅助色只占 2%）这是最
+   刺眼的一处杂质，且与品牌红抢注意力。改成一条锁定的暖色梯：仍然是按队名
+   确定性取色（同一支球队跨比赛保持一致），但取值范围收敛到品牌内。
+   每一档都已按 WCAG 相对亮度核算，白色首字母对比度 ≥ 4.5:1。 */
+const CREST_RAMP = [
+  "#0a0b0b", // 碳黑        白字 19.71:1
+  "#b8170d", // 深赛车红     6.63:1
+  "#2f3230", // 碳灰        12.96:1
+  "#8d1007", // 更深的红      9.50:1
+  "#4a4f4b", // 中性石墨      8.36:1
+  "#6b1a10", // 砖红        11.80:1
+  "#1d1f1e", // 近碳        16.57:1
+  "#a3200f", // 中红         7.58:1
+] as const;
+
+function crestIndex(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  // Deterministic hue per team (consistent across matches, near-zero collisions).
-  // Lightness 30%: the wheel's brightest hue (yellow, ~60°) still gives white
-  // initials ≥4.5:1 (axe color-contrast); at 40% the yellow-green band failed.
-  const hue = hash % 360;
-  return `hsl(${hue} 52% 30%)`;
+  return hash % CREST_RAMP.length;
+}
+
+/** `avoid`：同屏另一枚队徽的名字。色板只有 8 档，一场比赛的主客队有 1/8 的概率
+ *  撞到同一档；撞上时往后挪一档，保证一张卡片里两枚队徽永远可区分。 */
+function crestColor(name: string, avoid?: string) {
+  const index = crestIndex(name);
+  const shift = avoid !== undefined && avoid !== name && crestIndex(avoid) === index ? 1 : 0;
+  return CREST_RAMP[(index + shift) % CREST_RAMP.length];
 }
 
 function crestInitials(name: string) {
@@ -74,10 +95,10 @@ function crestInitials(name: string) {
   return Array.from(trimmed).slice(0, /[a-z]/i.test(trimmed) ? 2 : 1).join("").toUpperCase();
 }
 
-/** Team crest roundel — deterministic color + initials from the team name. */
-export function TeamCrest({ name, className = "size-9 text-sm" }: { name: string; className?: string }) {
+/** Team crest roundel — deterministic brand-palette color + initials from the team name. */
+export function TeamCrest({ name, avoid, className = "size-9 text-sm" }: { name: string; avoid?: string; className?: string }) {
   return (
-    <span aria-hidden="true" className={`crest ${className}`} style={{ backgroundColor: crestColor(name) }}>
+    <span aria-hidden="true" className={`crest ${className}`} style={{ backgroundColor: crestColor(name, avoid) }}>
       {crestInitials(name)}
     </span>
   );

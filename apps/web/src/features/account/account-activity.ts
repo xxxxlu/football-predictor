@@ -1,3 +1,5 @@
+import { formatPointsDelta } from "@/lib/points";
+
 export type AccountTicket = {
   ticketId: string;
   matchId?: string;
@@ -27,8 +29,7 @@ export function accountTicketSummary(tickets: AccountTicket[]) {
   }, { total: 0, pending: 0, settled: 0 });
 }
 
+/** 缺值在流水语境里等于「没有变化」，所以兜底是 0 而不是破折号。 */
 export function signedPoints(value: string | null | undefined) {
-  const number = Number(value ?? 0);
-  if (!Number.isFinite(number)) return "0.00";
-  return `${number > 0 ? "+" : ""}${number.toFixed(2)}`;
+  return formatPointsDelta(value, "0");
 }

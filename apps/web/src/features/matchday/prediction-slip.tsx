@@ -4,6 +4,7 @@ import { OddsButton } from "@/components/odds-button";
 import { StatusMessage } from "@/components/status-message";
 import { discardOfflineDraft, loadOfflineDraft, revalidateDraft, saveOfflineDraft, type DraftVerdict, type OfflineDraft } from "@/features/pwa/offline-draft";
 import { useOnlineStatus } from "@/features/pwa/offline-status";
+import { formatPoints } from "@/lib/points";
 import { scoreChipLabel } from "./selection-label";
 import { matchViewFromDetailPayload } from "./types";
 import type { ApiFailure, MatchView, OddsSelection } from "./types";
@@ -66,7 +67,7 @@ export function PredictionSlip({ roomId, match, advanced = false, placedMarketId
 
   const projected = useMemo(() => {
     const amount = Number(stake), value = Number(active?.decimalOdds);
-    return active?.decimalOdds && Number.isFinite(amount * value) ? (amount * value).toFixed(2) : "—";
+    return active?.decimalOdds && Number.isFinite(amount * value) ? formatPoints((amount * value).toFixed(2)) : "—";
   }, [stake, active]);
 
   // 7.3a：离线禁提交；7.3b：离线仍可继续构建判断（存为本地草稿），只有提交被禁。

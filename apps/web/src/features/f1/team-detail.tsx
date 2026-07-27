@@ -112,7 +112,7 @@ export function F1TeamDetail({ teamKey }: { teamKey: string }) {
           const photo = driverPhotoPath(driver.code);
           return (
             <Link key={driver.code} href={`/matches/f1/drivers/${driver.code}`} className="pulse-market-panel group flex items-center gap-4">
-              {photo && <Image src={photo} alt="" width={72} height={72} unoptimized className="size-18 rounded-full bg-[rgb(23_35_59/6%)] object-cover object-top" />}
+              {photo && <Image src={photo} alt="" width={72} height={72} unoptimized className="size-18 rounded-full bg-[var(--wash-neutral-soft)] object-cover object-top" />}
               <span className="min-w-0">
                 <span className="tabular block text-xs font-black" style={{ color: team.color }}>{String(driver.number).padStart(2, "0")} · {driver.code}</span>
                 <span className="block truncate text-lg font-bold group-hover:underline">{driver.name}</span>

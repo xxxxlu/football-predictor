@@ -1,7 +1,7 @@
 /**
- * Closes completed room contests without deleting their append-only balances,
- * tickets or audit evidence. Used by the production supplier sweep because
- * CloudBase runs the web application, not the resident worker scheduler.
+ * Product-deletes completed room contests: they disappear from all room routes
+ * and discovery. The CLOSED tombstone retains immutable settlement evidence only
+ * so a late upstream result correction remains safe and idempotent.
  */
 import postgres from "postgres";
 
@@ -15,7 +15,7 @@ try {
     WITH candidates AS (
       SELECT r.id
       FROM room.rooms r
-      WHERE r.status='ACTIVE'
+      WHERE r.status IN ('ACTIVE','RESTRICTED')
         AND EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='SETTLED')
         AND NOT EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='PENDING')
       ORDER BY r.updated_at,r.id

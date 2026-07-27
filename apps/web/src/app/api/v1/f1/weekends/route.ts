@@ -1,5 +1,5 @@
 import { podiumOf } from "@/features/f1/stats";
-import { authorizeF1Read, CURRENT_F1_SEASON, f1Failure, f1Json, getF1Repository } from "../_lib/runtime";
+import { authorizeF1Read, CURRENT_F1_SEASON, f1Failure, f1Json, getF1Repository, refreshF1ReadModel } from "../_lib/runtime";
 
 export const runtime = "nodejs";
 
@@ -7,6 +7,7 @@ export async function GET(request: Request): Promise<Response> {
   const authorization = await authorizeF1Read(request);
   if (authorization instanceof Response) return authorization;
   try {
+    await refreshF1ReadModel();
     const repository = getF1Repository();
     const [weekends, confirmed] = await Promise.all([
       repository.listWeekends(CURRENT_F1_SEASON),

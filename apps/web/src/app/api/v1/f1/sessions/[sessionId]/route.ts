@@ -1,4 +1,4 @@
-import { authorizeF1Read, f1Failure, f1Json, getF1Repository } from "../../_lib/runtime";
+import { authorizeF1Read, f1Failure, f1Json, getF1Repository, refreshF1ReadModel } from "../../_lib/runtime";
 
 export const runtime = "nodejs";
 
@@ -10,6 +10,7 @@ export async function GET(request: Request, context: { params: Promise<{ session
   const { sessionId } = await context.params;
   if (!UUID.test(sessionId)) return f1Failure("SESSION_NOT_FOUND", "The requested F1 session was not found.", 404);
   try {
+    await refreshF1ReadModel();
     const detail = await getF1Repository().getSessionDetail(sessionId);
     if (!detail) return f1Failure("SESSION_NOT_FOUND", "The requested F1 session was not found.", 404);
     return f1Json(detail);

@@ -58,7 +58,7 @@ export function F1ResultsTable({ kind, result, driverIndex }: {
                       <i aria-hidden className="h-5 w-1 shrink-0 rounded-sm" style={{ background: driver?.color ?? "var(--muted)" }} />
                       {photo && (
                         <Image src={photo} alt="" width={28} height={28} unoptimized
-                          className="size-7 shrink-0 rounded-full bg-[rgb(23_35_59/6%)] object-cover object-top" />
+                          className="size-7 shrink-0 rounded-full bg-[var(--wash-neutral-soft)] object-cover object-top" />
                       )}
                       <span className="min-w-0">
                         <span className="block truncate font-bold group-hover:underline">{driver?.name ?? entry.driverCode}</span>

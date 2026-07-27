@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
+import { formatOdds, formatPoints, formatPointsDelta } from "@/lib/points";
 import { formatEventTitle, formatSelectionLabel } from "./selection-label";
 import type { ApiEnvelope, ApiFailure } from "./types";
 
@@ -32,8 +33,8 @@ const statusLabel: Record<TicketStatus, string> = { FROZEN: "待结算", WON: "�
 function statusChipClass(status: TicketStatus): string {
   if (status === "WON") return "bg-[var(--field)] text-white";
   if (status === "LOST") return "bg-[var(--coral)] text-white";
-  if (status === "VOID") return "bg-[rgb(23_35_59/8%)] text-[var(--muted)]";
-  return "bg-[rgb(23_107_77/10%)] text-[var(--field-dark)]"; // FROZEN / 待结算
+  if (status === "VOID") return "bg-[var(--wash-neutral)] text-[var(--muted)]";
+  return "bg-[var(--wash-brand)] text-[var(--field-dark)]"; // FROZEN / 待结算
 }
 
 function projectedReturn(stakePoints?: string, confirmedOdds?: string): string | null {
@@ -119,15 +120,15 @@ function PredictionRow({ record }: { record: TicketRecord }) {
       </header>
       <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
         <Fact label="选择" value={record.selection ? formatSelectionLabel(record.selection) : "—"} />
-        <Fact label="投入" value={record.stakePoints ?? "—"} />
-        <Fact label="确认倍率" value={record.confirmedOdds ?? "—"} />
+        <Fact label="投入" value={formatPoints(record.stakePoints)} />
+        <Fact label="确认倍率" value={formatOdds(record.confirmedOdds)} />
         {record.status === "FROZEN"
-          ? <Fact label="预计返还" value={projected ?? "—"} />
-          : <Fact label="最终返还" value={record.returnPoints ?? "—"} />}
+          ? <Fact label="预计返还" value={formatPoints(projected)} />
+          : <Fact label="最终返还" value={formatPoints(record.returnPoints)} />}
       </dl>
       {record.status !== "FROZEN" && (record.netPoints !== null || record.settlementVersion) && (
         <p className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-[var(--muted)]">
-          {record.netPoints !== null && <span>净积分 <strong className="tabular text-[var(--ink)]">{record.netPoints}</strong></span>}
+          {record.netPoints !== null && <span>净积分 <strong className="tabular text-[var(--ink)]">{formatPointsDelta(record.netPoints)}</strong></span>}
           {record.settlementVersion && <span className="tabular min-w-0 max-w-full truncate" title={record.settlementVersion}>结算版本 {record.settlementVersion}</span>}
         </p>
       )}
@@ -137,4 +138,4 @@ function PredictionRow({ record }: { record: TicketRecord }) {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="surface p-3 text-center"><p className="text-xs text-[var(--muted)]">{label}</p><p className="tabular mt-1 text-xl font-bold">{value}</p></div>; }
-function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 font-bold">{value}</dd></div>; }
+function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 text-lg font-bold">{value}</dd></div>; }

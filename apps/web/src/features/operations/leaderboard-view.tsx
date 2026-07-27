@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { RoomFilter } from "@/components/room-filter";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { formatPoints, formatPointsDelta } from "@/lib/points";
 import { useRoomData } from "./use-room-data";
 
 type LeaderboardRow = { rank: number; userId: string; displayName: string; netPoints: string; availablePoints: string; frozenPoints: string; settledTickets: number; movement?: number | null };
@@ -16,5 +17,17 @@ export function LeaderboardView() {
   return <div><RoomFilter rooms={room.rooms} value={room.roomId} onChange={room.setRoomId}/><p className="mt-4 text-xs leading-5 text-[var(--muted)]">净积分 = 可用积分 − 更正债务 − 初始 10,000 分；尚未结算的冻结积分不参与排名。</p><div className="mt-6">{loading ? <DataStatePanel state="loading" title="正在加载排行" description=""/> : error ? <DataStatePanel state="error" title="排行榜暂不可用" description={error}/> : !rows.length ? <DataStatePanel state="empty" title="尚无可排名记录" description="完成结算后，成员的净积分与排名会出现在这里。"/> : <LeaderboardTable rows={rows}/>}</div></div>;
 }
 
-function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) { return <div className="surface overflow-hidden"><div className="hidden grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))] gap-3 border-b rule px-4 py-3 text-xs font-bold text-[var(--muted)] md:grid"><span>排名</span><span>成员</span><span className="text-right">净积分</span><span className="text-right">可用</span><span className="text-right">冻结</span><span className="text-right">已结算</span></div><ol>{rows.map(row => <li key={row.userId} className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 border-b rule p-4 last:border-0 md:grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))]"><span aria-label={`第 ${row.rank} 名`} className={`tabular grid size-9 shrink-0 place-items-center rounded-full text-sm font-black ${row.rank === 1 ? "bg-[var(--volt)] text-[var(--volt-ink)]" : row.rank <= 3 ? "bg-[var(--field)] text-white" : "bg-[rgb(23_107_77/10%)] text-[var(--field-dark)]"}`}>{row.rank}</span><div className="min-w-0"><p className="truncate font-bold">{row.displayName}</p>{row.movement != null && row.movement !== 0 && <p className="mt-1 text-xs text-[var(--muted)]">较上轮 {row.movement > 0 ? `上升 ${row.movement}` : `下降 ${Math.abs(row.movement)}`}</p>}</div><Metric mobile label="净积分" value={row.netPoints}/><Metric label="可用" value={row.availablePoints}/><Metric label="冻结" value={row.frozenPoints}/><Metric label="已结算" value={String(row.settledTickets)}/></li>)}</ol></div>; }
-function Metric({ label, value, mobile = false }: { label: string; value: string; mobile?: boolean }) { return <div className={`${mobile ? "" : "hidden md:block"} text-right`}><span className="block text-[10px] text-[var(--muted)] md:hidden">{label}</span><strong className="tabular text-sm">{value}</strong></div>; }
+function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) { return <div className="surface overflow-hidden"><div className="hidden grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))] gap-3 border-b rule px-4 py-3 text-xs font-bold text-[var(--muted)] md:grid"><span>排名</span><span>成员</span><span className="text-right">净积分</span><span className="text-right">可用</span><span className="text-right">冻结</span><span className="text-right">已结算</span></div><ol>{rows.map(row => <li key={row.userId} className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 border-b rule p-4 last:border-0 md:grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))]"><span aria-label={`第 ${row.rank} 名`} className={`tabular grid size-9 shrink-0 place-items-center rounded-full text-sm font-black ${rankBadge(row.rank)}`}>{row.rank}</span><div className="min-w-0"><p className="truncate font-bold">{row.displayName}</p>{row.movement != null && row.movement !== 0 && <p className="mt-1 text-xs text-[var(--muted)]">较上轮 {row.movement > 0 ? `上升 ${row.movement}` : `下降 ${Math.abs(row.movement)}`}</p>}</div><Metric mobile label="净积分" value={formatPointsDelta(row.netPoints)}/><Metric label="可用" value={formatPoints(row.availablePoints)}/><Metric label="冻结" value={formatPoints(row.frozenPoints)}/><Metric label="已结算" value={String(row.settledTickets)}/></li>)}</ol></div>; }
+
+/* 名次徽章：赛车红 → 碳黑 → 中性淡底，三级递减。
+   第一名此前用荧光黄绿，但 §6.2 把荧光严格留给 LIVE / 数据刚更新这类实时状态；
+   排行榜是静态结算结果，占用它会让真正的实时信号贬值。 */
+function rankBadge(rank: number) {
+  if (rank === 1) return "bg-[var(--field)] text-white";
+  if (rank <= 3) return "bg-[var(--ink)] text-white";
+  return "bg-[var(--wash-neutral)] text-[var(--ink)]";
+}
+
+/* 手机上标签与数字上下堆叠，数字按 §7.3 取标签的 1.8 倍（10px → 18px）；
+   桌面标签在表头，数字回到正文字号。 */
+function Metric({ label, value, mobile = false }: { label: string; value: string; mobile?: boolean }) { return <div className={`${mobile ? "" : "hidden md:block"} text-right`}><span className="block text-[10px] text-[var(--muted)] md:hidden">{label}</span><strong className="tabular text-lg md:text-sm">{value}</strong></div>; }

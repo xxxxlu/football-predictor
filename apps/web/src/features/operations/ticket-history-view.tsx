@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { formatEventTitle, formatSelectionLabel } from "../matchday/selection-label";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { formatPoints } from "@/lib/points";
 import { competitionFilterOptions, filterHistoryRecords, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
 
 type HistoryArchive = {
@@ -77,12 +78,12 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
         <h2 className="display mt-1 text-xl font-bold">{record.fixture.id.startsWith("f1:") ? formatEventTitle({ matchId: record.fixture.id, homeTeam: record.fixture.homeTeam, awayTeam: record.fixture.awayTeam }) : <>{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</>}</h2>
         <p className="mt-1 text-xs text-[var(--muted)]">房间：{record.room.name} · 结算于 <time dateTime={record.settlement.settledAt}>{new Date(record.settlement.settledAt).toLocaleString("zh-CN")}</time></p>
       </div>
-      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
+      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[var(--wash-neutral)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
     </header>
     <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
       <Fact label="选择" value={formatSelectionLabel(record.selection)}/>
-      <Fact label="投入" value={record.stakePoints}/>
-      <Fact label="最终返还" value={record.settlement.grossReturnPoints}/>
+      <Fact label="投入" value={formatPoints(record.stakePoints)}/>
+      <Fact label="最终返还" value={formatPoints(record.settlement.grossReturnPoints)}/>
       <div className="min-w-0">
         <dt className="text-[10px] text-[var(--muted)]">结算版本</dt>
         <dd className="tabular mt-1 truncate font-bold" title={record.settlement.version}>{record.settlement.version}</dd>
@@ -93,4 +94,4 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
 }
 
 function Metric({ label, value }: { label: string; value: string }) { return <div className="surface p-4"><p className="text-xs text-[var(--muted)]">{label}</p><p className="tabular mt-1 text-2xl font-bold">{value}</p></div>; }
-function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 font-bold">{value}</dd></div>; }
+function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 text-lg font-bold">{value}</dd></div>; }

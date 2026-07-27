@@ -1,9 +1,9 @@
 import postgres from "postgres";
 
 /**
- * A settled room is removed from normal discovery instead of hard-deleted.
- * Ledger, result and audit rows deliberately keep their foreign keys so a result
- * correction can still be applied. CLOSED blocks every future ticket submission.
+ * A settled room is product-deleted: it vanishes from lists and every room API
+ * resolves it as not found. The database tombstone only retains the immutable
+ * settlement/ledger rows needed to make a late result correction idempotent.
  */
 export class PostgresSettledRoomCloser {
   constructor(private readonly sql: postgres.Sql) {}
@@ -14,7 +14,7 @@ export class PostgresSettledRoomCloser {
       WITH candidates AS (
         SELECT r.id
         FROM room.rooms r
-        WHERE r.status='ACTIVE'
+        WHERE r.status IN ('ACTIVE','RESTRICTED')
           AND EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='SETTLED')
           AND NOT EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='PENDING')
         ORDER BY r.updated_at,r.id

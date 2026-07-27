@@ -1,5 +1,5 @@
 import { loadIdentityConfig } from "@pulse/config";
-import { createIdentityDatabase, DrizzleF1Repository } from "@pulse/db";
+import { createIdentityDatabase, DrizzleF1Repository, refreshF1ReadModelIfDue } from "@pulse/db";
 import { F1_SEASON_2026 } from "@pulse/domain";
 import { getIdentityService } from "../../auth/_lib/runtime";
 import { readSessionToken } from "../../auth/_lib/handlers";
@@ -15,6 +15,30 @@ export function getF1Repository() {
 }
 
 export const CURRENT_F1_SEASON = F1_SEASON_2026;
+
+/**
+ * Production CloudBase has no resident worker. Keep F1 result/standings reads
+ * current from the page API while the DB-backed claim limits supplier traffic to
+ * one refresh every five minutes across all function instances.
+ */
+export async function refreshF1ReadModel(): Promise<void> {
+  if (process.env.F1_RESULTS_SYNC_ENABLED === "false") return;
+  try {
+    const config = loadIdentityConfig(process.env);
+    const season = Number.parseInt(process.env.F1_RESULTS_SEASON ?? String(CURRENT_F1_SEASON), 10);
+    if (!Number.isInteger(season) || season < 2000 || season > 2100) return;
+    await refreshF1ReadModelIfDue({
+      databaseUrl: config.databaseUrl,
+      season,
+      baseUrl: process.env.JOLPICA_BASE_URL,
+      minimumIntervalMs: 5 * 60_000,
+    });
+  } catch (error) {
+    // A temporary source failure must never make already-confirmed F1 results
+    // unreadable. The next eligible read retries after the bounded interval.
+    console.warn("f1.read_model_refresh_failed", error);
+  }
+}
 
 /** All F1 reads require a logged-in account, matching the football matches API. */
 export async function authorizeF1Read(request: Request): Promise<{ userId: string } | Response> {

@@ -5,6 +5,7 @@ import { exactPodiumComboOdds } from "@pulse/domain";
 import { StatusMessage } from "@/components/status-message";
 import { discardOfflineDraft, loadOfflineDraft, revalidateDraft, saveOfflineDraft, type DraftVerdict, type OfflineDraft } from "@/features/pwa/offline-draft";
 import { useOnlineStatus } from "@/features/pwa/offline-status";
+import { formatPoints } from "@/lib/points";
 import {
   MARKET_KIND_LABELS,
   sessionPredictable,
@@ -140,7 +141,7 @@ export function F1PredictionSlip({ roomId, detail, interactive, onRefresh }: {
 
   const projected = useMemo(() => {
     const amount = Number(stake), value = Number(outcome?.decimalOdds);
-    return outcome && Number.isFinite(amount * value) ? (amount * value).toFixed(2) : "—";
+    return outcome && Number.isFinite(amount * value) ? formatPoints((amount * value).toFixed(2)) : "—";
   }, [stake, outcome]);
 
   async function submit(event: FormEvent) {

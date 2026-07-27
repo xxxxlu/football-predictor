@@ -13,11 +13,11 @@ function sessionHref(sessionId: string, roomId?: string): string {
 }
 
 function stateChipClass(session: F1SessionView): string {
-  if (session.state === "CANCELLED") return "bg-[rgb(23_35_59/8%)] text-[var(--muted)] line-through";
+  if (session.state === "CANCELLED") return "bg-[var(--wash-neutral)] text-[var(--muted)] line-through";
   if (session.state === "FINISHED") return "bg-[var(--pulse-carbon)] text-[var(--pulse-ivory)]";
   // red-deep, not pulse-red: white on #ff3b20 fails WCAG contrast (axe color-contrast, serious)
   if (sessionPredictable(session)) return "bg-[var(--pulse-red-deep)] text-white";
-  return "bg-[rgb(23_35_59/8%)] text-[var(--muted)]";
+  return "bg-[var(--wash-neutral)] text-[var(--muted)]";
 }
 
 function stateChipLabel(session: F1SessionView): string {

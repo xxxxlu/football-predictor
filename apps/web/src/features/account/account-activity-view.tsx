@@ -7,6 +7,7 @@ import { RoomFilter } from "@/components/room-filter";
 import type { ApiEnvelope, ApiFailure, BalanceView } from "@/features/matchday/types";
 import { formatEventTitle, formatSelectionLabel } from "@/features/matchday/selection-label";
 import { useRoomData } from "@/features/operations/use-room-data";
+import { formatOdds, formatPoints } from "@/lib/points";
 import { accountTicketSummary, ownTickets, signedPoints, type AccountTicket } from "./account-activity";
 
 type LedgerEntry = {
@@ -66,9 +67,9 @@ export function AccountActivityView() {
 
     {loading ? <DataStatePanel state="loading" title="正在读取房间账户" description="正在同步余额、判断和积分流水。"/> : error ? <DataStatePanel state="error" title="账户明细暂不可用" description={error}/> : <>
       <div className="account-balance-strip surface overflow-hidden">
-        <BalanceMetric label="可用积分" value={balance?.availablePoints || "0.00"} emphasis/>
-        <BalanceMetric label="已投入 / 冻结" value={balance?.frozenPoints || "0.00"}/>
-        <BalanceMetric label="更正债务" value={balance?.correctionDebt || "0.00"}/>
+        <BalanceMetric label="可用积分" value={formatPoints(balance?.availablePoints, "0")} emphasis/>
+        <BalanceMetric label="已投入 / 冻结" value={formatPoints(balance?.frozenPoints, "0")}/>
+        <BalanceMetric label="更正债务" value={formatPoints(balance?.correctionDebt, "0")}/>
         <BalanceMetric label="我的判断" value={`${summary.total} 笔`} note={`${summary.pending} 笔待结算`}/>
       </div>
 
@@ -93,7 +94,7 @@ function BalanceMetric({ label, value, note, emphasis = false }: { label: string
 
 function TicketRow({ ticket }: { ticket: AccountTicket }) {
   const pending = ticket.status === "FROZEN";
-  return <li className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><strong>{formatEventTitle({ matchId: ticket.matchId, homeTeam: ticket.homeTeam, awayTeam: ticket.awayTeam })}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${pending ? "bg-[var(--floodlight)] text-[var(--ink)]" : ticket.status === "WON" ? "bg-[var(--field)] text-white" : "bg-[rgb(23_35_59/8%)] text-[var(--muted)]"}`}>{ticketLabel[ticket.status]}</span></div><p className="mt-1 text-xs text-[var(--muted)]">{ticket.selection ? formatSelectionLabel(ticket.selection) : "封盘前保密"} · 投入 {ticket.stakePoints || "—"} · 倍率 {ticket.confirmedOdds || "—"}</p></div><div className="sm:text-right"><p className="tabular text-sm font-bold">{pending ? `冻结 ${ticket.stakePoints || "—"}` : `净变化 ${signedPoints(ticket.netPoints)}`}</p><time dateTime={ticket.submittedAt} className="mt-1 block text-[10px] text-[var(--muted)]">{new Date(ticket.submittedAt).toLocaleString("zh-CN")}</time></div></li>;
+  return <li className="grid gap-3 py-4 first:pt-0 sm:grid-cols-[1fr_auto] sm:items-center"><div><div className="flex flex-wrap items-center gap-2"><strong>{formatEventTitle({ matchId: ticket.matchId, homeTeam: ticket.homeTeam, awayTeam: ticket.awayTeam })}</strong><span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${pending ? "bg-[var(--floodlight)] text-[var(--ink)]" : ticket.status === "WON" ? "bg-[var(--field)] text-white" : "bg-[var(--wash-neutral)] text-[var(--muted)]"}`}>{ticketLabel[ticket.status]}</span></div><p className="mt-1 text-xs text-[var(--muted)]">{ticket.selection ? formatSelectionLabel(ticket.selection) : "封盘前保密"} · 投入 {formatPoints(ticket.stakePoints)} · 倍率 {formatOdds(ticket.confirmedOdds)}</p></div><div className="sm:text-right"><p className="tabular text-sm font-bold">{pending ? `冻结 ${formatPoints(ticket.stakePoints)}` : `净变化 ${signedPoints(ticket.netPoints)}`}</p><time dateTime={ticket.submittedAt} className="mt-1 block text-[10px] text-[var(--muted)]">{new Date(ticket.submittedAt).toLocaleString("zh-CN")}</time></div></li>;
 }
 
 function LedgerRow({ entry }: { entry: LedgerEntry }) {
