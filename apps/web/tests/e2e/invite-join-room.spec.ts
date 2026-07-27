@@ -23,7 +23,7 @@ test("host creates a private room and an invitee joins via the invite link", asy
   if ((await host.getByLabel("房间名称").inputValue()) !== "E2E 私人房间") await host.getByLabel("房间名称").fill("E2E 私人房间");
   await host.getByRole("radio", { name: /私人/ }).check();
   await host.locator('input[name="rulesAccepted"]').check();
-  await host.getByRole("button", { name: "创建房间" }).click();
+  await host.getByRole("button", { name: "创建竞猜群组" }).click();
   await expect(host.getByText("房间已创建")).toBeVisible();
   const inviteUrl = await host.getByLabel("邀请链接").inputValue();
   expect(inviteUrl).toContain("/invite/");
