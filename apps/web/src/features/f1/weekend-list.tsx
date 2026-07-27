@@ -104,7 +104,8 @@ function WeekendCard({ weekend, roomId, index }: { weekend: F1WeekendView; roomI
           <p className="pd-eyebrow"><span>ROUND {String(weekend.round).padStart(2, "0")} · {weekend.season}</span></p>
           <div className="mt-2 flex flex-wrap items-center gap-3">
             <h3 className="kinetic text-3xl">{weekend.name}</h3>
-            {weekend.isSprintWeekend && <span className="pd-tag pd-tag--lime"><span>SPRINT 周末</span></span>}
+            {/* 用默认赛车红标签：冲刺是赛程属性，不是实时状态，不该占用保留的荧光黄绿（§6.2）。 */}
+            {weekend.isSprintWeekend && <span className="pd-tag"><span>SPRINT 周末</span></span>}
           </div>
           <p className="pulse-weekend-card__circuit">{weekend.circuitKey.replaceAll("-", " ").toUpperCase()} / RACE CONTROL</p>
           <div className="mt-4"><PulseLine state={live ? "upcoming" : "ambient"} /></div>
