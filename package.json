@@ -18,6 +18,7 @@
     "db:seed:f1-official-2026": "pnpm --filter @pulse/db seed:f1-official-2026",
     "db:import:f1-results-2026": "pnpm build:packages && pnpm --filter @pulse/db import:f1-results-2026",
     "db:seed:e2e": "pnpm --filter @pulse/db seed:e2e",
+    "db:close-settled-rooms": "pnpm --filter @pulse/db close-settled-rooms",
     "lint": "pnpm --filter @pulse/web lint",
     "typecheck": "pnpm build:packages && pnpm -r --if-present typecheck",
     "test": "pnpm build:packages && vitest run",

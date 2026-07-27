@@ -1,4 +1,4 @@
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, ne, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { RoomRepository, RoomSummaryRecord } from "@pulse/domain";
 import type { IdentityDatabase } from "../identity/repository.js";
@@ -77,7 +77,7 @@ export class DrizzleRoomRepository implements RoomRepository {
     const allMembers = alias(roomMembers, "all_members");
     const rows = await this.db.select({ id: rooms.id, name: rooms.name, status: rooms.status, visibility: rooms.visibility, tier: rooms.tier, sport: rooms.sport, preMatchStakeVisible: rooms.preMatchStakeVisible, postMatchTicketVisible: rooms.postMatchTicketVisible, role: roomMembers.role, memberCount: count(allMembers.userId) })
       .from(roomMembers).innerJoin(rooms, eq(rooms.id, roomMembers.roomId)).innerJoin(allMembers, eq(allMembers.roomId, rooms.id))
-      .where(eq(roomMembers.userId, userId)).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).orderBy(rooms.createdAt);
+      .where(and(eq(roomMembers.userId, userId), ne(rooms.status, "CLOSED"))).groupBy(rooms.id, rooms.name, rooms.status, rooms.visibility, rooms.tier, rooms.sport, rooms.preMatchStakeVisible, rooms.postMatchTicketVisible, roomMembers.role).orderBy(rooms.createdAt);
     return rows.map((row) => ({ ...row, memberCount: Number(row.memberCount) }));
   }
 

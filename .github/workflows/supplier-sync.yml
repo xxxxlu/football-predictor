@@ -3,7 +3,8 @@ name: supplier-sync
 # The only production automation: deployments run the web app alone, so this
 # scheduled sweep stands in for the resident worker. Every run refreshes football
 # fixtures/odds, imports finished F1 session results, closes the markets of started
-# F1 sessions, and settles every ticket whose result is now confirmed.
+# F1 sessions, settles every ticket whose result is now confirmed, then archives
+# room contests whose every submitted ticket has settled.
 
 on:
   workflow_dispatch:
@@ -54,6 +55,8 @@ jobs:
         run: pnpm db:import:f1-results-2026
       - name: Sync football fixtures and odds, lock due F1 sessions, settle results
         run: pnpm supplier:sweep
+      - name: Close fully settled room contests
+        run: pnpm db:close-settled-rooms
       # A green sweep is not proof of a healthy product: the 2026-07-25 outage ran
       # green for six days while syncing a finished competition. These invariants
       # are the alert, and they cost no extra scheduled run.

@@ -121,6 +121,10 @@ describe("loadSupplierWorkerConfig", () => {
       liveEnabled: false,
       liveIntervalMs: 300_000,
       settlementBatchSize: 100,
+      f1ResultsSyncEnabled: true,
+      f1ResultsIntervalMs: 300_000,
+      f1ResultsSeason: 2026,
+      jolpicaBaseUrl: "https://api.jolpi.ca/ergast",
     });
   });
 

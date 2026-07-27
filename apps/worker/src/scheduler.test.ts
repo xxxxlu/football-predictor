@@ -365,6 +365,40 @@ describe("worker scheduler", () => {
     await scheduler.stop();
   });
 
+  it("continues settlement startup when the supplemental F1 source is temporarily unavailable", async () => {
+    const calls: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: { ...schedulerConfig(), f1ResultsSyncEnabled: true, f1ResultsIntervalMs: 60_000 },
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: { scan: async () => { calls.push("settlement"); return { outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }; }, close: async () => undefined },
+      f1Results: { sync: async () => { throw new Error("upstream unavailable"); }, close: async () => undefined },
+      fixtures: { listFixtures: async () => [] }, write: () => undefined,
+    });
+
+    await expect(scheduler.start()).resolves.toBeUndefined();
+    expect(calls).toEqual(["settlement"]);
+    await scheduler.stop();
+  });
+
+  it("syncs F1 results before settlement and closes rooms only after settlement completes", async () => {
+    const order: string[] = [];
+    const scheduler = createWorkerScheduler({
+      config: { ...schedulerConfig(), f1ResultsSyncEnabled: true, f1ResultsIntervalMs: 60_000 },
+      clock: { now: () => new Date("2026-07-13T10:00:00Z") }, timers: new FakeTimers(),
+      supplier: { run: async () => ({ outcome: "SUCCESS", synced: 0 }), close: async () => undefined },
+      settlement: { scan: async () => { order.push("settlement"); return { outcome: "SUCCESS", processed: 0, held: 0, failedTicketIds: [] }; }, close: async () => undefined },
+      f1Results: { sync: async () => { order.push("f1-sync"); return { imported: 1 }; }, close: async () => { order.push("f1-close"); } },
+      rooms: { closeSettledRooms: async (limit) => { order.push(`room-close:${limit}`); return { closed: 1 }; }, close: async () => { order.push("room-close-connection"); } },
+      fixtures: { listFixtures: async () => [] }, write: () => undefined,
+    });
+
+    await scheduler.start();
+    expect(order).toEqual(["f1-sync", "settlement", "room-close:100"]);
+    await scheduler.stop();
+    expect(order).toEqual(["f1-sync", "settlement", "room-close:100", "f1-close", "room-close-connection"]);
+  });
+
   it("locks a session missed while the worker was down on the next boot's startup sweep", async () => {
     // Durable state shared across two scheduler lifetimes; in-memory scheduler state resets.
     const store = { state: "UPCOMING" as "UPCOMING" | "LOCKED", startsAt: "2026-07-13T12:00:00Z", openMarkets: 3 };

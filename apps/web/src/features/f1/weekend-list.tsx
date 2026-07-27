@@ -50,6 +50,13 @@ export function WeekendList({ roomId }: { roomId?: string }) {
     return () => controller.abort();
   }, [retry]);
 
+  useEffect(() => {
+    // Result sync runs in the worker; refresh the read model while this screen is open
+    // so a confirmed result moves from locked to finished without a manual reload.
+    const interval = window.setInterval(() => setRetry((value) => value + 1), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   if (error) {
     return <DataStatePanel state="error" title="暂时无法取得 F1 赛程" description={error} action={
       <button type="button" onClick={() => { setError(""); setWeekends(null); setRetry((value) => value + 1); }} className="inline-flex min-h-10 items-center justify-center rounded-full border-2 border-[var(--field)] px-5 text-sm font-bold text-[var(--field)] transition hover:bg-[var(--field)] hover:text-white">重试</button>

@@ -18,6 +18,8 @@ export interface WorkerSchedulerConfig {
   liveIntervalMs: number;
   lineupsIntervalMs?: number;
   settlementBatchSize: number;
+  f1ResultsSyncEnabled?: boolean;
+  f1ResultsIntervalMs?: number;
 }
 
 type FixtureTarget = {
@@ -42,6 +44,8 @@ type SchedulerDependencies = {
     close(): Promise<void>;
   };
   fixtures: { listFixtures(): Promise<FixtureTarget[]> };
+  f1Results?: { sync(): Promise<unknown>; close(): Promise<void> };
+  rooms?: { closeSettledRooms(limit: number): Promise<unknown>; close(): Promise<void> };
   write(entry: Readonly<Record<string, unknown>>): void;
 };
 
@@ -58,7 +62,7 @@ function errorName(error: unknown): string {
 }
 
 export function createWorkerScheduler(dependencies: SchedulerDependencies) {
-  const { config, clock, timers, supplier, settlement, fixtures, write } = dependencies;
+  const { config, clock, timers, supplier, settlement, fixtures, f1Results, rooms, write } = dependencies;
   const timerHandles: unknown[] = [];
   const inFlight = new Map<string, Promise<unknown>>();
   const notBefore = new Map<string, number>();
@@ -227,6 +231,20 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
     await guarded("settlement", "SETTLEMENT_SCAN", () => settlement.scan(config.settlementBatchSize));
   }
 
+  async function closeSettledRooms() {
+    if (!rooms) return;
+    try { await guarded("room_settlement_close", "ROOM_SETTLEMENT_CLOSE", () => rooms.closeSettledRooms(config.settlementBatchSize)); }
+    catch { /* guarded() has already emitted the failure; retry on the next settlement sweep. */ }
+  }
+
+  async function syncF1Results() {
+    if (!f1Results || config.f1ResultsSyncEnabled === false) return;
+    // F1's public result source is supplemental. Its temporary outage must never
+    // prevent football refreshes, existing F1 settlement, or room closeout.
+    try { await guarded("f1_results_sync", "F1_RESULTS_SYNC", () => f1Results.sync()); }
+    catch { /* guarded() has already emitted the failure; retry at the next interval. */ }
+  }
+
   // Locks F1 sessions whose start time has passed. State lives entirely in the
   // database, so the startup sweep recovers anything a downtime window missed.
   async function lockF1Sessions() {
@@ -253,13 +271,16 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
       if (config.liveEnabled) await refreshTargets("LIVE");
       await refreshLineups();
       await lockF1Sessions();
+      await syncF1Results();
       await scanSettlements();
+      await closeSettledRooms();
       if (stopping) return;
       every(config.fixturesIntervalMs, refreshFixtures);
       every(config.resultsIntervalMs, refreshResults);
       every(config.oddsIntervalMs, () => refreshTargets("PREMATCH_ODDS"));
       every(config.settlementIntervalMs, lockF1Sessions);
-      every(config.settlementIntervalMs, scanSettlements);
+      if (f1Results && config.f1ResultsSyncEnabled !== false) every(config.f1ResultsIntervalMs ?? 5 * 60_000, syncF1Results);
+      every(config.settlementIntervalMs, async () => { await scanSettlements(); await closeSettledRooms(); });
       if (config.liveEnabled) every(config.liveIntervalMs, () => refreshTargets("LIVE"));
       every(config.lineupsIntervalMs ?? DEFAULT_LINEUPS_INTERVAL_MS, refreshLineups);
     },
@@ -272,6 +293,8 @@ export function createWorkerScheduler(dependencies: SchedulerDependencies) {
         while (inFlight.size > 0) await Promise.allSettled([...inFlight.values()]);
         await supplier.close();
         await settlement.close();
+        await f1Results?.close();
+        await rooms?.close();
       })();
       return stopPromise;
     },

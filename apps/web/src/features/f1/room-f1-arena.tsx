@@ -24,6 +24,7 @@ export function RoomF1Arena({ roomId, interactive }: {
   const [sessions, setSessions] = useState<F1UpcomingSessionView[] | null>(null);
   const [detail, setDetail] = useState<F1SessionDetailView | null>(null);
   const [detailError, setDetailError] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -41,6 +42,12 @@ export function RoomF1Arena({ roomId, interactive }: {
       }
     })();
     return () => controller.abort();
+  }, [refreshTick]);
+
+  useEffect(() => {
+    // Keep this embedded panel aligned with worker-side F1 result confirmation.
+    const interval = window.setInterval(() => setRefreshTick((value) => value + 1), 60_000);
+    return () => window.clearInterval(interval);
   }, []);
 
   const nearestId = sessions?.[0]?.id;
@@ -64,7 +71,7 @@ export function RoomF1Arena({ roomId, interactive }: {
       catch { if (!controller.signal.aborted) setDetailError(true); }
     })();
     return () => controller.abort();
-  }, [nearestId, loadDetail]);
+  }, [nearestId, loadDetail, refreshTick]);
 
   if (sessions === null) return <p className="tabular mt-4 text-xs text-[var(--muted)]" aria-live="polite">正在读取最近场次…</p>;
   if (!sessions.length) return <div className="mt-4"><DataStatePanel state="empty" title="当前没有可预测的 F1 场次" description="新分站开放后，最近一场的竞猜会直接出现在这里。" /></div>;

@@ -77,6 +77,10 @@ const supplierWorkerConfigSchema = z.object({
   SUPPLIER_LIVE_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
   SUPPLIER_LIVE_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(5),
   SUPPLIER_SETTLEMENT_BATCH_SIZE: z.coerce.number().int().positive().max(1000).default(100),
+  F1_RESULTS_SYNC_ENABLED: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+  F1_RESULTS_INTERVAL_MINUTES: z.coerce.number().positive().max(1440).default(5),
+  F1_RESULTS_SEASON: z.coerce.number().int().min(2000).max(2100).default(2026),
+  JOLPICA_BASE_URL: z.string().url().default("https://api.jolpi.ca/ergast"),
 }).superRefine((value, context) => {
   if (value.SUPPLIER_COMPETITIONS === undefined && (value.SUPPLIER_LEAGUE_ID === undefined || value.SUPPLIER_SEASON === undefined)) {
     context.addIssue({ code: "custom", path: ["SUPPLIER_COMPETITIONS"], message: "Configure competitions or the legacy league and season pair" });
@@ -115,6 +119,10 @@ export type SupplierWorkerConfig = {
   liveEnabled: boolean;
   liveIntervalMs: number;
   settlementBatchSize: number;
+  f1ResultsSyncEnabled: boolean;
+  f1ResultsIntervalMs: number;
+  f1ResultsSeason: number;
+  jolpicaBaseUrl: string;
 };
 
 export function loadSupplierWorkerConfig(environment: Record<string, string | undefined>): SupplierWorkerConfig {
@@ -145,5 +153,9 @@ export function loadSupplierWorkerConfig(environment: Record<string, string | un
     liveEnabled: result.data.SUPPLIER_LIVE_ENABLED,
     liveIntervalMs: result.data.SUPPLIER_LIVE_INTERVAL_MINUTES * 60_000,
     settlementBatchSize: result.data.SUPPLIER_SETTLEMENT_BATCH_SIZE,
+    f1ResultsSyncEnabled: result.data.F1_RESULTS_SYNC_ENABLED,
+    f1ResultsIntervalMs: result.data.F1_RESULTS_INTERVAL_MINUTES * 60_000,
+    f1ResultsSeason: result.data.F1_RESULTS_SEASON,
+    jolpicaBaseUrl: result.data.JOLPICA_BASE_URL,
   };
 }

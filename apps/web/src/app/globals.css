@@ -882,3 +882,19 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 }
 .lineup-halfway { display: grid; place-items: center; padding: .1rem 0; }
 .lineup-half-empty { margin: auto; color: rgb(255 255 255 / 70%); font-size: .8rem; }
+
+/* 赛事切换：当前页本身不可再次请求；点击另一个项目后先跑一次短促交接动画，
+   两个入口同时锁定，直到 Next 路由完成或安全超时释放。 */
+.pd-sport-switch[aria-busy="true"] { cursor: progress; }
+.pd-sport-pill { position: relative; overflow: hidden; isolation: isolate; transition: background 180ms, border-color 180ms, color 180ms, transform 180ms var(--pd-ease-out), opacity 180ms; }
+.pd-sport-pill.is-active { border-color: var(--pulse-red-deep); background: rgb(184 23 13 / 8%); color: var(--pulse-carbon); font-weight: 800; cursor: default; }
+.pd-sport-pill.is-active::after { content: ""; position: absolute; z-index: 0; right: .8rem; bottom: 0; left: .8rem; height: 3px; background: var(--pulse-red); transform: skewX(var(--pd-cut)); }
+.pd-sport-pill > span, .pd-sport-pill > small { position: relative; z-index: 1; }
+.pd-sport-pill:disabled { opacity: 1; }
+.pd-sport-switch[aria-busy="true"] .pd-sport-pill:not(.is-switching) { opacity: .48; cursor: wait; }
+.pd-sport-pill.is-switching { border-color: var(--pulse-red); color: var(--pulse-carbon); cursor: wait; animation: pulse-sport-handoff 650ms var(--pd-ease-out) infinite; }
+.pd-sport-pill.is-switching::before { content: ""; position: absolute; z-index: 0; inset: 0; background: linear-gradient(110deg, transparent 10%, rgb(255 59 32 / 9%) 36%, rgb(255 59 32 / 58%) 50%, rgb(255 59 32 / 9%) 64%, transparent 90%); transform: translateX(-120%) skewX(var(--pd-cut)); animation: pulse-sport-scan 650ms linear infinite; }
+.pd-sport-pill.is-switching small { color: var(--pulse-red-deep); }
+@keyframes pulse-sport-scan { to { transform: translateX(120%) skewX(var(--pd-cut)); } }
+@keyframes pulse-sport-handoff { 50% { transform: skewX(calc(var(--pd-cut) * -1)) translateY(-2px); } }
+@media (prefers-reduced-motion: reduce) { .pd-sport-pill.is-switching, .pd-sport-pill.is-switching::before { animation: none; } }

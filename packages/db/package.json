@@ -20,7 +20,8 @@
     "seed:f1-official-2026": "node scripts/seed-f1-official-2026.mjs",
     "import:f1-results-2026": "node scripts/import-f1-results-2026.mjs",
     "seed:e2e": "node scripts/seed-e2e.mjs",
-    "health-check": "node scripts/production-health-check.mjs"
+    "health-check": "node scripts/production-health-check.mjs",
+    "close-settled-rooms": "node scripts/close-settled-rooms.mjs"
   },
   "dependencies": {
     "@pulse/domain": "workspace:*",

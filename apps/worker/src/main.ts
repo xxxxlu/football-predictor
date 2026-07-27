@@ -1,6 +1,6 @@
 import { ApiFootballClient } from "@pulse/api-football";
 import { loadServerConfig, loadSupplierWorkerConfig } from "@pulse/config";
-import { createSupplierPersistence } from "@pulse/db";
+import { createJolpicaF1ResultsSync, createPostgresSettledRoomCloser, createSupplierPersistence } from "@pulse/db";
 import { createWorkerRuntime, type LogEntry } from "./runtime.js";
 import { createWorkerScheduler } from "./scheduler.js";
 import { createPostgresSettlementWorkerComposition } from "./settlement/composition.js";
@@ -26,6 +26,8 @@ async function main() {
   });
   const supplier = createPersistentSupplierJobRunner({ runner: supplierCore, jobs: persistence.jobs, clock });
   const settlement = createPostgresSettlementWorkerComposition({ databaseUrl: workerConfig.databaseUrl, clock });
+  const f1Results = createJolpicaF1ResultsSync(workerConfig.databaseUrl, { season: workerConfig.f1ResultsSeason, baseUrl: workerConfig.jolpicaBaseUrl, now: clock.now });
+  const rooms = createPostgresSettledRoomCloser(workerConfig.databaseUrl);
   const scheduler = createWorkerScheduler({
     config: workerConfig,
     clock,
@@ -36,6 +38,8 @@ async function main() {
     supplier,
     settlement,
     fixtures: persistence.repository,
+    f1Results,
+    rooms,
     write,
   });
 
