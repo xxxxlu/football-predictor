@@ -22,6 +22,7 @@ const ticketErrors: Record<string, string> = {
   INSUFFICIENT_POINTS: "可用积分不足，请降低投入。",
   MARKET_TICKET_EXISTS: "本盘口你已提交过判断，等待结算即可。",
   ROOM_SPORT_MISMATCH: "当前房间是足球竞猜房，不能提交 F1 判断；请切换到 F1 房间。",
+  ROUND_IN_PROGRESS: "本群组当前轮次尚未全部结算，暂不能开启另一场 F1 场次。",
   INVALID_STAKE: "投入必须是 1 – 20,000 的整数。",
 };
 

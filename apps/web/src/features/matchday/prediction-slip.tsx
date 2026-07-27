@@ -19,6 +19,7 @@ const ticketErrors: Record<string, string> = {
   ROOM_SPORT_MISMATCH: "当前房间是 F1 竞猜房，不能提交足球判断；请切换到足球房间。",
   SCORE_TICKET_EXISTS: "本场比赛你已有一张未结算的比分预测。",
   MARKET_TICKET_EXISTS: "本盘口你已提交过判断，等待结算即可。",
+  ROUND_IN_PROGRESS: "本群组当前轮次尚未全部结算，暂不能开启另一场比赛。",
 };
 
 type MarketKind = "1X2" | "CS";

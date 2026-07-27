@@ -55,6 +55,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
         return false;
       },
       hasOpenTicketForMarket: async (userId, roomId, marketId) => this.openMarkets.has(`${userId}:${roomId}:${marketId}`),
+      hasUnsettledTicketForAnotherFixture: async () => false,
       persistFreeze: async (write) => {
         this.account.availablePoints += write.balance.availableDeltaPoints;
         this.account.frozenPoints += write.balance.frozenDeltaPoints;

@@ -15,7 +15,8 @@ export type TicketSubmissionErrorCode =
   | "ADVANCED_ROOM_REQUIRED"
   | "ROOM_SPORT_MISMATCH"
   | "SCORE_TICKET_EXISTS"
-  | "MARKET_TICKET_EXISTS";
+  | "MARKET_TICKET_EXISTS"
+  | "ROUND_IN_PROGRESS";
 
 export class TicketSubmissionError extends Error {
   constructor(readonly code: TicketSubmissionErrorCode) {
@@ -112,6 +113,9 @@ export interface TicketSubmissionTransaction {
   hasOpenCorrectScoreTicket(userId: string, roomId: string, fixtureId: string): Promise<boolean>;
   /** Whether the user already holds an unsettled ticket on this exact market; read under the account row lock. */
   hasOpenTicketForMarket(userId: string, roomId: string, marketId: string): Promise<boolean>;
+  /** A group has one active event round. A new event is allowed only after every
+   * ticket from the previous event has settled. */
+  hasUnsettledTicketForAnotherFixture(roomId: string, fixtureId: string): Promise<boolean>;
   /** Must enforce the idempotency unique key and account row lock itself. */
   persistFreeze(write: AtomicFreezeWrite): Promise<SubmittedTicket>;
 }
@@ -238,6 +242,9 @@ export class TicketSubmissionService {
          rule above, under its own error code. */
       if (!correctScore && await transaction.hasOpenTicketForMarket(command.userId, command.roomId, market.id)) {
         throw new TicketSubmissionError("MARKET_TICKET_EXISTS");
+      }
+      if (await transaction.hasUnsettledTicketForAnotherFixture(command.roomId, market.fixtureId)) {
+        throw new TicketSubmissionError("ROUND_IN_PROGRESS");
       }
 
       const outcome = resolveOutcome(market, f1Kind, command.selection);

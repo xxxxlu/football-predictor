@@ -62,6 +62,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
         getRoomSport: async () => this.sport,
         hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => this.openCorrectScore.has(`${userId}:${roomId}:${fixtureId}`),
         hasOpenTicketForMarket: async (userId, roomId, marketId) => this.openMarkets.has(`${userId}:${roomId}:${marketId}`),
+        hasUnsettledTicketForAnotherFixture: async () => false,
         persistFreeze: async (write) => {
           const key = `${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.idempotencyKey}`;
           const existing = this.tickets.get(key);

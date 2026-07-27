@@ -109,14 +109,14 @@ export function RoomListView() {
     </div>
 
     <aside className="surface h-fit rounded-xl p-5 sm:p-6" aria-labelledby="create-room-title">
-      <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--field)]">开始你的赛事</p><h2 id="create-room-title" className="kinetic mt-1 text-2xl">创建本轮竞猜</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">公开房间会出现在大厅；私人房间仅通过邀请链接加入。每次创建都是一轮独立竞猜，不是可以无限持续下注的聊天群。</p>
+      <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--field)]">开始你的赛事</p><h2 id="create-room-title" className="kinetic mt-1 text-2xl">创建竞猜群组</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">公开群组会出现在大厅；私人群组仅通过邀请链接加入。群组长期保留，但同一时间只进行一轮赛事竞猜。</p>
       <section className="mt-4 rounded-xl border border-[var(--line)] bg-[var(--wash-brand-soft)] p-4" aria-labelledby="round-lifecycle-title">
         <p id="round-lifecycle-title" className="text-sm font-black">本轮会怎样结束？</p>
         <ol className="mt-2 grid gap-2 text-xs leading-5 text-[var(--muted)]">
           <li><b className="text-[var(--ink)]">1. 开放：</b>成员加入后，在本轮赛事的盘口提交一次竞猜。</li>
           <li><b className="text-[var(--ink)]">2. 封盘：</b>每个比赛或 F1 场次开始即自动停止提交，不会再扣分。</li>
           <li><b className="text-[var(--ink)]">3. 结算：</b>所有已提交竞猜取得官方确认结果后统一完成结算。</li>
-          <li><b className="text-[var(--ink)]">4. 清除：</b>本轮从房间列表移除；个人的结果、赔率和盈亏仍可在「我的战绩」查询。</li>
+          <li><b className="text-[var(--ink)]">4. 下一轮：</b>本轮全部结算后，群组自动回到可开启下一轮状态；个人结果可在「我的战绩」查询。</li>
         </ol>
       </section>
       {createError && <div className="mt-4"><StatusMessage tone="error" title="未能创建">{createError}</StatusMessage></div>}
@@ -129,8 +129,8 @@ export function RoomListView() {
         {sportChoice === "FORMULA_1"
           ? <p className="text-xs leading-5 text-[var(--muted)]">F1 房间玩法：正赛猜冠军与领奖台之争（按顺序选出前三），排位赛猜杆位；每个盘口只能压一注。</p>
           : <fieldset><legend className="mb-2 text-sm font-bold">玩法档位</legend><div className="grid grid-cols-2 gap-2"><label className="cursor-pointer rounded-xl border border-[var(--line)] p-3 text-sm"><input name="tier" type="radio" value="STANDARD" defaultChecked className="mr-2 accent-[var(--field)]"/><strong>标准</strong><span className="mt-1 block text-xs text-[var(--muted)]">仅胜平负</span></label><label className="cursor-pointer rounded-xl border border-[var(--line)] p-3 text-sm"><input name="tier" type="radio" value="ADVANCED" className="mr-2 accent-[var(--field)]"/><strong>高级</strong><span className="mt-1 block text-xs text-[var(--muted)]">胜平负 + 买比分</span></label></div></fieldset>}
-        <label htmlFor={rulesId} className="flex cursor-pointer items-start gap-3 text-sm leading-6"><input id={rulesId} name="rulesAccepted" type="checkbox" required className="mt-1 size-5 shrink-0 accent-[var(--field)]"/><span>我确认这是一轮一次性竞猜：盘口会自动封盘，全部结算后本轮会清除；个人战绩仍可查询。积分不可购买、转让、提现或兑换。 <Link href="/terms" className="font-bold underline">查看规则</Link></span></label>
-        <button disabled={creating} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--ink)] px-4 font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-55">{creating ? "正在创建…" : "创建本轮竞猜"}</button>
+        <label htmlFor={rulesId} className="flex cursor-pointer items-start gap-3 text-sm leading-6"><input id={rulesId} name="rulesAccepted" type="checkbox" required className="mt-1 size-5 shrink-0 accent-[var(--field)]"/><span>我确认每轮赛事会自动封盘，全部结算后才能开启下一轮；个人战绩仍可查询。积分不可购买、转让、提现或兑换。 <Link href="/terms" className="font-bold underline">查看规则</Link></span></label>
+        <button disabled={creating} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--ink)] px-4 font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-55">{creating ? "正在创建…" : "创建竞猜群组"}</button>
       </form>
     </aside>
   </div>;

@@ -1,30 +1,16 @@
 import postgres from "postgres";
 
 /**
- * A settled room is product-deleted: it vanishes from lists and every room API
- * resolves it as not found. The database tombstone only retains the immutable
- * settlement/ledger rows needed to make a late result correction idempotent.
+ * Rooms are long-lived prediction groups. Settlement completes an event round,
+ * not the group itself; the next round becomes available once no ticket remains
+ * pending. Historical tickets stay in the account archive.
  */
 export class PostgresSettledRoomCloser {
   constructor(private readonly sql: postgres.Sql) {}
 
   async closeSettledRooms(limit: number, now = new Date()): Promise<{ closed: number; roomIds: string[] }> {
-    const safeLimit = Math.max(1, Math.min(500, Math.trunc(limit)));
-    const rows = await this.sql<Array<{ id: string }>>`
-      WITH candidates AS (
-        SELECT r.id
-        FROM room.rooms r
-        WHERE r.status IN ('ACTIVE','RESTRICTED')
-          AND EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='SETTLED')
-          AND NOT EXISTS (SELECT 1 FROM prediction.tickets t WHERE t.room_id=r.id AND t.status='PENDING')
-        ORDER BY r.updated_at,r.id
-        LIMIT ${safeLimit}
-        FOR UPDATE SKIP LOCKED
-      )
-      UPDATE room.rooms r SET status='CLOSED',updated_at=${now.toISOString()}
-      FROM candidates c WHERE r.id=c.id
-      RETURNING r.id`;
-    return { closed: rows.length, roomIds: rows.map((row) => row.id) };
+    void limit; void now;
+    return { closed: 0, roomIds: [] };
   }
 }
 
