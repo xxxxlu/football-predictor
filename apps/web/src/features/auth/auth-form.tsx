@@ -6,13 +6,14 @@ import { StatusMessage } from "@/components/status-message";
 import { purgePrivateCaches } from "@/features/pwa/private-cache";
 import { recoveryReceiptContinueHref, safeReturnTo } from "./navigation";
 import { authErrorMessage } from "./auth-error-messages";
+import { useLocale } from "@/components/locale-provider";
 
 type Mode = "login" | "register" | "recover";
 type ApiError = { error?: { code?: string; message?: string; correlationId?: string } };
 type ApiSuccess = { data?: { recoveryCode?: string; redirectTo?: string; mustChangePassword?: boolean } };
 
 export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) {
-  const router = useRouter(); const baseId = useId();
+  const router = useRouter(); const baseId = useId(); const { t } = useLocale();
   const [pending, setPending] = useState(false); const [error, setError] = useState(""); const [recoveryCode, setRecoveryCode] = useState("");
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setPending(true); setError("");
@@ -28,16 +29,16 @@ export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) 
       // 7.3a：登录是账户切换点 —— 先清私有只读缓存，SessionGuard 随后为新账户重建 owner 标记。
       if (mode === "login") await purgePrivateCaches().catch(() => {});
       router.replace(result.data?.mustChangePassword ? "/change-password" : safeReturnTo(returnTo || result.data?.redirectTo));
-    } catch { setError("网络连接失败。你的账户和积分没有发生变化，请检查网络后重试。"); } finally { setPending(false); }
+    } catch { setError(t("auth.networkError")); } finally { setPending(false); }
   }
   if (recoveryCode) return <RecoveryReceipt code={recoveryCode} continueHref={recoveryReceiptContinueHref(returnTo)} />;
   return <form onSubmit={submit} className="space-y-5" aria-describedby={error ? `${baseId}-error` : undefined}>
-    {error && <div id={`${baseId}-error`}><StatusMessage tone="error" title="未能完成">{error}</StatusMessage></div>}
-    <Field id={`${baseId}-username`} name="username" label="用户名" autoComplete="username" minLength={3} maxLength={32} hint="3–32 个字符" />
-    {mode === "recover" && <Field id={`${baseId}-code`} name="recoveryCode" label="恢复码" autoComplete="off" required hint="输入保存的完整恢复码" />}
-    <Field id={`${baseId}-password`} name="password" type="password" label={mode === "recover" ? "新密码" : "密码"} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} hint={mode === "login" ? undefined : "12–128 个字符"} />
-    {mode === "register" && <fieldset className="space-y-3 border-t rule pt-5"><legend className="sr-only">使用规则确认</legend><Check name="ageConfirmed">我确认已满 18 岁。</Check><Check name="nonCashTermsAccepted">我理解本服务仅使用虚拟积分，不支持充值、提现或兑换。</Check></fieldset>}
-    <button disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-5 py-3 font-bold text-white transition hover:bg-[var(--field-dark)] disabled:cursor-wait disabled:opacity-60">{pending ? "正在安全处理…" : mode === "login" ? "登录" : mode === "register" ? "创建账户" : "重置密码并轮换恢复码"}</button>
+    {error && <div id={`${baseId}-error`}><StatusMessage tone="error" title={t("auth.failed")}>{error}</StatusMessage></div>}
+    <Field id={`${baseId}-username`} name="username" label={t("auth.username")} autoComplete="username" minLength={3} maxLength={32} hint={t("auth.usernameHint")} />
+    {mode === "recover" && <Field id={`${baseId}-code`} name="recoveryCode" label={t("auth.recoveryCode")} autoComplete="off" required hint={t("auth.recoveryHint")} />}
+    <Field id={`${baseId}-password`} name="password" type="password" label={mode === "recover" ? t("auth.newPassword") : t("auth.password")} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} hint={mode === "login" ? undefined : t("auth.passwordHint")} />
+    {mode === "register" && <fieldset className="space-y-3 border-t rule pt-5"><legend className="sr-only">{t("auth.rules")}</legend><Check name="ageConfirmed">{t("auth.ageConfirm")}</Check><Check name="nonCashTermsAccepted">{t("auth.nonCashConfirm")}</Check></fieldset>}
+    <button disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-5 py-3 font-bold text-white transition hover:bg-[var(--field-dark)] disabled:cursor-wait disabled:opacity-60">{pending ? t("auth.processing") : mode === "login" ? t("auth.login") : mode === "register" ? t("auth.register") : t("auth.resetPassword")}</button>
   </form>;
 }
 

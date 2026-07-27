@@ -1,5 +1,8 @@
 import type { Metadata, Viewport } from "next";
+import { cookies } from "next/headers";
 import { APPLE_TOUCH_ICON } from "./icons";
+import { LocaleProvider } from "@/components/locale-provider";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale, translate } from "@/lib/i18n/locale";
 import { OfflineStatusBanner } from "@/features/pwa/offline-status";
 import { ServiceWorkerRegister } from "@/features/pwa/service-worker-register";
 import "./globals.css";
@@ -13,14 +16,18 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#0a0b0b" };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const cookieStore = await cookies();
+  const locale = normalizeLocale(cookieStore.get(LOCALE_COOKIE)?.value ?? DEFAULT_LOCALE);
   return (
-    <html lang="zh-CN" className="h-full antialiased">
+    <html lang={locale} className="h-full antialiased">
       <body className="min-h-full">
-        <a className="skip-link" href="#main-content">跳到主要内容</a>
-        <OfflineStatusBanner />
-        {children}
-        <ServiceWorkerRegister />
+        <LocaleProvider initialLocale={locale}>
+          <a className="skip-link" href="#main-content">{translate(locale, "skipToContent")}</a>
+          <OfflineStatusBanner />
+          {children}
+          <ServiceWorkerRegister />
+        </LocaleProvider>
       </body>
     </html>
   );
