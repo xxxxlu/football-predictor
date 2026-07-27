@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { formatEventTitle, formatSelectionLabel } from "../matchday/selection-label";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
-import { formatPoints } from "@/lib/points";
-import { competitionFilterOptions, filterHistoryRecords, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
+import { formatPoints, formatPointsDelta } from "@/lib/points";
+import { competitionFilterOptions, filterHistoryRecords, seasonCover, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
 
 type HistoryArchive = {
   scope: { performance: "USER_CROSS_COMPETITION"; balances: "PER_ROOM" };
@@ -48,13 +48,8 @@ export function TicketHistoryView() {
   if (!archive?.records.length) return <DataStatePanel state="empty" title="还没有已结算记录" description="这里只汇总已经结算的判断。刚提交、还没开赛的判断请到对应房间页面的「我的判断记录」查看；比赛结算后会自动出现在这里。"/>;
 
   return <div>
-    <section aria-label="长期表现摘要" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-      <Metric label="已结算" value={String(archive.summary.settledTickets)}/>
-      <Metric label="命中" value={String(archive.summary.wins)}/>
-      <Metric label="未命中" value={String(archive.summary.losses)}/>
-      <Metric label="走盘 / 取消" value={String(archive.summary.voids)}/>
-    </section>
-    <p className="mt-4 rounded-xl border-l-4 border-[var(--field)] bg-white/45 p-4 text-sm text-[var(--muted)]">
+    <SeasonCover archive={archive}/>
+    <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
       长期档案跨房间汇总的只有已结算判断次数。每个房间的可用、冻结和更正债务始终独立核算，不会在这里合并成余额。
     </p>
     <div className="mt-6 flex flex-wrap items-end justify-between gap-4">
@@ -68,6 +63,34 @@ export function TicketHistoryView() {
     </div>
     <ol className="mt-6 space-y-4">{records.map((record) => <HistoryRecord key={record.ticketId} record={record}/>)}</ol>
   </div>;
+}
+
+/* §15.1 的年度赛季卡。此前这里是四个等宽小方块（已结算 / 命中 / 未命中 / 走盘），
+   四个数字同样大小、没有主次，读者要自己算命中率。改成一张封面：净积分做主角，
+   字号是标签的 10 倍以上，命中率用真实数据画成红条，其余降级为脚注。 */
+function SeasonCover({ archive }: { archive: HistoryArchive }) {
+  const cover = seasonCover(archive.summary, archive.records);
+  const hitRate = cover.hitRate === null ? "—" : `${Math.round(cover.hitRate * 100)}%`;
+  return <section className="pulse-season" aria-label="长期表现摘要">
+    <div>
+      <p className="pd-page-lead__index">{cover.seasonLabel ? `${cover.seasonLabel} SEASON` : "SEASON"}</p>
+      <strong className="pulse-season__net mt-3">{formatPointsDelta(cover.net)}<span className="pulse-season__unit">PTS</span></strong>
+      <p className="mt-3 text-xs leading-5 text-[color:rgb(244_241_232_/_60%)]">
+        {cover.truncated ? `净积分覆盖最近 ${cover.covered} 笔结算，共 ${archive.summary.settledTickets} 笔` : `覆盖全部 ${cover.covered} 笔已结算判断`}
+      </p>
+    </div>
+    <div>
+      <dl className="pulse-season__facts">
+        <div className="pulse-season__fact"><dt>已结算</dt><dd>{archive.summary.settledTickets}</dd></div>
+        <div className="pulse-season__fact"><dt>命中率</dt><dd>{hitRate}</dd></div>
+        <div className="pulse-season__fact"><dt>走盘 / 取消</dt><dd>{archive.summary.voids}</dd></div>
+      </dl>
+      <div className="pulse-season__meter" style={{ "--pulse-hit-rate": cover.hitRate ?? 0 } as CSSProperties} aria-hidden="true"><i/></div>
+      <p className="mt-2 text-[0.68rem] leading-5 text-[color:rgb(244_241_232_/_55%)]">
+        {cover.decided > 0 ? `${archive.summary.wins} 命中 / ${cover.decided} 有结果` : "还没有分出结果的判断"}
+      </p>
+    </div>
+  </section>;
 }
 
 function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
@@ -93,5 +116,4 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
   </li>;
 }
 
-function Metric({ label, value }: { label: string; value: string }) { return <div className="surface p-4"><p className="text-xs text-[var(--muted)]">{label}</p><p className="tabular mt-1 text-2xl font-bold">{value}</p></div>; }
 function Fact({ label, value }: { label: string; value: string }) { return <div><dt className="text-[10px] text-[var(--muted)]">{label}</dt><dd className="tabular mt-1 text-lg font-bold">{value}</dd></div>; }

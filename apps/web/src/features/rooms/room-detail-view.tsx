@@ -89,9 +89,20 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
     {detail.status === "RESTRICTED" && <StatusMessage tone="info" title="房间已限制">
       当前不能提交新竞猜；已有记录和结算结果仍可查看。
     </StatusMessage>}
-    <section className="surface overflow-hidden"><div className="grid gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end"><RoomSwitcher rooms={rooms} currentRoomId={roomId}/><div className="text-left sm:text-right"><p className="text-xs text-[var(--muted)]">本轮状态</p><p className="mt-1 text-sm font-bold">{detail.sport === "FORMULA_1" ? "F1 赛车" : "足球"} · {detail.visibility === "PUBLIC" ? "公开" : "私人"}{detail.tier === "ADVANCED" && detail.sport !== "FORMULA_1" ? " · 高级（可买比分）" : ""} · {detail.status === "ACTIVE" ? "开放中" : detail.status === "RESTRICTED" ? "已封盘" : "已结算"} · {detail.memberCount} 位成员</p></div></div><BalanceSummary balance={detail.balance}/></section>
+    <section className="surface overflow-hidden">
+      <div className="pulse-room-bar">
+        <div className="min-w-0">
+          <p className="pulse-room-bar__kind">{detail.sport === "FORMULA_1" ? "FORMULA 1" : "FOOTBALL"} / {detail.visibility === "PUBLIC" ? "PUBLIC" : "PRIVATE"}</p>
+          <h2 className="pulse-room-bar__name">{detail.name}</h2>
+          <p className="pulse-room-bar__facts">{detail.status === "ACTIVE" ? "开放中" : detail.status === "RESTRICTED" ? "已封盘" : "已结算"} · {detail.memberCount} 位成员{detail.tier === "ADVANCED" && detail.sport !== "FORMULA_1" ? " · 高级（可买比分）" : ""}</p>
+        </div>
+        <RoomSwitcher rooms={rooms} currentRoomId={roomId}/>
+      </div>
+      <BalanceSummary balance={detail.balance}/>
+    </section>
 
-    <section className="surface border-l-4 border-l-[var(--field)] p-5" aria-labelledby="round-explainer-title">
+    {/* 去掉左侧 4px 红边：这块本来就有红色 eyebrow 领头，再加一条侧边色条是重复强调。 */}
+    <section className="surface p-5" aria-labelledby="round-explainer-title">
       <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--field)]">GROUP &amp; ROUND LIFECYCLE</p><h2 id="round-explainer-title" className="display mt-1 text-2xl font-bold">长期群组 · 一次性赛事轮次</h2></div><span className="league-pill">{detail.status === "ACTIVE" ? "正在接受竞猜" : detail.status === "RESTRICTED" ? "等待官方结果" : "等待下一轮"}</span></div>
       <div className="mt-4 grid gap-3 text-sm leading-6 text-[var(--muted)] sm:grid-cols-2">
         <p><b className="text-[var(--ink)]">提交前：</b>每个盘口只可下注一次；显示的赔率与确认时的快照绑定。</p>
