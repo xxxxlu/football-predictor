@@ -30,6 +30,23 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
   const [date, setDate] = useState("");
   const [status, setStatus] = useState<MatchStatusFilter>("ALL");
   const [visibleCount, setVisibleCount] = useState(MATCH_BATCH_SIZE);
+  // 一人一注：房间里已投过的盘口。一屏可以有几十张卡片，所以在列表层拉一次，
+  // 再分发给各张判断凭证，而不是每张卡片各拉一次。
+  const [placedMarketIds, setPlacedMarketIds] = useState<ReadonlySet<string>>(new Set());
+
+  useEffect(() => {
+    if (!roomId || !interactive) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await fetch(`/api/v1/rooms/${encodeURIComponent(roomId)}/tickets/mine`, { credentials: "same-origin", signal: controller.signal, cache: "no-store" });
+        const result = await response.json().catch(() => ({})) as { data?: Array<{ marketId?: string; status?: string }> };
+        if (!response.ok || !Array.isArray(result.data)) return;
+        setPlacedMarketIds(new Set(result.data.filter((ticket) => ticket?.status === "PENDING").map((ticket) => String(ticket.marketId))));
+      } catch { /* 已投态只是展示；服务端始终强制一人一注 */ }
+    })();
+    return () => controller.abort();
+  }, [roomId, interactive, retry]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -191,7 +208,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
                   return <div key={match.id} className="grid" data-pulse-reveal style={{ "--pulse-reveal-delay": `${Math.min(matchIndex, 5) * 70}ms` } as React.CSSProperties}>
                     <MatchCard
                       match={match}
-                      action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} /> : undefined}
+                      action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} placedMarketIds={placedMarketIds} /> : undefined}
                     />
                   </div>;
                 })}

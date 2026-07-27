@@ -40,9 +40,12 @@ class AtomicFake implements TicketSubmissionTransactionPort {
   readonly ledgers: AtomicFreezeWrite["ledger"][] = [];
   account: PointsAccount = { userId: "user-1", roomId: "room-1", availablePoints: 10_000, frozenPoints: 0 };
   market: MarketForSubmission | null = structuredClone(defaultMarket);
+  /** Markets addressed by their own id; anything else resolves to `market`. */
+  readonly extraMarkets = new Map<string, MarketForSubmission>();
   tier: RoomTier = "STANDARD";
   sport: RoomSport = "FOOTBALL";
   readonly openCorrectScore = new Set<string>();
+  readonly openMarkets = new Set<string>();
   private queue: Promise<void> = Promise.resolve();
 
   async run<T>(_scope: { userId: string; roomId: string; idempotencyKey: string }, work: (transaction: TicketSubmissionTransaction) => Promise<T>): Promise<T> {
@@ -54,12 +57,11 @@ class AtomicFake implements TicketSubmissionTransactionPort {
       const transaction: TicketSubmissionTransaction = {
         findByIdempotencyKey: async (scope) => this.tickets.get(`${scope.userId}:${scope.roomId}:${scope.idempotencyKey}`) ?? null,
         getPointsAccount: async () => structuredClone(this.account),
-        getMarket: async () => structuredClone(this.market),
+        getMarket: async (marketId) => structuredClone(this.extraMarkets.get(marketId) ?? this.market),
         getRoomTier: async () => this.tier,
         getRoomSport: async () => this.sport,
         hasOpenCorrectScoreTicket: async (userId, roomId, fixtureId) => this.openCorrectScore.has(`${userId}:${roomId}:${fixtureId}`),
-        // 一人一注 is an F1-only rule; the football fake never reports an open market.
-        hasOpenTicketForMarket: async () => false,
+        hasOpenTicketForMarket: async (userId, roomId, marketId) => this.openMarkets.has(`${userId}:${roomId}:${marketId}`),
         persistFreeze: async (write) => {
           const key = `${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.idempotencyKey}`;
           const existing = this.tickets.get(key);
@@ -70,6 +72,7 @@ class AtomicFake implements TicketSubmissionTransactionPort {
           this.account.availablePoints += write.balance.availableDeltaPoints;
           this.account.frozenPoints += write.balance.frozenDeltaPoints;
           this.tickets.set(key, structuredClone(write.ticket));
+          this.openMarkets.add(`${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.marketId}`);
           if (write.ticket.legs[0]?.oddsSnapshot.marketId === CORRECT_SCORE_SUPPLIER_MARKET_ID) {
             this.openCorrectScore.add(`${write.ticket.userId}:${write.ticket.roomId}:${write.ticket.fixtureId}`);
           }
@@ -209,15 +212,37 @@ describe("TicketSubmissionService atomic freeze", () => {
 
   it("prevents two distinct concurrent submissions from overspending one room account", async () => {
     const { service, command, fake } = setup();
+    // Two DIFFERENT markets, or 一人一注 would reject the second whatever the balance —
+    // and this test would then prove nothing about overspend protection.
+    fake.extraMarkets.set("market-2", { ...structuredClone(defaultMarket), id: "market-2", fixtureId: "fixture-2" });
     fake.account.availablePoints = 1_000;
     const results = await Promise.allSettled([
       service.submit(command),
-      service.submit({ ...command, idempotencyKey: "idem-2" }),
+      service.submit({ ...command, marketId: "market-2", idempotencyKey: "idem-2" }),
     ]);
 
     expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+    expect(results.find((result) => result.status === "rejected")?.reason).toMatchObject({ code: "INSUFFICIENT_POINTS" });
     expect(fake.account).toMatchObject({ availablePoints: 0, frozenPoints: 1_000 });
+  });
+
+  it("rejects a second unsettled ticket on the same football market (一人一注)", async () => {
+    const { service, command, fake } = setup();
+    await service.submit(command);
+
+    await expectCode(service.submit({ ...command, selection: "AWAY", acceptedDecimalOdds: "3.40", idempotencyKey: "idem-2" }), "MARKET_TICKET_EXISTS");
+    expect(fake.writes).toHaveLength(1);
+    expect(fake.account, "the refused second stake must not move any points").toMatchObject({ availablePoints: 9_000, frozenPoints: 1_000 });
+  });
+
+  it("still allows one ticket per market across different markets", async () => {
+    const { service, command, fake } = setup();
+    fake.extraMarkets.set("market-2", { ...structuredClone(defaultMarket), id: "market-2", fixtureId: "fixture-2" });
+    await service.submit(command);
+
+    await expect(service.submit({ ...command, marketId: "market-2", idempotencyKey: "idem-2" })).resolves.toMatchObject({ marketId: "market-2", status: "PENDING" });
+    expect(fake.writes).toHaveLength(2);
   });
 });
 

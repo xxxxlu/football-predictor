@@ -17,19 +17,27 @@ test.describe("closing race: MARKET_CLOSED / ODDS_CHANGED / success", () => {
   let context: BrowserContext;
   let page: Page;
   let roomId = "";
+  let origin: string | undefined;
 
-  /** Open the room's matchday list, expand the seeded fixture's slip disclosure, return the card. */
-  async function openSeededCard(): Promise<Locator> {
+  /** Open the room's matchday list and expand the seeded fixture's slip disclosure. */
+  async function openCard(): Promise<Locator> {
     await page.goto(`/rooms/${roomId}`);
     const card = page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first();
     await expect(card, "seeded fixture rendered in the room matchday list (run `pnpm db:seed:e2e`)").toBeVisible();
     // The prediction slip sits behind a <details> disclosure on the card.
     await card.getByText("填写本场判断").click();
+    return card;
+  }
+
+  /** Same, asserting the slip is still open for business (no ticket on this market yet). */
+  async function openSeededCard(): Promise<Locator> {
+    const card = await openCard();
     await expect(card.getByRole("button", { name: "确认最新倍率并提交" })).toBeVisible();
     return card;
   }
 
   test.beforeAll(async ({ browser, baseURL }) => {
+    origin = baseURL;
     context = await browser.newContext();
     page = await context.newPage();
     await createLoggedInActor(page, "race");
@@ -92,5 +100,33 @@ test.describe("closing race: MARKET_CLOSED / ODDS_CHANGED / success", () => {
 
     await expect(card.getByText("判断已记录")).toBeVisible();
     await expect(card.getByText(/票号：/)).toBeVisible();
+
+    // 一人一注 takes effect immediately: the slip switches to waiting-for-settlement.
+    await expect(card.getByText("胜平负已提交判断")).toBeVisible();
+    await expect(card.getByRole("button", { name: "确认最新倍率并提交" })).toHaveCount(0);
+  });
+
+  // 一人一注 (football): the ticket above is this test's precondition — serial mode.
+  test("keeps the market closed to a second ticket after a reload, and the server agrees", async () => {
+    const card = await openCard();
+    await expect(card.getByText("胜平负已提交判断"), "placed state restored from tickets/mine").toBeVisible();
+    await expect(card.getByRole("button", { name: /主胜/ })).toHaveCount(0);
+    await expect(card.getByRole("button", { name: "确认最新倍率并提交" })).toHaveCount(0);
+
+    // The UI is never the authorization boundary: post the same market straight to the API.
+    type ApiMatch = { id: string; homeTeam?: string | { name?: string }; market?: { id?: string } };
+    const list = await (await page.request.get(`/api/v1/matches?roomId=${roomId}`)).json() as { data?: ApiMatch[] };
+    const home = (match: ApiMatch) => typeof match.homeTeam === "string" ? match.homeTeam : match.homeTeam?.name;
+    const seeded = (list.data ?? []).find((match) => home(match) === SEEDED_HOME_TEAM);
+    expect(seeded?.market?.id, "seeded fixture exposes its 1X2 market id").toBeTruthy();
+
+    // 一人一注 is checked before the odds comparison, so a deliberately stale version
+    // must still come back as MARKET_TICKET_EXISTS rather than ODDS_CHANGED.
+    const response = await page.request.post(`/api/v1/rooms/${roomId}/tickets`, {
+      headers: { origin: origin!, "Idempotency-Key": `e2e-second-${Date.now()}` },
+      data: { matchId: seeded!.id, marketId: seeded!.market!.id!, marketVersion: "e2e-stale-version", selection: "AWAY", stakePoints: "500", acceptedOdds: "1.01" },
+    });
+    expect(response.status()).toBe(409);
+    expect(((await response.json()) as { error?: { code?: string } }).error?.code).toBe("MARKET_TICKET_EXISTS");
   });
 });

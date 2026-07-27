@@ -10,7 +10,7 @@ interface Operations {
   getProfile(userId: string): Promise<unknown>; updateNickname(userId: string, nickname: string): Promise<unknown>;
   accountHistory(userId: string): Promise<unknown>;
   submissionStatus(roomId: string, userId: string): Promise<unknown>; ticketHistory(roomId: string, userId: string): Promise<unknown>;
-  myTickets(roomId: string, userId: string, fixtureId: string): Promise<unknown>;
+  myTickets(roomId: string, userId: string, fixtureId?: string): Promise<unknown>;
   ledger(roomId: string, userId: string): Promise<unknown>; leaderboard(roomId: string, userId: string): Promise<unknown>; adminStatus(userId: string): Promise<unknown>;
 }
 export function createOperationsHandlers(identity: Identity, operations: Operations) {
@@ -23,10 +23,12 @@ export function createOperationsHandlers(identity: Identity, operations: Operati
     profilePatch: (request: Request) => execute(async () => { assertSameOrigin(request); const id = await user(request); const input = nicknameSchema.parse(await request.json()); return json({ data: await operations.updateNickname(id, input.nickname) }); }),
     submissionStatus: roomRead((roomId, id) => operations.submissionStatus(roomId, id)),
     ticketHistory: roomRead((roomId, id) => operations.ticketHistory(roomId, id)),
+    // No fixtureId = every unsettled ticket in the room (the football match list holds
+    // many slips at once and must not fan out one request per card).
     myTickets: (request: Request, roomId: string) => execute(async () => {
       const id = await user(request);
-      const fixtureId = new URL(request.url).searchParams.get("fixtureId")?.trim() ?? "";
-      if (!fixtureId || fixtureId.length > 128) return failure("INVALID_REQUEST", 422);
+      const fixtureId = new URL(request.url).searchParams.get("fixtureId")?.trim() || undefined;
+      if (fixtureId !== undefined && fixtureId.length > 128) return failure("INVALID_REQUEST", 422);
       return json({ data: await operations.myTickets(roomId, id, fixtureId) });
     }),
     ledger: roomRead((roomId, id) => operations.ledger(roomId, id)),

@@ -43,6 +43,12 @@ Authorization is enforced on the server (domain services, repositories and SQL) 
 
 A room predicts exactly one sport, chosen at creation and immutable afterwards (`FOOTBALL` or `FORMULA_1`, migration `0018`). The server refuses a ticket whose event belongs to the other sport (`ROOM_SPORT_MISMATCH`); legacy mixed rooms keep their history, and the gate applies to new submissions only. Room pages, the lobby and the prediction slips all render only the chosen sport's events.
 
+## One bet per market
+
+Every sport enforces **one bet per market** (一人一注): a second unsettled ticket on the same market is refused (`MARKET_TICKET_EXISTS`), so a player commits to one judgement instead of averaging across outcomes. Correct score keeps its own stricter per-fixture rule and error code (`SCORE_TICKET_EXISTS`). Existing pending tickets from before the rule keep settling normally; only new submissions are gated.
+
+`GET /api/v1/rooms/:roomId/tickets/mine` restores that placed state after a reload — with `?fixtureId=` for a single event (the F1 session slip) and without it for every unsettled ticket in the room, because the football match list holds one slip per fixture and must not fan out a request per card. The slip then shows a waiting panel instead of the picker; hiding the form is never the authorization boundary.
+
 ## Current real football data
 
 The football feed synchronizes the **German 2026/27 competitions** from OpenLigaDB — Bundesliga, 2. Bundesliga, 3. Liga, DFB-Pokal and the Supercup — driven by `OPENLIGADB_COMPETITIONS` (`shortcut:season[:oddsSportKey]`, comma-separated). OpenLigaDB needs no API key. The configured list must always name a live season: a competition that has finished produces no upcoming fixtures, which freezes the match list *and* starves settlement of results. The 2026 World Cup ended 2026-07-19 and is history, not a feed.
@@ -54,8 +60,6 @@ Real 1X2 odds come from The-Odds-API, one request per distinct sport key per ref
 ## Formula 1
 
 F1 race weekends carry sessions (qualifying, sprint qualifying, sprint, grand prix) with their own markets: qualifying offers 杆位 (pole), race sessions offer 冠军 (winner) and 领奖台之争 — an exact-podium market where any three drivers can be ordered P1→P2→P3. That market stores per-driver base odds (`DRV:<code>`) and derives each combination's multiplier from a shared domain formula, so all 9,240 ordered combinations are priceable without enumerating them in a snapshot; a `DRV:` entry is a pricing input and is never a bettable selection. The retired `PODIUM` and `H2H` markets are no longer offered, while existing tickets on them still settle.
-
-F1 enforces **one bet per market**: a second unsettled ticket on the same market is refused (`MARKET_TICKET_EXISTS`), and `GET /api/v1/rooms/:roomId/tickets/mine?fixtureId=` lets the slip restore that placed state after a reload. Football does not currently share this rule.
 
 Session results are imported from Jolpica (the maintained Ergast successor) by `pnpm db:import:f1-results-2026` — idempotent, versioned, never touching a session that has not started, and reporting sprint qualifying as uncovered rather than fabricating a classification. A super-admin can also enter a result by hand. Sessions whose start time has passed are locked (markets closed) by the scheduled sweep.
 

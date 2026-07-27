@@ -214,7 +214,8 @@ export class TicketSubmissionService {
       if ((await transaction.getRoomSport(command.roomId)) !== eventSport) {
         throw new TicketSubmissionError("ROOM_SPORT_MISMATCH");
       }
-      if (f1Kind === null && marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE") {
+      const correctScore = f1Kind === null && marketKindFromSupplierMarketId(market.snapshot.marketId) === "CORRECT_SCORE";
+      if (correctScore) {
         if ((await transaction.getRoomTier(command.roomId)) !== "ADVANCED") {
           throw new TicketSubmissionError("ADVANCED_ROOM_REQUIRED");
         }
@@ -230,11 +231,13 @@ export class TicketSubmissionService {
         if (parseF1Selection(f1Kind, command.selection) === null) {
           throw new TicketSubmissionError("DATA_UNAVAILABLE");
         }
-        /* 一人一注: one settled-or-pending judgement per F1 market — once staked,
-           the user waits for the result instead of averaging across outcomes. */
-        if (await transaction.hasOpenTicketForMarket(command.userId, command.roomId, market.id)) {
-          throw new TicketSubmissionError("MARKET_TICKET_EXISTS");
-        }
+      }
+      /* 一人一注: one unsettled judgement per market, in every sport — once staked,
+         the user waits for the result instead of averaging across outcomes. Correct
+         score is skipped here because it already enforced the stricter per-fixture
+         rule above, under its own error code. */
+      if (!correctScore && await transaction.hasOpenTicketForMarket(command.userId, command.roomId, market.id)) {
+        throw new TicketSubmissionError("MARKET_TICKET_EXISTS");
       }
 
       const outcome = resolveOutcome(market, f1Kind, command.selection);

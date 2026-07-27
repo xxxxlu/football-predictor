@@ -18,13 +18,19 @@ describe("operations API permissions", () => {
     const owner = setup(); owner.operations.submissionStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await owner.handlers.submissionStatus(get("/x"), "room-1")).status).toBe(403);
     const admin = setup(); admin.operations.adminStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await admin.handlers.adminStatus(get("/x"))).status).toBe(403);
   });
-  it("scopes tickets/mine to the authenticated caller and requires fixtureId", async () => {
+  it("scopes tickets/mine to the authenticated caller, with or without a fixture filter", async () => {
     const subject = setup();
-    expect((await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine"), "room-1")).status).toBe(422);
-    expect(subject.operations.myTickets).not.toHaveBeenCalled();
-    const ok = await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine?fixtureId=f1:session-1"), "room-1");
-    expect(ok.status).toBe(200);
+    const scoped = await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine?fixtureId=f1:session-1"), "room-1");
+    expect(scoped.status).toBe(200);
     expect(subject.operations.myTickets).toHaveBeenCalledWith("room-1", "user-1", "f1:session-1");
+    // No fixtureId = the whole room's unsettled tickets; the caller is still user-1, never a parameter.
+    const roomWide = await subject.handlers.myTickets(get("/api/v1/rooms/room-1/tickets/mine"), "room-1");
+    expect(roomWide.status).toBe(200);
+    expect(subject.operations.myTickets).toHaveBeenLastCalledWith("room-1", "user-1", undefined);
+    // An unbounded fixture filter is still refused rather than pushed into SQL.
+    const oversized = await subject.handlers.myTickets(get(`/api/v1/rooms/room-1/tickets/mine?fixtureId=${"x".repeat(129)}`), "room-1");
+    expect(oversized.status).toBe(422);
+    expect(subject.operations.myTickets).toHaveBeenCalledTimes(2);
   });
   it("returns only the authenticated user's cross-competition history", async () => {
     const subject = setup();

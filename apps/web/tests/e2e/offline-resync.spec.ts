@@ -193,11 +193,19 @@ test.describe("offline resync and draft revalidation (7.3b)", () => {
     await expect(card.getByText("判断已记录")).toBeVisible({ timeout: 15_000 });
   });
 
-  test("drafts never leak across accounts", async () => {
+  test("drafts never leak across accounts", async ({ baseURL }) => {
     skipUnlessSw();
+    // A fresh room: 一人一注 means the ticket submitted above already closed this
+    // fixture's 1X2 market in `roomId`, so the slip there shows the waiting panel.
+    const room = await createRoomViaApi(page, baseURL, "E2E 草稿隔离房");
+    await page.goto(`/rooms/${room.roomId}`);
+    await expect(page.locator("article").filter({ hasText: SEEDED_HOME_TEAM }).first()).toBeVisible();
+    await page.waitForLoadState("networkidle").catch(() => {});
+    await awaitNavCached(room.roomId);
+
     await context.setOffline(true);
     try {
-      await page.goto(`/rooms/${roomId}`);
+      await page.goto(`/rooms/${room.roomId}`);
       const card = await openSlip();
       await card.getByRole("button", { name: /客胜/ }).click();
       await expect.poll(draftKeys, { timeout: 10_000 }).toHaveLength(1);

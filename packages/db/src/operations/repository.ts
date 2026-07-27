@@ -231,15 +231,25 @@ export class PostgresOperationsRepository {
     return rows.map((row) => redactTicketHistory(row, userId, this.clock.now(), settings));
   }
 
-  /** The caller's own tickets on one fixture (own rows only, so no redaction) — the
-   *  read behind the prediction slip's already-staked markets (一人一注). */
-  async myTickets(roomId: string, userId: string, fixtureId: string) {
+  /** The caller's own tickets (own rows only, so no redaction) — the read behind the
+   *  prediction slip's already-staked markets (一人一注). One fixture when `fixtureId`
+   *  is given (an F1 session detail shows one event); otherwise every unsettled ticket
+   *  in the room, because the football match list renders one slip per fixture and must
+   *  not fan out a request per card. */
+  async myTickets(roomId: string, userId: string, fixtureId?: string) {
     await this.assertMember(roomId, userId);
-    return this.sql<Array<{ ticketId: string; marketId: string; status: string }>>`
-      SELECT id AS "ticketId",market_id AS "marketId",status
-      FROM prediction.tickets
-      WHERE room_id=${roomId} AND user_id=${userId} AND fixture_id=${fixtureId}
-      ORDER BY created_at DESC LIMIT 50`;
+    type Row = { ticketId: string; marketId: string; fixtureId: string; status: string };
+    return fixtureId
+      ? this.sql<Row[]>`
+        SELECT id AS "ticketId",market_id AS "marketId",fixture_id AS "fixtureId",status
+        FROM prediction.tickets
+        WHERE room_id=${roomId} AND user_id=${userId} AND fixture_id=${fixtureId}
+        ORDER BY created_at DESC LIMIT 50`
+      : this.sql<Row[]>`
+        SELECT id AS "ticketId",market_id AS "marketId",fixture_id AS "fixtureId",status
+        FROM prediction.tickets
+        WHERE room_id=${roomId} AND user_id=${userId} AND status='PENDING'
+        ORDER BY created_at DESC LIMIT 500`;
   }
 
   async ledger(roomId: string, userId: string) {
