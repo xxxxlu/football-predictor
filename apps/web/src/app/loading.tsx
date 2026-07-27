@@ -1,5 +1,7 @@
-import { PitchLoader } from "@/components/football";
-
+/**
+ * Navigation loading is intentionally silent. Session confirmation stays in the
+ * persistent header, so a second full-screen loader would duplicate feedback.
+ */
 export default function Loading() {
-  return <div className="grid min-h-screen place-items-center bg-[var(--paper)]"><PitchLoader label="加载中…" /></div>;
+  return null;
 }

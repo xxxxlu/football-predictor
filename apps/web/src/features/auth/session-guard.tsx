@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { PulseLogo } from "@/components/pulse";
 import { StatusMessage } from "@/components/status-message";
 import { syncPrivateCacheOwner } from "@/features/pwa/private-cache";
 import { loginHref } from "./navigation";
@@ -36,17 +35,5 @@ export function SessionGuard({ children }: { children: React.ReactNode }) {
     if (typeof navigator !== "undefined" && !navigator.onLine) return children;
     return <main className="mx-auto max-w-3xl px-4 py-20 md:px-8"><StatusMessage tone="error" title="暂时无法确认登录状态">请检查服务连接后重试，本页面没有执行任何写操作。</StatusMessage><button type="button" onClick={() => window.location.reload()} className="mt-5 min-h-12 border border-[var(--ink)] px-5 font-bold">重新加载</button></main>;
   }
-  return <SessionVerificationOverlay />;
-}
-
-function SessionVerificationOverlay() {
-  return <div className="session-verification-overlay" role="status" aria-live="polite" aria-label="正在确认会话" aria-busy="true">
-    <div className="session-verification-overlay__content">
-      <div className="session-verification-overlay__mark" aria-hidden="true">
-        <PulseLogo size={140} fg="rgb(244 241 232 / 16%)" cut="var(--pulse-carbon)" />
-        <span className="session-verification-overlay__fill"><PulseLogo size={140} fg="var(--pulse-red)" cut="var(--pulse-carbon)" /></span>
-      </div>
-      <p className="session-verification-overlay__label">正在确认会话</p>
-    </div>
-  </div>;
+  return null;
 }
