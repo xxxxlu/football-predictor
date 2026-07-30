@@ -3,6 +3,7 @@ export const packageName = "@pulse/domain" as const;
 export * from "./identity/capabilities.js";
 export * from "./identity/service.js";
 export * from "./identity/user-security.js";
+export * from "./governance/index.js";
 export * from "./rooms/service.js";
 export * from "./rooms/submission-status.js";
 export * from "./predictions/markets.js";

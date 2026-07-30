@@ -197,7 +197,7 @@ export class PostgresUserSecurityRepository {
       LEFT JOIN (
         SELECT rr.created_by, COUNT(*) AS open_reports
         FROM room.reports rp JOIN room.rooms rr ON rr.id = rp.room_id
-        WHERE rp.status = 'OPEN' GROUP BY rr.created_by
+        WHERE rp.status IN ('OPEN','ASSIGNED') GROUP BY rr.created_by
       ) r ON r.created_by = u.id`;
   }
 

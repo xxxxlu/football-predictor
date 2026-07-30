@@ -114,6 +114,7 @@ export const sharedPageCopy: Record<string, { title: string; description: string
   "F1 赛程": { title: "F1 schedule", description: "Browse by race weekend. Predictions lock at the start of each session and settle automatically after official results are recorded." },
   "房间排行榜": { title: "Group leaderboard", description: "Rankings are calculated only within the current private group and never mix points from other groups." },
   "房间治理": { title: "Group governance", description: "Review reports, restrict or close groups, and verify the operation audit trail." },
+  "治理收件箱": { title: "Governance inbox", description: "Handle the reports your duty covers, with only the context each decision needs, then restrict, hide, mute or dismiss with a recorded reason." },
   "用户状态管理": { title: "User status", description: "Super administrators can suspend or restore regular users; sensitive operations require fresh confirmation." },
   "系统状态": { title: "System status", description: "A read-only health view of supplier quotas, cached product data, automated settlement, and background jobs." },
   "F1 场次详情": { title: "F1 session detail", description: "Driver standings and point multipliers come from data published by the platform. No picks are accepted after lock." },

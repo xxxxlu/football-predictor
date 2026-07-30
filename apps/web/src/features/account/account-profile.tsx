@@ -15,7 +15,12 @@ type Profile = { id: string; username: string; nickname: string; roles?: string[
  */
 const OPERATOR_ENTRIES: Array<{ href: string; label: string; capability: string; primary?: boolean }> = [
   { href: "/admin/users", label: "用户安全", capability: "USER_SECURITY_READ", primary: true },
-  { href: "/admin/moderation", label: "房间治理", capability: "ROOM_GOVERNANCE_READ" },
+  // The governance inbox lives on this page and is shared by both restricted
+  // duties, so the entry follows the inbox capability rather than the room one —
+  // otherwise a community moderator would have no way to reach the only screen
+  // their duty exists for. The room-governance section inside simply does not
+  // render for them.
+  { href: "/admin/moderation", label: "治理收件箱", capability: "ROOM_REPORT_READ" },
   { href: "/admin/status", label: "运行状态", capability: "OPERATIONS_HEALTH_READ" },
   { href: "/admin/operators", label: "运营职责", capability: "OPERATOR_ROLE_MANAGE" },
 ];

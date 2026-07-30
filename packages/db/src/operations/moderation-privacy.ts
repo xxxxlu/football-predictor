@@ -117,7 +117,8 @@ export class PostgresModerationPrivacyRepository {
       SELECT rp.id AS "reportId",rp.room_id AS "roomId",r.name AS "roomName",r.status AS "roomStatus",
         COALESCE(u.nickname,u.username_canonical) AS reporter,rp.reason,rp.status,rp.created_at AS "createdAt",rp.resolved_at AS "resolvedAt"
       FROM room.reports rp JOIN room.rooms r ON r.id=rp.room_id JOIN identity.users u ON u.id=rp.reporter_user_id
-      ORDER BY CASE WHEN rp.status='OPEN' THEN 0 ELSE 1 END,rp.created_at DESC LIMIT 200`;
+      WHERE rp.kind='ROOM'
+      ORDER BY CASE WHEN rp.status IN ('OPEN','ASSIGNED') THEN 0 ELSE 1 END,rp.created_at DESC LIMIT 200`;
     return rows.map((row) => ({ ...row, createdAt: timestampIso(row.createdAt), resolvedAt: row.resolvedAt ? timestampIso(row.resolvedAt) : null }));
   }
 
@@ -180,8 +181,11 @@ export class PostgresModerationPrivacyRepository {
       const updated = await tx<Array<{ roomId: string; status: ModeratedRoomStatus }>>`
         UPDATE room.rooms SET status=${status},updated_at=${now} WHERE id=${roomId} RETURNING id AS "roomId",status`;
       if (!updated[0]) throw new OperationError("ROOM_NOT_FOUND", 404);
-      await tx`UPDATE room.reports SET status='RESOLVED',resolved_by=${adminUserId},resolution=${action},resolved_at=${now},updated_at=${now}
-        WHERE room_id=${roomId} AND status='OPEN'`;
+      // Same vocabulary as the governance inbox (Story 11.3): one decision closes
+      // every open filing against the room, including the ones already claimed.
+      await tx`UPDATE room.reports SET status='RESOLVED',resolved_by=${adminUserId},resolution=${`${action}_ROOM`},
+        resolution_note=${reason},resolved_at=${now},updated_at=${now}
+        WHERE room_id=${roomId} AND kind='ROOM' AND status IN ('OPEN','ASSIGNED')`;
       await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
         VALUES (${auditId},${adminUserId},${`ROOM_${action}`},'ROOM',${roomId},'SUCCESS',${JSON.stringify({ reason, status })}::text::jsonb,${now})`;
       return updated[0];
