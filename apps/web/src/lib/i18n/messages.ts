@@ -117,6 +117,7 @@ export const sharedPageCopy: Record<string, { title: string; description: string
   "治理收件箱": { title: "Governance inbox", description: "Handle the reports your duty covers, with only the context each decision needs, then restrict, hide, mute or dismiss with a recorded reason." },
   "用户状态管理": { title: "User status", description: "Super administrators can suspend or restore regular users; sensitive operations require fresh confirmation." },
   "系统状态": { title: "System status", description: "A read-only health view of supplier quotas, cached product data, automated settlement, and background jobs." },
+  "运营总览": { title: "Operations overview", description: "Supplier, settlement and job health, the reports and account risks waiting on someone, and a filterable permission audit." },
   "F1 场次详情": { title: "F1 session detail", description: "Driver standings and point multipliers come from data published by the platform. No picks are accepted after lock." },
   "积分账本": { title: "Points ledger", description: "Explains every grant, hold, settlement, reversal, and debt offset." },
   "比赛详情": { title: "Match detail", description: "Lineups and event information below come from the product cache. Pending or stale data is clearly marked; no fictional players are shown." },

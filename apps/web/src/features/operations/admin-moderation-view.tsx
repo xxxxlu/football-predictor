@@ -5,28 +5,26 @@ import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { moderationActionRequest, moderationReauthRequest, preMatchVisibilityRequest } from "./admin-moderation";
 import { AdminGovernanceView, GovernanceConfirmPanel } from "./admin-governance-view";
-import { governanceActionLabel } from "./admin-governance-flow";
 
 /**
  * Room governance beyond the report queue (FR56, FR60).
  *
  * The inbox above is where reported rooms and messages are handled. This screen
- * keeps the two things that are not driven by a report: the room list — where a
- * room can be restricted, closed or restored on an operator's own initiative, and
- * where pre-match stake visibility is set — and the platform-wide audit trail.
+ * keeps what is not driven by a report: the room list, where a room can be
+ * restricted, closed or restored on an operator's own initiative and where
+ * pre-match stake visibility is set. The audit trail lives on the operations
+ * overview (Story 11.4), which can filter it and jump to one entry by audit id.
  *
- * Each section loads on its own and simply disappears when the server refuses it.
- * A community moderator holds neither the room governance duty nor AUDIT_READ, so
- * for them this page is the inbox alone instead of a page-wide error.
+ * The room section loads on its own and simply disappears when the server refuses
+ * it. A community moderator holds no room governance duty, so for them this page
+ * is the inbox alone instead of a page-wide error.
  */
-type Audit = { id: string; actor: string | null; action: string; targetType: string; targetId: string; occurredAt: string };
 type Room = { roomId: string; name: string; status: string; memberCount: number; preMatchStakeVisible: boolean; postMatchTicketVisible: boolean };
 type RoomAction = "RESTRICT" | "CLOSE" | "RESTORE";
 type Pending =
   | { kind: "MODERATE"; room: Room; action: RoomAction }
   | { kind: "VISIBILITY"; room: Room; visible: boolean };
 
-const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 const ACTION_LABELS: Record<RoomAction, string> = { RESTRICT: "限制预测", CLOSE: "关闭房间", RESTORE: "恢复房间" };
 const ACTION_NOTES: Record<RoomAction, string> = {
   RESTRICT: "房间将停止接受新的预测，成员仍可查看已有记录。积分、票据与结算不受影响。",
@@ -36,7 +34,6 @@ const ACTION_NOTES: Record<RoomAction, string> = {
 
 export function AdminModerationView() {
   const [rooms, setRooms] = useState<Room[]>();
-  const [audit, setAudit] = useState<Audit[]>();
   const [reloadToken, setReloadToken] = useState(0);
   const [pending, setPending] = useState<Pending>();
   const [error, setError] = useState("");
@@ -48,7 +45,6 @@ export function AdminModerationView() {
     // Refused sections stay undefined and render nothing: this page is not the
     // security boundary, and a missing duty is not an error worth shouting about.
     void loadSection<{ data: Room[] }>("/api/v1/admin/rooms").then((body) => { if (active) setRooms(body?.data); }, () => undefined);
-    void loadSection<{ data: Audit[] }>("/api/v1/admin/audit").then((body) => { if (active) setAudit(body?.data); }, () => undefined);
     return () => { active = false; };
   }, [reloadToken]);
 
@@ -113,15 +109,6 @@ export function AdminModerationView() {
       </li>)}</ul>}
     </section>}
 
-    {audit && <section className="surface p-5" id="governance-audit" aria-labelledby="governance-audit-title">
-      <h2 id="governance-audit-title" className="display text-2xl font-bold">最近审计</h2>
-      <p className="mt-2 text-sm text-[var(--muted)]">举报详情里的审计编号可以在这里对应到完整记录。</p>
-      <ul className="mt-4 divide-y divide-[var(--line)]">{audit.slice(0, 50).map((item) => <li key={item.id} className="py-3 text-sm">
-        <strong>{governanceActionLabel(item.action)}</strong>
-        <span className="ml-2 text-xs text-[var(--muted)]">{item.targetType}:{item.targetId}</span>
-        <p className="mt-1 text-xs text-[var(--muted)]">{item.actor ?? "系统"} · {dateTime.format(new Date(item.occurredAt))} · 审计 {item.id}</p>
-      </li>)}</ul>
-    </section>}
   </div>;
 }
 

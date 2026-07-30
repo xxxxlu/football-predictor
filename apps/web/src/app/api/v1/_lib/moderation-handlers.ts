@@ -17,7 +17,6 @@ interface Identity {
 interface Moderation {
   reportRoom(roomId: string, userId: string, reason: string): Promise<unknown>;
   listReports(userId: string): Promise<unknown>;
-  listAudit(userId: string): Promise<unknown>;
   listRooms(userId: string): Promise<unknown>;
   updatePreMatchStakeVisibility(userId: string, roomId: string, visible: boolean): Promise<unknown>;
   moderateRoom(userId: string, roomId: string, action: RoomModerationAction, reason: string): Promise<unknown>;
@@ -49,7 +48,6 @@ export function createModerationHandlers(identity: Identity, moderation: Moderat
       return json({ data: await moderation.reportRoom(roomId, id, input.reason) }, 201);
     }),
     listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await governanceReader(request, "ROOM_REPORT_READ")) })),
-    listAudit: (request: Request) => execute(async () => json({ data: await moderation.listAudit(await governanceReader(request, "AUDIT_READ")) })),
     listRooms: (request: Request) => execute(async () => json({ data: await moderation.listRooms(await governanceReader(request, "ROOM_GOVERNANCE_READ")) })),
     moderateRoom: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const input = moderationSchema.parse(await request.json());

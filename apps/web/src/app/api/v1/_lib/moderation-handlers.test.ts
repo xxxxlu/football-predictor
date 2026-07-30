@@ -13,7 +13,6 @@ function setup() {
   const moderation = {
     reportRoom: vi.fn().mockResolvedValue({ reportId: "report-1", status: "OPEN" }),
     listReports: vi.fn().mockResolvedValue([]),
-    listAudit: vi.fn().mockResolvedValue([]),
     listRooms: vi.fn().mockResolvedValue([{ roomId: "room-1", name: "决赛之夜", preMatchStakeVisible: false }]),
     updatePreMatchStakeVisibility: vi.fn().mockResolvedValue({ roomId: "room-1", preMatchStakeVisible: true }),
     moderateRoom: vi.fn().mockResolvedValue({ roomId: "room-1", status: "RESTRICTED" }),

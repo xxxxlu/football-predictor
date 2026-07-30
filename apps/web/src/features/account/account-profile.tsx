@@ -21,7 +21,10 @@ const OPERATOR_ENTRIES: Array<{ href: string; label: string; capability: string;
   // their duty exists for. The room-governance section inside simply does not
   // render for them.
   { href: "/admin/moderation", label: "治理收件箱", capability: "ROOM_REPORT_READ" },
-  { href: "/admin/status", label: "运行状态", capability: "OPERATIONS_HEALTH_READ" },
+  // The overview route itself admits any operational duty, but the entry follows
+  // the health capability: a community moderator's only card is the inbox, which
+  // they already reach directly above.
+  { href: "/admin/status", label: "运营总览", capability: "OPERATIONS_HEALTH_READ" },
   { href: "/admin/operators", label: "运营职责", capability: "OPERATOR_ROLE_MANAGE" },
 ];
 const ROLE_LABELS: Record<string, string> = { SUPER_ADMIN: "超级管理员", OPERATIONS_ADMIN: "运营管理员", COMMUNITY_MODERATOR: "社区协管员" };

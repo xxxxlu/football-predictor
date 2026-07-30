@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
@@ -235,8 +236,13 @@ function TimelineEntry({ entry }: { entry: HistoryEntry }) {
       {disposition && <span className="ml-2 text-xs font-normal text-[var(--muted)]">{dispositionLabel(disposition as ReportDisposition)}</span>}
       {entry.result !== "SUCCESS" && <span className="ml-2 text-xs font-normal text-[var(--muted)]">{entry.result}</span>}
     </p>
-    {/* The audit id is the jump-off point into the platform-wide trail below. */}
-    <p className="mt-1 text-xs text-[var(--muted)]">{dateTime.format(entry.occurredAt)}{entry.actor ? ` · ${entry.actor}` : ""} · 审计 {entry.id}</p>
+    {/* NFR37: the audit id is the correlation id, so it links straight to the one
+        matching entry in the platform-wide trail. Operators without AUDIT_READ are
+        refused there — the link is a shortcut, never a way in. */}
+    <p className="mt-1 text-xs text-[var(--muted)]">
+      {dateTime.format(entry.occurredAt)}{entry.actor ? ` · ${entry.actor}` : ""} ·{" "}
+      <Link href={`/admin/status?audit=${encodeURIComponent(entry.id)}#audit`} className="underline">审计 {entry.id}</Link>
+    </p>
     {reason && <p className="mt-1 text-sm">{reason}</p>}
   </li>;
 }
@@ -266,8 +272,10 @@ const DISPOSITION_NOTES: Record<ReportDisposition, string> = {
  * Shared second confirmation for every governance write: what will happen, a
  * written reason that lands in the audit trail, and the operator's own password.
  */
-export function GovernanceConfirmPanel({ title, note, verb, needsMuteDuration = false, needsReason = true, busy, onSubmit, onCancel }: {
-  title: string; note: string; verb: string; needsMuteDuration?: boolean; needsReason?: boolean; busy: boolean;
+export function GovernanceConfirmPanel({ title, note, verb, needsMuteDuration = false, needsReason = true, reasonLabel = "处置理由（写入审计并通知受影响成员）", busy, onSubmit, onCancel }: {
+  title: string; note: string; verb: string; needsMuteDuration?: boolean; needsReason?: boolean;
+  /** Operations writes that notify nobody say so, rather than promising a notice. */
+  reasonLabel?: string; busy: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void;
 }) {
   return <section className="surface border-2 border-[var(--ink)] p-5" aria-labelledby="governance-confirm-title">
@@ -279,7 +287,7 @@ export function GovernanceConfirmPanel({ title, note, verb, needsMuteDuration = 
           {MUTE_HOUR_OPTIONS.map((hours) => <option key={hours} value={hours}>{MUTE_LABELS[hours]}</option>)}
         </select>
       </label>}
-      {needsReason && <label className="block text-sm font-bold">处置理由（写入审计并通知受影响成员）
+      {needsReason && <label className="block text-sm font-bold">{reasonLabel}
         <textarea name="reason" required minLength={MIN_REASON_LENGTH} maxLength={MAX_REASON_LENGTH} rows={3} autoFocus
           placeholder={`${MIN_REASON_LENGTH}-${MAX_REASON_LENGTH} 字，说明处置依据`}
           className="mt-2 w-full rounded-lg border border-[var(--line)] bg-[var(--paper-raised)] px-3 py-2 font-normal"/>

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
-import { REDACTION_MARKER, type Capability } from "@pulse/domain";
+import { REDACTION_MARKER, resolveAuditActions, type AuditQuery, type Capability } from "@pulse/domain";
 import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { OperationError } from "./repository.js";
 
@@ -91,6 +91,61 @@ export function normalizeAuditEvent(row: GovernanceAuditRow) {
   };
 }
 
+/**
+ * The one implementation of the merged governance trail (FR60, Story 11.4).
+ *
+ * Governance history lives in three tables: ops.audit_events (reports, room
+ * moderation, account anonymization, task retries),
+ * identity.admin_account_audit_events (account disable/restore, operator duty
+ * grant/revoke) and room.audit_events (room create/join/invite reset). They are
+ * unioned before filtering so ordering, limiting and redaction are identical no
+ * matter which surface asked — the unified audit workbench and the legacy
+ * unfiltered list are the same read with different filters.
+ *
+ * Filters are built as fragments rather than inline `OR` guards: postgres.js
+ * cannot infer an element type for an empty array, so an unfiltered action list
+ * has to disappear from the SQL entirely instead of binding `= ANY('{}')`.
+ *
+ * Timestamps cross the wire as ISO strings, never Date instances — the Next.js
+ * runtime instruments Date, which defeats postgres.js's instanceof-based type
+ * inference and throws ERR_INVALID_ARG_TYPE.
+ */
+export async function listGovernanceAudit(sql: postgres.Sql, query: AuditQuery) {
+  const actions = resolveAuditActions(query);
+  const actionPredicate = actions.length === 0 ? sql`true` : sql`merged.action = ANY(${actions as string[]})`;
+  const actorPredicate = query.actor === ""
+    ? sql`true`
+    : sql`strpos(COALESCE(u.username_canonical, ''), ${query.actor}) > 0`;
+  const targetTypePredicate = query.targetType === "ALL" ? sql`true` : sql`merged.target_type = ${query.targetType}`;
+  const targetIdPredicate = query.targetId === "" ? sql`true` : sql`merged.target_id = ${query.targetId}`;
+  const resultPredicate = query.result === "ALL" ? sql`true` : sql`merged.result = ${query.result}`;
+  const fromPredicate = query.from === null ? sql`true` : sql`merged.occurred_at >= ${query.from.toISOString()}::timestamptz`;
+  const toPredicate = query.to === null ? sql`true` : sql`merged.occurred_at <= ${query.to.toISOString()}::timestamptz`;
+  // NFR37: the correlation id is the audit id itself, so a report timeline or a
+  // member notice can hand an operator one identifier that resolves to one entry.
+  const correlationPredicate = query.correlationId === "" ? sql`true` : sql`merged.id = ${query.correlationId}`;
+
+  const rows = await sql<GovernanceAuditRow[]>`
+    SELECT merged.id, COALESCE(u.nickname, u.username_canonical) AS actor, merged.action,
+      merged.target_type, merged.target_id, merged.result, merged.metadata, merged.occurred_at
+    FROM (
+      SELECT a.id::text AS id, a.actor_user_id, a.action, a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
+        FROM ops.audit_events a
+      UNION ALL
+      SELECT e.audit_id::text, e.actor_user_id, e.action, 'USER'::text, e.target_user_id::text, e.result, e.metadata, e.occurred_at
+        FROM identity.admin_account_audit_events e
+      UNION ALL
+      SELECT r.audit_id::text, r.actor_user_id, r.action, 'ROOM'::text, r.room_id::text, r.result, '{}'::jsonb, r.occurred_at
+        FROM room.audit_events r
+    ) merged
+    LEFT JOIN identity.users u ON u.id = merged.actor_user_id
+    WHERE ${actionPredicate} AND ${actorPredicate} AND ${targetTypePredicate} AND ${targetIdPredicate}
+      AND ${resultPredicate} AND ${fromPredicate} AND ${toPredicate} AND ${correlationPredicate}
+    ORDER BY merged.occurred_at DESC, merged.id ASC
+    LIMIT ${query.limit}`;
+  return rows.map(normalizeAuditEvent);
+}
+
 export class PostgresModerationPrivacyRepository {
   constructor(private readonly sql: postgres.Sql, private readonly clock: { now(): Date } = { now: () => new Date() }) {}
 
@@ -148,31 +203,9 @@ export class PostgresModerationPrivacyRepository {
     });
   }
 
-  async listAudit(adminUserId: string) {
-    await this.assertCapability(adminUserId, "AUDIT_READ");
-    // Governance audit lives in three tables: ops.audit_events (reports, room
-    // moderation, account anonymization), identity.admin_account_audit_events
-    // (account disable/restore, operator duty grant/revoke) and room.audit_events
-    // (room create/join/invite reset). FR60 requires all of these to be
-    // reviewable, so merge them into a single non-repudiable, time-ordered trail
-    // before redaction.
-    const rows = await this.sql<GovernanceAuditRow[]>`
-      SELECT merged.id, COALESCE(u.nickname, u.username_canonical) AS actor, merged.action,
-        merged.target_type, merged.target_id, merged.result, merged.metadata, merged.occurred_at
-      FROM (
-        SELECT a.id::text AS id, a.actor_user_id, a.action, a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
-          FROM ops.audit_events a
-        UNION ALL
-        SELECT e.audit_id::text, e.actor_user_id, e.action, 'USER'::text, e.target_user_id::text, e.result, e.metadata, e.occurred_at
-          FROM identity.admin_account_audit_events e
-        UNION ALL
-        SELECT r.audit_id::text, r.actor_user_id, r.action, 'ROOM'::text, r.room_id::text, r.result, '{}'::jsonb, r.occurred_at
-          FROM room.audit_events r
-      ) merged
-      LEFT JOIN identity.users u ON u.id = merged.actor_user_id
-      ORDER BY merged.occurred_at DESC LIMIT 200`;
-    return rows.map(normalizeAuditEvent);
-  }
+  // The audit trail is read through PostgresOperationsOverviewRepository (Story
+  // 11.4), which owns the AUDIT_READ gate and the filters. `listGovernanceAudit`
+  // below stays here beside the redaction helpers it depends on.
 
   async moderateRoom(adminUserId: string, roomId: string, action: RoomModerationAction, reason: string) {
     const status = roomTransition(action); const auditId = randomUUID(); const now = this.clock.now().toISOString();
