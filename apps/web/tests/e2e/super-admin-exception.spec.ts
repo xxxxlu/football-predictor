@@ -62,9 +62,13 @@ test("super admin disables and then restores a normal user", async ({ page }) =>
   }
   expect(outcome, "super-admin session established").toBe("logged-in");
 
-  // --- Status board renders (super-admin only). ---
+  // --- Operations overview renders (super-admin only). ---
+  // Story 11.4: the status board became a capability-assembled overview. A
+  // super-admin holds every card capability, so the supplier card and the audit
+  // workbench both have to be there — a restricted duty would see neither.
   await page.goto("/admin/status");
-  await expect(page.getByText("API-FOOTBALL 日额度")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "供应商额度与缓存" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "权限审计" })).toBeVisible();
 
   // --- Disable the target user (step-up reauth), then confirm the audited status change. ---
   // Story 11.2: the console asks for a written reason as well as the operator's own
