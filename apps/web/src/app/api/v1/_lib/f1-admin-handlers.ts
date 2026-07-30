@@ -9,7 +9,7 @@ const confirmSchema = z.object({ version: z.number().int().min(1) }).strict();
 const cancelSchema = z.object({ reason: z.string().trim().min(5).max(500) }).strict();
 
 interface Identity {
-  authorizeSuperAdminAction(input: { sessionToken: string; proofToken: string }): Promise<{ id: string }>;
+  authorizeCapabilityAction(input: { sessionToken: string; proofToken: string; capability: "COMPETITION_RESULT_ENTRY" }): Promise<{ id: string }>;
 }
 interface ResultEntry {
   enterResult(command: { sessionId: string; classification: F1ClassificationEntry[]; enteredBy: string }): Promise<F1ResultReceipt>;
@@ -17,15 +17,17 @@ interface ResultEntry {
   cancelSession(command: { sessionId: string; cancelledBy: string; reason: string }): Promise<F1ResultReceipt>;
 }
 
-/** Super-admin F1 result administration. Entry and confirmation are separate steps;
- *  settlement is triggered asynchronously by the worker from the confirmed version. */
+/** F1 result administration. Entry and confirmation are separate steps; settlement
+ *  is triggered asynchronously by the worker from the confirmed version. Gated on
+ *  COMPETITION_RESULT_ENTRY, which only a super-admin holds — no restricted
+ *  operator duty may reach a settlement trigger. */
 export function createF1AdminHandlers(identity: Identity, results: ResultEntry) {
   const superAdmin = async (request: Request) => {
     const sessionToken = readSessionToken(request);
     if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
     const proofToken = readReauthProof(request);
     if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
-    const actor = await identity.authorizeSuperAdminAction({ sessionToken, proofToken });
+    const actor = await identity.authorizeCapabilityAction({ sessionToken, proofToken, capability: "COMPETITION_RESULT_ENTRY" });
     return actor.id;
   };
   return {

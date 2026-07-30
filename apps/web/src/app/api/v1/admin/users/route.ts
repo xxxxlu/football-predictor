@@ -1,4 +1,3 @@
-import { getIdentityService } from "../../auth/_lib/runtime";
-import { createAdminIdentityHandlers } from "./handlers";
+import { userSecurityHandlers } from "./runtime";
 export const runtime = "nodejs";
-export const GET = (request: Request) => createAdminIdentityHandlers(getIdentityService()).list(request);
+export const GET = (request: Request) => userSecurityHandlers().list(request);

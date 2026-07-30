@@ -1,9 +1,11 @@
-import { index, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid, boolean } from "drizzle-orm/pg-core";
+import { index, jsonb, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uniqueIndex, uuid, boolean } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const identitySchema = pgSchema("identity");
 export const accountStatus = pgEnum("identity_account_status", ["ACTIVE", "DISABLED"]);
 export const authAttemptKind = pgEnum("identity_auth_attempt_kind", ["LOGIN", "RECOVERY"]);
 export const accessEventKind = pgEnum("identity_access_event_kind", ["REGISTER", "LOGIN"]);
+export const operatorRole = identitySchema.enum("operator_role", ["OPERATIONS_ADMIN", "COMMUNITY_MODERATOR"]);
 
 export const identityUsers = identitySchema.table("users", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -42,14 +44,33 @@ export const reauthProofs = identitySchema.table("reauth_proofs", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("identity_reauth_proofs_user_expiry_idx").on(table.userId, table.expiresAt)]);
 
+/**
+ * Restricted operator duties (FR80). A revoked grant keeps its row so the audit
+ * trail stays complete; the partial unique index below is what guarantees a
+ * single live grant per account and duty.
+ */
+export const operatorRoleGrants = identitySchema.table("operator_role_grants", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  role: operatorRole("role").notNull(),
+  grantedBy: uuid("granted_by").notNull().references(() => identityUsers.id),
+  grantedAt: timestamp("granted_at", { withTimezone: true }).notNull(),
+  revokedBy: uuid("revoked_by").references(() => identityUsers.id),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("identity_operator_role_grants_active_idx").on(table.userId, table.role).where(sql`${table.revokedAt} is null`),
+  index("identity_operator_role_grants_user_idx").on(table.userId).where(sql`${table.revokedAt} is null`),
+]);
+
 export const adminAccountAuditEvents = identitySchema.table("admin_account_audit_events", {
   auditId: uuid("audit_id").primaryKey(),
   actorUserId: uuid("actor_user_id").notNull().references(() => identityUsers.id),
   targetUserId: uuid("target_user_id").notNull().references(() => identityUsers.id),
   action: text("action").notNull(),
   result: text("result").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-});
+}, (table) => [index("identity_admin_account_audit_events_occurred_idx").on(table.occurredAt)]);
 
 export const authAttempts = identitySchema.table("auth_attempts", {
   id: uuid("id").defaultRandom().primaryKey(),

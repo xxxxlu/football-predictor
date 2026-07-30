@@ -68,8 +68,10 @@ function fakeSql(respond: (query: string) => Array<Record<string, unknown>>, see
 
 describe("admin status aggregation", () => {
   const clock = { now: () => new Date("2026-07-16T10:00:00.000Z") };
+  // adminStatus resolves the caller's operator duties first; a super-admin holds
+  // every capability, so the aggregation queries run behind it.
   const asAdmin = (respond: (query: string) => Array<Record<string, unknown>>) => (query: string) =>
-    query.includes("is_super_admin AS allowed") ? [{ allowed: true }] : respond(query);
+    query.includes("identity.operator_role_grants") ? [{ isSuperAdmin: true, roles: null }] : respond(query);
 
   it("returns zeroed sections instead of failing when budget/cache/settlement/jobs are empty", async () => {
     const repository = new PostgresOperationsRepository(fakeSql(asAdmin(() => [])), clock);
@@ -102,12 +104,29 @@ describe("admin status aggregation", () => {
     expect((await critical.adminStatus("admin-1")).overall).toBe("CRITICAL");
   });
 
-  it("rejects non-admin viewers with FORBIDDEN before any aggregation", async () => {
+  it("rejects viewers without the operational-health capability before any aggregation", async () => {
+    // A plain user, a community moderator (whose duty does not cover operational
+    // health) and an unknown/disabled account are all refused.
+    const authorizations: Array<Array<Record<string, unknown>>> = [
+      [{ isSuperAdmin: false, roles: null }],
+      [{ isSuperAdmin: false, roles: ["COMMUNITY_MODERATOR"] }],
+      [],
+    ];
+    for (const authorization of authorizations) {
+      const seen: unknown[] = [];
+      const repository = new PostgresOperationsRepository(fakeSql((query) =>
+        query.includes("identity.operator_role_grants") ? authorization : [{ unexpected: true }], seen), clock);
+      const failure = await repository.adminStatus("user-1").catch((error: OperationError) => error);
+      expect(failure).toBeInstanceOf(OperationError);
+      expect((failure as OperationError).status).toBe(403);
+      expect(seen).toEqual(["user-1"]);
+    }
+  });
+
+  it("lets an operations-admin read operational health without super-admin rights", async () => {
     const repository = new PostgresOperationsRepository(fakeSql((query) =>
-      query.includes("is_super_admin AS allowed") ? [{ allowed: false }] : []), clock);
-    const failure = await repository.adminStatus("user-1").catch((error: OperationError) => error);
-    expect(failure).toBeInstanceOf(OperationError);
-    expect((failure as OperationError).status).toBe(403);
+      query.includes("identity.operator_role_grants") ? [{ isSuperAdmin: false, roles: ["OPERATIONS_ADMIN"] }] : []), clock);
+    await expect(repository.adminStatus("ops-1")).resolves.toMatchObject({ overall: "HEALTHY" });
   });
 });
 

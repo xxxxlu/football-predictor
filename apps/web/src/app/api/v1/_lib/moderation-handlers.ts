@@ -1,5 +1,5 @@
 import { OperationError, type RoomModerationAction } from "@pulse/db";
-import { AuthError } from "@pulse/domain";
+import { AuthError, type Capability } from "@pulse/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";
@@ -11,7 +11,8 @@ const deleteSchema = z.object({ confirmation: z.literal("DELETE") }).strict();
 
 interface Identity {
   authenticate(token: string): Promise<{ id: string } | null>;
-  authorizeSuperAdminAction(input: { sessionToken: string; proofToken: string }): Promise<{ id: string }>;
+  requireCapability(sessionToken: string, capability: Capability): Promise<{ id: string }>;
+  authorizeCapabilityAction(input: { sessionToken: string; proofToken: string; capability: Capability }): Promise<{ id: string }>;
 }
 interface Moderation {
   reportRoom(roomId: string, userId: string, reason: string): Promise<unknown>;
@@ -29,27 +30,36 @@ export function createModerationHandlers(identity: Identity, moderation: Moderat
     if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
     return account.id;
   };
+  // Governance reads are authorized at the route boundary as well as inside the
+  // repository, so no route depends on a single check — or on the UI hiding it.
+  const governanceReader = async (request: Request, capability: Capability) => {
+    const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+    return (await identity.requireCapability(sessionToken, capability)).id;
+  };
+  // Governance writes need the duty plus a fresh re-auth proof (NFR18). The
+  // repository re-checks the same capability independently.
+  const governanceActor = async (request: Request, capability: Capability) => {
+    const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+    const proofToken = readReauthProof(request); if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm your password again before this operation.");
+    return (await identity.authorizeCapabilityAction({ sessionToken, proofToken, capability })).id;
+  };
   return {
     reportRoom: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const id = await user(request); const input = reportSchema.parse(await request.json());
       return json({ data: await moderation.reportRoom(roomId, id, input.reason) }, 201);
     }),
-    listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await user(request)) })),
-    listAudit: (request: Request) => execute(async () => json({ data: await moderation.listAudit(await user(request)) })),
-    listRooms: (request: Request) => execute(async () => json({ data: await moderation.listRooms(await user(request)) })),
+    listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await governanceReader(request, "ROOM_REPORT_READ")) })),
+    listAudit: (request: Request) => execute(async () => json({ data: await moderation.listAudit(await governanceReader(request, "AUDIT_READ")) })),
+    listRooms: (request: Request) => execute(async () => json({ data: await moderation.listRooms(await governanceReader(request, "ROOM_GOVERNANCE_READ")) })),
     moderateRoom: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const input = moderationSchema.parse(await request.json());
-      const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
-      const proofToken = readReauthProof(request); if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
-      const actor = await identity.authorizeSuperAdminAction({ sessionToken, proofToken });
-      return json({ data: await moderation.moderateRoom(actor.id, roomId, input.action, input.reason) });
+      const actorId = await governanceActor(request, "ROOM_GOVERNANCE_WRITE");
+      return json({ data: await moderation.moderateRoom(actorId, roomId, input.action, input.reason) });
     }),
     updatePreMatchVisibility: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const input = visibilitySchema.parse(await request.json());
-      const sessionToken = readSessionToken(request); if (!sessionToken) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
-      const proofToken = readReauthProof(request); if (!proofToken) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
-      const actor = await identity.authorizeSuperAdminAction({ sessionToken, proofToken });
-      return json({ data: await moderation.updatePreMatchStakeVisibility(actor.id, roomId, input.preMatchStakeVisible) });
+      const actorId = await governanceActor(request, "ROOM_GOVERNANCE_WRITE");
+      return json({ data: await moderation.updatePreMatchStakeVisibility(actorId, roomId, input.preMatchStakeVisible) });
     }),
     deleteAccount: (request: Request) => execute(async () => {
       assertSameOrigin(request); const id = await user(request); deleteSchema.parse(await request.json());

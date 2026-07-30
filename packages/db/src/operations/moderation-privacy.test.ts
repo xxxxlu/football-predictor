@@ -78,6 +78,22 @@ describe("unified governance audit normalization", () => {
       occurredAt: "2026-07-15T09:00:00.000Z",
     });
 
+    // Rows written with a bare ::jsonb cast hold a jsonb string; an operator must
+    // still see fields, not escaped JSON.
+    const doubleEncoded = normalizeAuditEvent({
+      id: "audit-legacy-1",
+      actor: "root_one",
+      action: "ROOM_RESTRICT",
+      target_type: "ROOM",
+      target_id: "room-7",
+      result: "SUCCESS",
+      metadata: JSON.stringify({ reason: "多次违规举报", status: "RESTRICTED", sessionToken: "raw" }),
+      occurred_at: "2026-07-20T09:00:00.000Z",
+    });
+    expect(doubleEncoded.metadata).toEqual({ reason: "多次违规举报", status: "RESTRICTED", sessionToken: "[REDACTED]" });
+    // A metadata value that genuinely is a string stays one.
+    expect(normalizeAuditEvent({ ...doubleEncoded, target_type: "ROOM", target_id: "room-7", occurred_at: "2026-07-20T09:00:00.000Z", metadata: "plain note" } as never).metadata).toBe("plain note");
+
     const roomEvent = normalizeAuditEvent({
       id: "audit-room-1",
       actor: null,

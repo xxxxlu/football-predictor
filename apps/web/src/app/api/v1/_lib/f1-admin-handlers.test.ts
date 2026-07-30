@@ -19,7 +19,7 @@ const request = (path: string, body: unknown, headers: Record<string, string> = 
 });
 
 function setup() {
-  const identity = { authorizeSuperAdminAction: vi.fn().mockResolvedValue({ id: "admin-1" }) };
+  const identity = { authorizeCapabilityAction: vi.fn().mockResolvedValue({ id: "admin-1" }) };
   const results = {
     enterResult: vi.fn().mockResolvedValue({ sessionId: "session-1", version: 1, alreadyApplied: false }),
     confirmResult: vi.fn().mockResolvedValue({ sessionId: "session-1", version: 1, alreadyApplied: false }),
@@ -33,7 +33,7 @@ describe("F1 admin result API", () => {
     const { handlers, identity, results } = setup();
     const response = await handlers.enterResult(request("/api/v1/admin/f1/sessions/session-1/results", { classification }), "session-1");
     expect(response.status).toBe(201);
-    expect(identity.authorizeSuperAdminAction).toHaveBeenCalledWith({ sessionToken: "token", proofToken: "proof-token" });
+    expect(identity.authorizeCapabilityAction).toHaveBeenCalledWith({ sessionToken: "token", proofToken: "proof-token", capability: "COMPETITION_RESULT_ENTRY" });
     expect(results.enterResult).toHaveBeenCalledWith({ sessionId: "session-1", classification, enteredBy: "admin-1" });
   });
 

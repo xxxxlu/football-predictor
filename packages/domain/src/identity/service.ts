@@ -1,4 +1,13 @@
 import { randomUUID } from "node:crypto";
+import {
+  type Capability,
+  type GrantableOperatorRole,
+  type OperatorRole,
+  capabilitiesFor,
+  hasCapability,
+  isGrantableOperatorRole,
+  operatorRolesOf,
+} from "./capabilities.js";
 
 export type AuthAttemptKind = "LOGIN" | "RECOVERY";
 export type AccountStatus = "ACTIVE" | "DISABLED";
@@ -23,9 +32,30 @@ export interface IdentityAccount {
   status: AccountStatus;
   isSuperAdmin: boolean;
   mustChangePassword: boolean;
+  /**
+   * Restricted duties currently granted to this account. Resolved on every
+   * session lookup so a revocation takes effect on the next request (FR80).
+   */
+  operatorRoles: GrantableOperatorRole[];
   createdAt: Date;
   updatedAt: Date;
 }
+
+export interface OperatorRosterEntry {
+  id: string;
+  username: string;
+  status: AccountStatus;
+  isSuperAdmin: boolean;
+  roles: GrantableOperatorRole[];
+}
+
+/**
+ * Outcome of a persisted role change. The repository owns the invariants that
+ * need a transaction (actor is a super-admin, target is an eligible normal
+ * account, at most one active grant per role) and reports them as data so the
+ * service maps them onto the shared API error contract.
+ */
+export type OperatorRoleChangeOutcome = "CHANGED" | "UNCHANGED" | "ACTOR_FORBIDDEN" | "TARGET_NOT_ELIGIBLE";
 
 export interface IdentityRepository {
   createRegisteredAccount(account: IdentityAccount): Promise<void>;
@@ -36,8 +66,9 @@ export interface IdentityRepository {
   changePassword(input: { userId: string; currentPasswordHash: string; passwordHash: string; changedAt: Date }): Promise<boolean>;
   createReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; expiresAt: Date }): Promise<void>;
   verifyReauthProof(input: { tokenHash: string; userId: string; sessionTokenHash: string; now: Date }): Promise<boolean>;
-  setNormalAccountStatus(input: { actorUserId: string; targetUserId: string; status: AccountStatus; changedAt: Date; auditId: string }): Promise<boolean>;
-  listNormalAccounts(): Promise<Array<{ id: string; username: string; status: AccountStatus }>>;
+  setNormalAccountStatus(input: { actorUserId: string; targetUserId: string; status: AccountStatus; reason: string; changedAt: Date; auditId: string }): Promise<boolean>;
+  listOperatorRoster(): Promise<OperatorRosterEntry[]>;
+  setOperatorRole(input: { actorUserId: string; targetUserId: string; role: GrantableOperatorRole; granted: boolean; changedAt: Date; auditId: string }): Promise<OperatorRoleChangeOutcome>;
   recoverAccount(input: { userId: string; expectedRecoveryCodeHash: string; passwordHash: string; recoveryCodeHash: string; recoveredAt: Date }): Promise<boolean>;
   countRecentFailures(kind: AuthAttemptKind, accountKey: string, sourceKey: string, since: Date): Promise<number>;
   recordFailure(kind: AuthAttemptKind, accountKey: string, sourceKey: string, occurredAt: Date): Promise<void>;
@@ -114,6 +145,7 @@ export class IdentityService {
       status: "ACTIVE",
       isSuperAdmin: false,
       mustChangePassword: false,
+      operatorRoles: [],
       createdAt: occurredAt,
       updatedAt: occurredAt,
     };
@@ -162,7 +194,9 @@ export class IdentityService {
 
   async reauthenticate(input: { sessionToken: string; password: string }) {
     const account = await this.authenticate(input.sessionToken);
-    if (!account || !account.isSuperAdmin || account.mustChangePassword) throw new AuthError("FORBIDDEN", 403, "This operation requires an active super-admin account.");
+    // Any account holding an operator duty may confirm its identity; the proof
+    // alone grants nothing — each protected request still checks its capability.
+    if (!account || !this.rolesOf(account).length || account.mustChangePassword) throw new AuthError("FORBIDDEN", 403, "This operation requires an active operator account.");
     if (!await this.passwordHasher.verify(account.passwordHash, input.password)) throw new AuthError("INVALID_CREDENTIALS", 401, "Check the password and try again.");
     const proofToken = this.tokens.sessionToken();
     const now = this.now();
@@ -171,37 +205,75 @@ export class IdentityService {
     return { proofToken, expiresAt };
   }
 
-  async listManageableAccounts(actorSessionToken: string) {
-    const actor = await this.requireReadySuperAdmin(actorSessionToken);
-    return { actorId: actor.id, users: await this.repository.listNormalAccounts() };
+  /**
+   * Resolves the operator identity behind a session: roles and capabilities are
+   * read fresh from storage on every call, so a revoked duty is gone from the
+   * very next request without waiting for the session to expire.
+   */
+  async resolveOperator(sessionToken: string) {
+    const account = await this.authenticate(sessionToken);
+    if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
+    if (account.mustChangePassword) throw new AuthError("PASSWORD_CHANGE_REQUIRED", 403, "Change the initial password before continuing.");
+    const roles = this.rolesOf(account);
+    return { account, roles, capabilities: [...capabilitiesFor(roles)] };
   }
 
-  async authorizeSuperAdminAction(input: { sessionToken: string; proofToken: string }) {
-    const actor = await this.requireReadySuperAdmin(input.sessionToken);
+  /** Server-side gate for a capability-scoped read. */
+  async requireCapability(sessionToken: string, capability: Capability) {
+    const { account, roles } = await this.resolveOperator(sessionToken);
+    if (!hasCapability(roles, capability)) throw new AuthError("FORBIDDEN", 403, "You do not have permission for this operation.");
+    return account;
+  }
+
+  /** Server-side gate for a sensitive write: capability plus a fresh re-auth proof (NFR18). */
+  async authorizeCapabilityAction(input: { sessionToken: string; proofToken: string; capability: Capability }) {
+    const actor = await this.requireCapability(input.sessionToken, input.capability);
     const validProof = input.proofToken && await this.repository.verifyReauthProof({ tokenHash: this.tokens.hash(input.proofToken), userId: actor.id, sessionTokenHash: this.tokens.hash(input.sessionToken), now: this.now() });
-    if (!validProof) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm the super-admin password again before this operation.");
+    if (!validProof) throw new AuthError("REAUTH_REQUIRED", 403, "Confirm your password again before this operation.");
     return actor;
   }
 
-  async setAccountStatus(input: { actorSessionToken: string; proofToken: string; targetUserId: string; status: AccountStatus }) {
-    const actor = await this.authorizeSuperAdminAction({ sessionToken: input.actorSessionToken, proofToken: input.proofToken });
+  /** Disables or restores a normal account. A justification is mandatory and is
+   *  recorded with the change, so the audit trail explains itself later (FR81). */
+  async setAccountStatus(input: { actorSessionToken: string; proofToken: string; targetUserId: string; status: AccountStatus; reason: string }) {
+    const reason = assertGovernanceReason(input.reason);
+    const actor = await this.authorizeCapabilityAction({ sessionToken: input.actorSessionToken, proofToken: input.proofToken, capability: "USER_SECURITY_WRITE" });
     const auditId = randomUUID();
-    const changed = await this.repository.setNormalAccountStatus({ actorUserId: actor.id, targetUserId: input.targetUserId, status: input.status, changedAt: this.now(), auditId });
+    const changed = await this.repository.setNormalAccountStatus({ actorUserId: actor.id, targetUserId: input.targetUserId, status: input.status, reason, changedAt: this.now(), auditId });
     if (!changed) throw new AuthError("TARGET_NOT_MANAGEABLE", 422, "Only normal user accounts can be changed here.");
     return { targetUserId: input.targetUserId, status: input.status, auditId };
   }
 
+  async listOperatorRoster(sessionToken: string) {
+    const actor = await this.requireCapability(sessionToken, "OPERATOR_ROLE_MANAGE");
+    return { actorId: actor.id, operators: await this.repository.listOperatorRoster() };
+  }
+
+  /**
+   * Grants or revokes a restricted duty. Only `OPERATOR_ROLE_MANAGE` (super-admin
+   * only) reaches here, `SUPER_ADMIN` itself is not grantable, and nobody can
+   * change their own duties — so the seeded pair stays exactly two (FR80).
+   */
+  async setOperatorRole(input: { actorSessionToken: string; proofToken: string; targetUserId: string; role: string; granted: boolean }) {
+    if (!isGrantableOperatorRole(input.role)) throw new AuthError("ROLE_NOT_GRANTABLE", 422, "Only the operations-admin and community-moderator duties can be granted.");
+    if (!isUuid(input.targetUserId)) throw new AuthError("TARGET_NOT_MANAGEABLE", 422, "Only normal user accounts can be changed here.");
+    const actor = await this.authorizeCapabilityAction({ sessionToken: input.actorSessionToken, proofToken: input.proofToken, capability: "OPERATOR_ROLE_MANAGE" });
+    if (actor.id === input.targetUserId) throw new AuthError("SELF_ROLE_CHANGE_FORBIDDEN", 403, "Ask the other super administrator to change your own duties.");
+
+    const auditId = randomUUID();
+    const outcome = await this.repository.setOperatorRole({ actorUserId: actor.id, targetUserId: input.targetUserId, role: input.role, granted: input.granted, changedAt: this.now(), auditId });
+    if (outcome === "ACTOR_FORBIDDEN") throw new AuthError("FORBIDDEN", 403, "You do not have permission for this operation.");
+    if (outcome === "TARGET_NOT_ELIGIBLE") throw new AuthError("TARGET_NOT_MANAGEABLE", 422, "Only active normal accounts can hold an operator duty.");
+    return { targetUserId: input.targetUserId, role: input.role, granted: input.granted, changed: outcome === "CHANGED", ...(outcome === "CHANGED" ? { auditId } : {}) };
+  }
+
   async getAudienceStats(sessionToken: string) {
-    await this.requireReadySuperAdmin(sessionToken);
+    await this.requireCapability(sessionToken, "AUDIENCE_ANALYTICS_READ");
     return this.repository.getAudienceStats();
   }
 
-  private async requireReadySuperAdmin(sessionToken: string) {
-    const account = await this.authenticate(sessionToken);
-    if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
-    if (!account.isSuperAdmin) throw new AuthError("FORBIDDEN", 403, "This operation is limited to super administrators.");
-    if (account.mustChangePassword) throw new AuthError("PASSWORD_CHANGE_REQUIRED", 403, "Change the initial password before continuing.");
-    return account;
+  private rolesOf(account: IdentityAccount): OperatorRole[] {
+    return operatorRolesOf(account);
   }
 
   async logout(sessionToken: string) {
@@ -261,4 +333,21 @@ function assertPassword(password: string) {
   if (password.length < 12 || password.length > 128) {
     throw new AuthError("INVALID_PASSWORD", 422, "Use a password between 12 and 128 characters.");
   }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
+}
+
+/**
+ * Every governance write carries an operator-authored justification (FR81/FR90).
+ * Bounds match the room moderation reason so one rule covers the whole console.
+ */
+export function assertGovernanceReason(reason: unknown) {
+  const trimmed = typeof reason === "string" ? reason.trim() : "";
+  if (trimmed.length < 5 || trimmed.length > 500) {
+    throw new AuthError("REASON_REQUIRED", 422, "Give a reason between 5 and 500 characters.");
+  }
+  return trimmed;
 }

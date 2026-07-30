@@ -1,5 +1,6 @@
 import type postgres from "postgres";
 import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@pulse/domain";
+import { readOperatorAuthorization } from "../identity/operator-roles.js";
 
 export class OperationError extends Error {
   constructor(readonly code: string, readonly status: number) { super(code); this.name = "OperationError"; }
@@ -132,11 +133,23 @@ export function projectLedgerEntry(row: LedgerSourceRow) {
 export class PostgresOperationsRepository {
   constructor(private readonly sql: postgres.Sql, private readonly clock: { now(): Date } = { now: () => new Date() }) {}
 
+  // `roles` keeps its legacy super_admin/user shape for existing callers; the
+  // capability list is what the back-office navigation renders from, so an entry
+  // only appears for an operator who actually holds the duty behind it. The
+  // navigation is a convenience — every API still authorizes on its own.
   async getProfile(userId: string) {
     const [row] = await this.sql<Array<{ id: string; username: string; nickname: string | null; superAdmin: boolean }>>`
       SELECT id,username_canonical AS username,nickname,is_super_admin AS "superAdmin" FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
     if (!row) throw new OperationError("UNAUTHENTICATED", 401);
-    return { id: row.id, username: row.username, nickname: row.nickname ?? row.username, roles: [row.superAdmin ? "super_admin" : "user"] };
+    const authorization = await readOperatorAuthorization(this.sql, userId);
+    return {
+      id: row.id,
+      username: row.username,
+      nickname: row.nickname ?? row.username,
+      roles: [row.superAdmin ? "super_admin" : "user"],
+      operatorRoles: authorization.roles,
+      capabilities: authorization.capabilities,
+    };
   }
 
   async updateNickname(userId: string, nickname: string) {
@@ -278,8 +291,8 @@ export class PostgresOperationsRepository {
   }
 
   async adminStatus(userId: string) {
-    const [admin] = await this.sql<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
-    if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
+    const authorization = await readOperatorAuthorization(this.sql, userId);
+    if (!authorization.capabilities.includes("OPERATIONS_HEALTH_READ")) throw new OperationError("FORBIDDEN", 403);
     const now = this.clock.now(); const nowIso = now.toISOString(); const date = nowIso.slice(0, 10);
     // postgres.js 参数必须传 ISO 字符串而非 Date 实例：Next.js 运行时对全局 Date 做了插桩，
     // postgres.js 的 instanceof Date 类型推断失效，Date 参数会抛 ERR_INVALID_ARG_TYPE。

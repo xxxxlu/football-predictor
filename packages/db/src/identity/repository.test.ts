@@ -1,7 +1,10 @@
 import { AuthError, type IdentityAccount } from "@pulse/domain";
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
 import { describe, expect, it } from "vitest";
 
-import { DrizzleIdentityRepository, type IdentityDatabase } from "./repository.js";
+import { activeOperatorRoles, DrizzleIdentityRepository, type IdentityDatabase } from "./repository.js";
+import { identityUsers } from "./schema.js";
 
 // Regression guard for the CI-caught bug where a duplicate username registration returned 500
 // (INTERNAL_ERROR) instead of a friendly 409 USERNAME_UNAVAILABLE: isUniqueViolation only checked the
@@ -55,5 +58,29 @@ describe("DrizzleIdentityRepository.createRegisteredAccount unique-violation map
     const repo = new DrizzleIdentityRepository(dbThatThrows(other));
     await expect(repo.createRegisteredAccount(ACCOUNT)).rejects.toThrow("connection terminated");
     await expect(repo.createRegisteredAccount(ACCOUNT)).rejects.not.toBeInstanceOf(AuthError);
+  });
+});
+
+// The operator-duty subquery is correlated against identity.users. Drizzle renders
+// an embedded column unqualified inside a subquery, and both tables carry an
+// `id`/`user_id`, so interpolating the column objects produced `"user_id" = "id"`
+// — a self-comparison within the grants table that matched nothing and reported
+// every operator as having no duties. postgres.js connects lazily, so rendering the
+// statement needs no database.
+describe("active operator duties subquery", () => {
+  const rendered = drizzle(postgres("postgres://verify@127.0.0.1:1/verify"))
+    .select({ isSuperAdmin: identityUsers.isSuperAdmin, roles: activeOperatorRoles })
+    .from(identityUsers)
+    .toSQL().sql;
+
+  it("correlates on the outer users row, fully qualified", () => {
+    expect(rendered).toContain('g.user_id = "identity"."users"."id"');
+    expect(rendered).not.toMatch(/"user_id"\s*=\s*"id"/);
+  });
+
+  it("reads only live grants, from the grants table under its own alias", () => {
+    expect(rendered).toContain("FROM identity.operator_role_grants g");
+    expect(rendered).toContain("g.revoked_at IS NULL");
+    expect(rendered).toContain("array_agg(g.role ORDER BY g.role)");
   });
 });

@@ -9,7 +9,7 @@ const request = (path: string, method = "GET", body?: unknown) => new Request(`h
 });
 
 function setup() {
-  const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }), authorizeSuperAdminAction: vi.fn().mockResolvedValue({ id: "admin-1" }) };
+  const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }), requireCapability: vi.fn().mockResolvedValue({ id: "operator-1" }), authorizeCapabilityAction: vi.fn().mockResolvedValue({ id: "admin-1" }) };
   const moderation = {
     reportRoom: vi.fn().mockResolvedValue({ reportId: "report-1", status: "OPEN" }),
     listReports: vi.fn().mockResolvedValue([]),
@@ -42,7 +42,7 @@ describe("moderation and privacy API", () => {
     const valid = setup();
     const response = await valid.handlers.moderateRoom(request("/api/v1/admin/rooms/room-1", "PATCH", { action: "RESTRICT", reason: "收到有效举报" }), "room-1");
     expect(response.status).toBe(200);
-    expect(valid.identity.authorizeSuperAdminAction).toHaveBeenCalledWith({ sessionToken: "token", proofToken: "proof-token" });
+    expect(valid.identity.authorizeCapabilityAction).toHaveBeenCalledWith({ sessionToken: "token", proofToken: "proof-token", capability: "ROOM_GOVERNANCE_WRITE" });
     expect(valid.moderation.moderateRoom).toHaveBeenCalledWith("admin-1", "room-1", "RESTRICT", "收到有效举报");
 
     const missing = setup();
@@ -65,7 +65,8 @@ describe("moderation and privacy API", () => {
   it("lists all rooms and requires re-auth before changing pre-match stake visibility", async () => {
     const valid = setup();
     expect((await valid.handlers.listRooms(request("/api/v1/admin/rooms"))).status).toBe(200);
-    expect(valid.moderation.listRooms).toHaveBeenCalledWith("user-1");
+    expect(valid.moderation.listRooms).toHaveBeenCalledWith("operator-1");
+    expect(valid.identity.requireCapability).toHaveBeenCalledWith("token", "ROOM_GOVERNANCE_READ");
     const response = await valid.handlers.updatePreMatchVisibility(request("/api/v1/admin/rooms/room-1/visibility", "PATCH", { preMatchStakeVisible: true }), "room-1");
     expect(response.status).toBe(200);
     expect(valid.moderation.updatePreMatchStakeVisibility).toHaveBeenCalledWith("admin-1", "room-1", true);

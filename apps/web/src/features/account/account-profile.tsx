@@ -6,7 +6,20 @@ import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { purgePrivateCaches } from "@/features/pwa/private-cache";
 
-type Profile = { id: string; username: string; nickname: string; roles?: string[] };
+type Profile = { id: string; username: string; nickname: string; roles?: string[]; operatorRoles?: string[]; capabilities?: string[] };
+
+/**
+ * Back-office entries the account page offers, each behind the capability its
+ * API requires. Hiding an entry is a courtesy, not a boundary: every route and
+ * every repository re-checks the same capability server-side per request.
+ */
+const OPERATOR_ENTRIES: Array<{ href: string; label: string; capability: string; primary?: boolean }> = [
+  { href: "/admin/users", label: "用户安全", capability: "USER_SECURITY_READ", primary: true },
+  { href: "/admin/moderation", label: "房间治理", capability: "ROOM_GOVERNANCE_READ" },
+  { href: "/admin/status", label: "运行状态", capability: "OPERATIONS_HEALTH_READ" },
+  { href: "/admin/operators", label: "运营职责", capability: "OPERATOR_ROLE_MANAGE" },
+];
+const ROLE_LABELS: Record<string, string> = { SUPER_ADMIN: "超级管理员", OPERATIONS_ADMIN: "运营管理员", COMMUNITY_MODERATOR: "社区协管员" };
 
 export function AccountProfile() {
   const [profile, setProfile] = useState<Profile>(); const [nickname, setNickname] = useState(""); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState(""); const [saved, setSaved] = useState(false); const [logoutPending, setLogoutPending] = useState(false); const [deletePending, setDeletePending] = useState(false);
@@ -17,6 +30,10 @@ export function AccountProfile() {
   if (loading) return <DataStatePanel state="loading" title="正在加载账户" description=""/>;
   if (!profile) return <DataStatePanel state="error" title="账户资料暂不可用" description={error || "请重新登录后重试。"}/>;
   const isAdmin = Boolean(profile.roles?.includes("super_admin"));
+  const capabilities = profile.capabilities ?? [];
+  const operatorEntries = OPERATOR_ENTRIES.filter((entry) => capabilities.includes(entry.capability));
+  const duties = (profile.operatorRoles ?? []).map((role) => ROLE_LABELS[role] ?? role);
+  const isOperator = duties.length > 0;
   return <div className="space-y-6">
     {/* 通行证：昵称是这页唯一属于本人的东西，让它当主体，用户名当证件号。 */}
     <section className="surface overflow-hidden" aria-label="会员通行证">
@@ -27,7 +44,7 @@ export function AccountProfile() {
         <p className="pulse-pass__name">{profile.nickname}</p>
         <div className="pulse-pass__foot">
           <p className="pulse-pass__no">NO. <b>{profile.username}</b></p>
-          <span className={`pulse-pass__stamp${isAdmin ? " pulse-pass__stamp--admin" : ""}`}><span>{isAdmin ? "超级管理员" : "普通用户"}</span></span>
+          <span className={`pulse-pass__stamp${isOperator ? " pulse-pass__stamp--admin" : ""}`}><span>{duties.length ? duties.join(" / ") : "普通用户"}</span></span>
         </div>
       </div>
     </section>
@@ -46,11 +63,13 @@ export function AccountProfile() {
           <p className="mt-2 text-xs text-[var(--muted)]">2–32 个字符</p>
           <button disabled={saving || nickname.trim() === profile.nickname} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[var(--field)] px-6 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{saving ? "正在保存…" : "保存昵称"}</button>
         </form>
-        {isAdmin && <div className="mt-8 border-t border-[var(--line)] pt-6">
-          <p className="eyebrow">ADMIN</p>
-          <h3 className="mt-1 font-bold">管理入口</h3>
-          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">注册由用户自助完成；管理员可在用户管理中禁用或恢复账户，在运行状态中查看系统异常。为保证账本不可篡改，超级管理员不能直接覆盖用户余额。</p>
-          <div className="mt-4 flex flex-wrap gap-3"><Link href="/admin/users" className="rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-bold text-white no-underline">用户管理</Link><Link href="/admin/status" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">运行状态</Link></div>
+        {isOperator && <div className="mt-8 border-t border-[var(--line)] pt-6">
+          <p className="eyebrow">OPERATIONS</p>
+          <h3 className="mt-1 font-bold">运营入口</h3>
+          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">这里只列出你已获授权的入口，每个接口仍会在服务端逐请求校验权限。为保证账本不可篡改，任何职责都不能覆盖用户余额、改动预测或账本流水。</p>
+          {operatorEntries.length
+            ? <div className="mt-4 flex flex-wrap gap-3">{operatorEntries.map((entry) => <Link key={entry.href} href={entry.href} className={entry.primary ? "rounded-full bg-[var(--ink)] px-4 py-2 text-sm font-bold text-white no-underline" : "rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline"}>{entry.label}</Link>)}</div>
+            : <p className="mt-4 text-sm text-[var(--muted)]">你当前的职责还没有对应的后台入口。</p>}
         </div>}
       </section>
 

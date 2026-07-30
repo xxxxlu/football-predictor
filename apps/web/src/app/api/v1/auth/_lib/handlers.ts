@@ -20,7 +20,7 @@ interface AuthService {
   login(input: { username: string; password: string; sourceKey: string; accessContext?: AccessContext }): Promise<{ sessionToken: string; expiresAt: Date; userId: string; mustChangePassword: boolean }>;
   logout(sessionToken: string): Promise<void>;
   recover(input: { username: string; recoveryCode: string; newPassword: string; sourceKey: string }): Promise<{ recoveryCode: string }>;
-  authenticate(sessionToken: string, allowPasswordChange?: boolean): Promise<{ id: string; usernameCanonical: string; status: string; isSuperAdmin: boolean; mustChangePassword: boolean } | null>;
+  authenticate(sessionToken: string, allowPasswordChange?: boolean): Promise<{ id: string; usernameCanonical: string; status: string; isSuperAdmin: boolean; mustChangePassword: boolean; operatorRoles?: string[] } | null>;
   changePassword(input: { sessionToken: string; currentPassword: string; newPassword: string }): Promise<{ sessionToken: string; expiresAt: Date; mustChangePassword: false }>;
   reauthenticate(input: { sessionToken: string; password: string }): Promise<{ proofToken: string; expiresAt: Date }>;
 }
@@ -85,7 +85,10 @@ export function createAuthHandlers(service: AuthService, options: { rulesVersion
       const token = readCookie(request.headers.get("cookie"), "fp_session");
       const account = token ? await service.authenticate(token, true) : null;
       if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
-      return json({ data: { user: { id: account.id, username: account.usernameCanonical, status: account.status, isSuperAdmin: account.isSuperAdmin, mustChangePassword: account.mustChangePassword } } });
+      // Duties travel with the session read so the app shell can hide entries an
+      // operator cannot use. Purely cosmetic — every API authorizes on its own.
+      const operatorRoles = [...(account.isSuperAdmin ? ["SUPER_ADMIN"] : []), ...(account.operatorRoles ?? [])];
+      return json({ data: { user: { id: account.id, username: account.usernameCanonical, status: account.status, isSuperAdmin: account.isSuperAdmin, mustChangePassword: account.mustChangePassword, operatorRoles } } });
     }),
   };
 }

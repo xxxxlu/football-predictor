@@ -2,6 +2,7 @@
 export const packageName = "@pulse/db" as const;
 export * from "./identity/schema.js";
 export * from "./identity/repository.js";
+export * from "./identity/operator-roles.js";
 export * from "./rooms/schema.js";
 export * from "./rooms/repository.js";
 export * from "./rooms/settlement-close.js";
@@ -15,6 +16,7 @@ export * from "./settlement/repository.js";
 export * from "./settlement/connection.js";
 export * from "./operations/repository.js";
 export * from "./operations/moderation-privacy.js";
+export * from "./operations/user-security.js";
 export * from "./operations/jobs.js";
 export * from "./f1/schema.js";
 export * from "./f1/repository.js";

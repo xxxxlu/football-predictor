@@ -104,10 +104,21 @@ describe("auth HTTP handlers", () => {
 
   it("resolves an active cookie without exposing credential hashes", async () => {
     const { handlers, service } = setup();
-    service.authenticate.mockResolvedValueOnce({ id: "user-1", usernameCanonical: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false, passwordHash: "secret", recoveryCodeHash: "secret" });
+    service.authenticate.mockResolvedValueOnce({ id: "user-1", usernameCanonical: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false, operatorRoles: [], passwordHash: "secret", recoveryCodeHash: "secret" });
     const response = await handlers.session(new Request("https://example.test/api/v1/auth/session", { headers: { cookie: "fp_session=opaque-token" } }));
     const payload = await response.json();
-    expect(payload).toEqual({ data: { user: { id: "user-1", username: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false } } });
+    expect(payload).toEqual({ data: { user: { id: "user-1", username: "alice", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false, operatorRoles: [] } } });
     expect(JSON.stringify(payload)).not.toContain("passwordHash");
+  });
+
+  it("reports the held operator duties so the shell can hide entries it cannot use", async () => {
+    const { handlers, service } = setup();
+    service.authenticate.mockResolvedValueOnce({ id: "user-2", usernameCanonical: "bob", status: "ACTIVE", isSuperAdmin: false, mustChangePassword: false, operatorRoles: ["OPERATIONS_ADMIN"] });
+    const operator = await (await handlers.session(new Request("https://example.test/api/v1/auth/session", { headers: { cookie: "fp_session=opaque-token" } }))).json();
+    expect(operator.data.user.operatorRoles).toEqual(["OPERATIONS_ADMIN"]);
+
+    service.authenticate.mockResolvedValueOnce({ id: "user-3", usernameCanonical: "root", status: "ACTIVE", isSuperAdmin: true, mustChangePassword: false, operatorRoles: [] });
+    const admin = await (await handlers.session(new Request("https://example.test/api/v1/auth/session", { headers: { cookie: "fp_session=opaque-token" } }))).json();
+    expect(admin.data.user.operatorRoles).toEqual(["SUPER_ADMIN"]);
   });
 });

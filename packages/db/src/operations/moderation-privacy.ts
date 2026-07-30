@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
+import { REDACTION_MARKER, type Capability } from "@pulse/domain";
+import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { OperationError } from "./repository.js";
 
 export type RoomModerationAction = "RESTRICT" | "CLOSE" | "RESTORE";
@@ -14,6 +16,33 @@ export function roomTransition(action: RoomModerationAction): ModeratedRoomStatu
 export function anonymousDisplayName(userId: string) { return `已删除用户-${userId.slice(0, 8)}`; }
 
 /**
+ * Removes an account's public identity while keeping the minimum ledger record
+ * intact (FR70). This is the ONLY anonymization implementation: the self-service
+ * flow below and the operator-handled request in user-security.ts both call it,
+ * so the two paths can never drift apart.
+ *
+ * It is not a delete. Rows stay, joins keep working, and the ledger stays
+ * verifiable — the identifying columns are overwritten with opaque values and
+ * every live session is revoked. A super-admin can never be anonymized.
+ */
+export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: string; actorUserId: string; auditId: string; privacyRequestId: string; occurredAt: string; reason?: string }) {
+  const [account] = await tx<Array<{ superAdmin: boolean; username: string }>>`
+    SELECT is_super_admin AS "superAdmin",username_canonical AS username FROM identity.users WHERE id=${input.userId} AND status='ACTIVE' FOR UPDATE`;
+  if (!account) throw new OperationError("TARGET_NOT_ANONYMIZABLE", 422);
+  if (account.superAdmin) throw new OperationError("FORBIDDEN", 403);
+
+  const opaque = createHash("sha256").update(`${input.userId}:${input.privacyRequestId}`).digest("hex");
+  const anonymizedName = anonymousDisplayName(input.userId);
+  await tx`UPDATE identity.users SET username_canonical=${`deleted-${input.userId}`},nickname=${anonymizedName},password_hash=${opaque},recovery_code_hash=${opaque},status='DISABLED',updated_at=${input.occurredAt} WHERE id=${input.userId}`;
+  await tx`UPDATE identity.auth_attempts SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
+  await tx`UPDATE identity.security_events SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
+  await tx`UPDATE identity.sessions SET revoked_at=${input.occurredAt} WHERE user_id=${input.userId} AND revoked_at IS NULL`;
+  await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
+    VALUES (${input.auditId},${input.actorUserId},'ACCOUNT_ANONYMIZED','USER',${input.userId},'SUCCESS',${JSON.stringify({ privacyRequestId: input.privacyRequestId, ...(input.reason ? { reason: input.reason } : {}) })}::text::jsonb,${input.occurredAt})`;
+  return { anonymizedName };
+}
+
+/**
  * Defensive secret redaction for governance audit metadata. Even though writers
  * are expected to persist only non-sensitive fields, this guarantees the admin
  * audit response never surfaces a token, password, recovery code, invite secret
@@ -25,11 +54,26 @@ export function redactAuditMetadata(value: unknown): unknown {
   if (value && typeof value === "object") {
     const output: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      output[key] = SENSITIVE_AUDIT_KEY.test(key) ? "[REDACTED]" : redactAuditMetadata(entry);
+      output[key] = SENSITIVE_AUDIT_KEY.test(key) ? REDACTION_MARKER : redactAuditMetadata(entry);
     }
     return output;
   }
   return value;
+}
+
+/**
+ * Audit metadata must be written as `${JSON.stringify(value)}::text::jsonb`.
+ * With a bare `::jsonb` cast, postgres.js infers a json parameter and encodes
+ * the string a second time, so the column ends up holding a jsonb *string*
+ * instead of an object. Rows written before that was fixed are still stored that
+ * way, so the reader below unwraps one level of encoding rather than showing an
+ * operator a blob of escaped JSON.
+ */
+function decodeAuditMetadata(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const text = value.trim();
+  if (!text.startsWith("{") && !text.startsWith("[")) return value;
+  try { return JSON.parse(text); } catch { return value; }
 }
 
 export type GovernanceAuditRow = { id: string; actor: string | null; action: string; target_type: string; target_id: string; result: string; metadata: unknown; occurred_at: DbTimestamp };
@@ -42,7 +86,7 @@ export function normalizeAuditEvent(row: GovernanceAuditRow) {
     targetType: row.target_type,
     targetId: row.target_id,
     result: row.result,
-    metadata: redactAuditMetadata(row.metadata ?? {}),
+    metadata: redactAuditMetadata(decodeAuditMetadata(row.metadata) ?? {}),
     occurredAt: timestampIso(row.occurred_at),
   };
 }
@@ -61,14 +105,14 @@ export class PostgresModerationPrivacyRepository {
         RETURNING id AS "reportId",status`;
       if (!inserted[0]) throw new OperationError("ROOM_NOT_FOUND", 404);
       await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-        VALUES (${auditId},${reporterUserId},'ROOM_REPORTED','ROOM',${roomId},'SUCCESS',${JSON.stringify({ reportId })}::jsonb,${now})`;
+        VALUES (${auditId},${reporterUserId},'ROOM_REPORTED','ROOM',${roomId},'SUCCESS',${JSON.stringify({ reportId })}::text::jsonb,${now})`;
       return inserted;
     });
     return rows[0];
   }
 
   async listReports(adminUserId: string) {
-    await this.assertSuperAdmin(adminUserId);
+    await this.assertCapability(adminUserId, "ROOM_REPORT_READ");
     const rows = await this.sql<Array<{ reportId: string; roomId: string; roomName: string; roomStatus: ModeratedRoomStatus; reporter: string; reason: string; status: string; createdAt: DbTimestamp; resolvedAt: DbTimestamp | null }>>`
       SELECT rp.id AS "reportId",rp.room_id AS "roomId",r.name AS "roomName",r.status AS "roomStatus",
         COALESCE(u.nickname,u.username_canonical) AS reporter,rp.reason,rp.status,rp.created_at AS "createdAt",rp.resolved_at AS "resolvedAt"
@@ -78,7 +122,7 @@ export class PostgresModerationPrivacyRepository {
   }
 
   async listRooms(adminUserId: string) {
-    await this.assertSuperAdmin(adminUserId);
+    await this.assertCapability(adminUserId, "ROOM_GOVERNANCE_READ");
     const rows = await this.sql<Array<{ roomId: string; name: string; status: ModeratedRoomStatus; memberCount: number; preMatchStakeVisible: boolean; postMatchTicketVisible: boolean }>>`
       SELECT r.id AS "roomId",r.name,r.status,COUNT(m.user_id)::int AS "memberCount",
         r.pre_match_stake_visible AS "preMatchStakeVisible",r.post_match_ticket_visible AS "postMatchTicketVisible"
@@ -91,26 +135,26 @@ export class PostgresModerationPrivacyRepository {
   async updatePreMatchStakeVisibility(adminUserId: string, roomId: string, visible: boolean) {
     const auditId = randomUUID(); const now = this.clock.now().toISOString();
     return this.sql.begin(async (tx) => {
-      const [admin] = await tx<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${adminUserId} AND status='ACTIVE' LIMIT 1`;
-      if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
+      await this.assertCapability(adminUserId, "ROOM_GOVERNANCE_WRITE", tx);
       const [room] = await tx<Array<{ previousValue: boolean }>>`SELECT pre_match_stake_visible AS "previousValue" FROM room.rooms WHERE id=${roomId} FOR UPDATE`;
       if (!room) throw new OperationError("ROOM_NOT_FOUND", 404);
       const [updated] = await tx<Array<{ roomId: string; preMatchStakeVisible: boolean }>>`
         UPDATE room.rooms SET pre_match_stake_visible=${visible},updated_at=${now} WHERE id=${roomId}
         RETURNING id AS "roomId",pre_match_stake_visible AS "preMatchStakeVisible"`;
       await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-        VALUES (${auditId},${adminUserId},'ROOM_PRE_MATCH_STAKE_VISIBILITY_UPDATED','ROOM',${roomId},'SUCCESS',${JSON.stringify({ previousValue: room.previousValue, newValue: visible })}::jsonb,${now})`;
+        VALUES (${auditId},${adminUserId},'ROOM_PRE_MATCH_STAKE_VISIBILITY_UPDATED','ROOM',${roomId},'SUCCESS',${JSON.stringify({ previousValue: room.previousValue, newValue: visible })}::text::jsonb,${now})`;
       return updated;
     });
   }
 
   async listAudit(adminUserId: string) {
-    await this.assertSuperAdmin(adminUserId);
+    await this.assertCapability(adminUserId, "AUDIT_READ");
     // Governance audit lives in three tables: ops.audit_events (reports, room
     // moderation, account anonymization), identity.admin_account_audit_events
-    // (account disable/restore) and room.audit_events (room create/join/invite
-    // reset). FR60 requires all of these to be reviewable, so merge them into a
-    // single non-repudiable, time-ordered trail before redaction.
+    // (account disable/restore, operator duty grant/revoke) and room.audit_events
+    // (room create/join/invite reset). FR60 requires all of these to be
+    // reviewable, so merge them into a single non-repudiable, time-ordered trail
+    // before redaction.
     const rows = await this.sql<GovernanceAuditRow[]>`
       SELECT merged.id, COALESCE(u.nickname, u.username_canonical) AS actor, merged.action,
         merged.target_type, merged.target_id, merged.result, merged.metadata, merged.occurred_at
@@ -118,7 +162,7 @@ export class PostgresModerationPrivacyRepository {
         SELECT a.id::text AS id, a.actor_user_id, a.action, a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
           FROM ops.audit_events a
         UNION ALL
-        SELECT e.audit_id::text, e.actor_user_id, e.action, 'USER'::text, e.target_user_id::text, e.result, '{}'::jsonb, e.occurred_at
+        SELECT e.audit_id::text, e.actor_user_id, e.action, 'USER'::text, e.target_user_id::text, e.result, e.metadata, e.occurred_at
           FROM identity.admin_account_audit_events e
         UNION ALL
         SELECT r.audit_id::text, r.actor_user_id, r.action, 'ROOM'::text, r.room_id::text, r.result, '{}'::jsonb, r.occurred_at
@@ -132,41 +176,41 @@ export class PostgresModerationPrivacyRepository {
   async moderateRoom(adminUserId: string, roomId: string, action: RoomModerationAction, reason: string) {
     const status = roomTransition(action); const auditId = randomUUID(); const now = this.clock.now().toISOString();
     return this.sql.begin(async (tx) => {
-      const [admin] = await tx<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${adminUserId} AND status='ACTIVE' LIMIT 1`;
-      if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
+      await this.assertCapability(adminUserId, "ROOM_GOVERNANCE_WRITE", tx);
       const updated = await tx<Array<{ roomId: string; status: ModeratedRoomStatus }>>`
         UPDATE room.rooms SET status=${status},updated_at=${now} WHERE id=${roomId} RETURNING id AS "roomId",status`;
       if (!updated[0]) throw new OperationError("ROOM_NOT_FOUND", 404);
       await tx`UPDATE room.reports SET status='RESOLVED',resolved_by=${adminUserId},resolution=${action},resolved_at=${now},updated_at=${now}
         WHERE room_id=${roomId} AND status='OPEN'`;
       await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-        VALUES (${auditId},${adminUserId},${`ROOM_${action}`},'ROOM',${roomId},'SUCCESS',${JSON.stringify({ reason, status })}::jsonb,${now})`;
+        VALUES (${auditId},${adminUserId},${`ROOM_${action}`},'ROOM',${roomId},'SUCCESS',${JSON.stringify({ reason, status })}::text::jsonb,${now})`;
       return updated[0];
     });
   }
 
+  /** Self-service account deletion: the holder raises the request and the system
+   *  completes the anonymization in the same transaction (FR70). */
   async deleteAccount(userId: string) {
     const now = this.clock.now().toISOString(); const requestId = randomUUID(); const auditId = randomUUID();
-    const anonymizedName = anonymousDisplayName(userId);
-    const opaque = createHash("sha256").update(`${userId}:${requestId}`).digest("hex");
     return this.sql.begin(async (tx) => {
-      const [account] = await tx<Array<{ superAdmin: boolean; username: string }>>`SELECT is_super_admin AS "superAdmin",username_canonical AS username FROM identity.users WHERE id=${userId} AND status='ACTIVE' FOR UPDATE`;
-      if (!account) throw new OperationError("UNAUTHENTICATED", 401);
-      if (account.superAdmin) throw new OperationError("FORBIDDEN", 403);
-      await tx`UPDATE identity.users SET username_canonical=${`deleted-${userId}`},nickname=${anonymizedName},password_hash=${opaque},recovery_code_hash=${opaque},status='DISABLED',updated_at=${now} WHERE id=${userId}`;
-      await tx`UPDATE identity.auth_attempts SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
-      await tx`UPDATE identity.security_events SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
-      await tx`UPDATE identity.sessions SET revoked_at=${now} WHERE user_id=${userId} AND revoked_at IS NULL`;
+      // The holder must be the one asking, so a missing account is an auth failure
+      // here rather than the "not anonymizable" the shared routine would report.
+      const [self] = await tx<Array<{ id: string }>>`SELECT id FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
+      if (!self) throw new OperationError("UNAUTHENTICATED", 401);
+      await anonymizeAccountWithin(tx, { userId, actorUserId: userId, auditId, privacyRequestId: requestId, occurredAt: now });
       await tx`INSERT INTO ops.privacy_requests (id,user_id,kind,status,requested_at,completed_at) VALUES (${requestId},${userId},'ACCOUNT_DELETION','COMPLETED',${now},${now})`;
-      await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-        VALUES (${auditId},${userId},'ACCOUNT_ANONYMIZED','USER',${userId},'SUCCESS',${JSON.stringify({ privacyRequestId: requestId })}::jsonb,${now})`;
       return { deleted: true as const, privacyRequestId: requestId };
     });
   }
 
-  private async assertSuperAdmin(userId: string) {
-    const [admin] = await this.sql<Array<{ allowed: boolean }>>`SELECT is_super_admin AS allowed FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
-    if (!admin?.allowed) throw new OperationError("FORBIDDEN", 403);
+  /**
+   * Repository-side capability gate. The API layer checks the same capability
+   * first; this is the second, independent check so no future caller can reach a
+   * governance read or write without the duty that covers it (FR81).
+   */
+  private async assertCapability(userId: string, capability: Capability, sql: OperatorSql = this.sql) {
+    const authorization = await readOperatorAuthorization(sql, userId);
+    if (!authorization.capabilities.includes(capability)) throw new OperationError("FORBIDDEN", 403);
   }
 }
 
