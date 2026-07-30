@@ -67,19 +67,28 @@ test("super admin disables and then restores a normal user", async ({ page }) =>
   await expect(page.getByText("API-FOOTBALL 日额度")).toBeVisible();
 
   // --- Disable the target user (step-up reauth), then confirm the audited status change. ---
+  // Story 11.2: the console asks for a written reason as well as the operator's own
+  // password, and the reason lands in the audit trail.
   await page.goto("/admin/users");
-  const targetRow = page.locator("li").filter({ hasText: targetUser });
+  const targetRow = page.getByRole("listitem").filter({ hasText: targetUser });
   await expect(targetRow).toBeVisible();
   await targetRow.getByRole("button", { name: "禁用账户" }).click();
   await expect(page.getByRole("heading", { name: new RegExp(`确认禁用 ${targetUser}`) })).toBeVisible();
+  await page.getByLabel("操作理由（写入审计）").fill("E2E 演练：账户安全复核");
   await page.getByLabel("当前管理员密码").fill(adminPassword);
   await page.getByRole("button", { name: "确认禁用" }).click();
-  await expect(page.getByText("账户状态已更新")).toBeVisible();
+  await expect(page.getByText("处置已记录")).toBeVisible();
   await expect(page.getByText(new RegExp(`${targetUser} 已禁用，审计编号`))).toBeVisible();
+
+  // --- The reason is readable back on that account's own governance timeline. ---
+  await targetRow.getByRole("button", { name: "概览" }).click();
+  await expect(page.getByRole("heading", { name: "操作时间线" })).toBeVisible();
+  await expect(page.getByText("E2E 演练：账户安全复核")).toBeVisible();
 
   // --- Restore it again. ---
   await targetRow.getByRole("button", { name: "恢复账户" }).click();
   await expect(page.getByRole("heading", { name: new RegExp(`确认恢复 ${targetUser}`) })).toBeVisible();
+  await page.getByLabel("操作理由（写入审计）").fill("E2E 演练：复核通过，恢复账户");
   await page.getByLabel("当前管理员密码").fill(adminPassword);
   await page.getByRole("button", { name: "确认恢复" }).click();
   await expect(page.getByText(new RegExp(`${targetUser} 已恢复，审计编号`))).toBeVisible();

@@ -264,7 +264,10 @@ const PENDING_COPY: Record<Pending["kind"], { verb: string; note: string }> = {
 
 function ConfirmPanel({ pending, busy, onSubmit, onCancel }: { pending: Pending; busy: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void }) {
   const copy = PENDING_COPY[pending.kind];
-  const title = pending.kind === "STATUS" ? `确认${pending.status === "DISABLED" ? "禁用" : "恢复"} ${pending.user.username}` : `确认对 ${pending.user.username} ${copy.verb}`;
+  // The confirm button names the action it is about to take — a generic "确认执行"
+  // on a panel that can disable an account is exactly the wrong place to be vague.
+  const verb = pending.kind === "STATUS" ? (pending.status === "DISABLED" ? "禁用" : "恢复") : copy.verb;
+  const title = pending.kind === "STATUS" ? `确认${verb} ${pending.user.username}` : `确认对 ${pending.user.username} ${verb}`;
   return <section className="surface border-2 border-[var(--ink)] p-5" aria-labelledby="admin-confirm-title">
     <h2 id="admin-confirm-title" className="display text-xl font-bold">{title}</h2>
     <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{copy.note}</p>
@@ -280,7 +283,7 @@ function ConfirmPanel({ pending, busy, onSubmit, onCancel }: { pending: Pending;
       </label>
       <p className="text-xs text-[var(--muted)]">身份确认结果最多有效 5 分钟，且只对后台接口生效。</p>
       <div className="flex flex-wrap gap-3">
-        <button disabled={busy} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--ink)] px-5 font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-50">{busy ? "正在确认…" : "确认执行"}</button>
+        <button disabled={busy} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--ink)] px-5 font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-50">{busy ? "正在确认…" : `确认${verb}`}</button>
         <button type="button" disabled={busy} onClick={onCancel} className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white">取消</button>
       </div>
     </form>
