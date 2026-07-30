@@ -20,14 +20,33 @@ describe("user security query parsing", () => {
     expect(parseUserSecurityQuery({})).toEqual({ search: "", status: "ALL", activity: "ALL", restriction: "ALL", minRooms: 0, limit: 100 });
   });
 
-  it("normalizes the username search the same way login does", () => {
+  it("keeps the search text intact, because the repository matches literally", () => {
     expect(parseUserSecurityQuery({ search: "  ALICE_01 " }).search).toBe("alice_01");
-    // Only characters a username can legally contain survive. `_` is legal and is
-    // kept, so the repository must match by literal containment, never LIKE —
-    // otherwise `_` would act as a single-character wildcard.
-    expect(parseUserSecurityQuery({ search: "a%b\\c'; drop--" }).search).toBe("abcdrop");
+    // Punctuation and quotes survive untouched: the repository matches by literal
+    // containment (`strpos`), never LIKE, and the value crosses as a bound
+    // parameter — so there is no wildcard or quote for them to become. `_` is a
+    // legal username character and must not be filtered either.
+    expect(parseUserSecurityQuery({ search: "a%b\\c'; drop--" }).search).toBe("a%b\\c'; drop--");
     expect(parseUserSecurityQuery({ search: "a_b" }).search).toBe("a_b");
     expect(parseUserSecurityQuery({ search: "a".repeat(200) }).search).toHaveLength(32);
+    // Control characters are the one thing removed. An inner space is not one of
+    // them: it survives and matches literally, rather than being silently closed
+    // up into a different search than the one that was typed.
+    expect(parseUserSecurityQuery({ search: "ali ce" }).search).toBe("ali ce");
+    expect(parseUserSecurityQuery({ search: `ali${String.fromCharCode(7)}ce` }).search).toBe("alice");
+  });
+
+  it("never turns a nickname search into an empty one, which would widen the read", () => {
+    // A nickname is unconstrained and is the name actually shown in the console, so
+    // searching it has to work. Stripping the value to `[a-z0-9_]` used to reduce
+    // this to "", which the roster query reads as "no search" and answers with
+    // every account — while the page still reported the result as filtered.
+    for (const search of ["张伟", "小明", "%%%", "Ünal"]) {
+      expect(parseUserSecurityQuery({ search }).search).not.toBe("");
+    }
+    expect(parseUserSecurityQuery({ search: "张伟" }).search).toBe("张伟");
+    // Whitespace-only input is genuinely "no search" and stays empty.
+    expect(parseUserSecurityQuery({ search: "   " }).search).toBe("");
   });
 
   it("accepts every documented filter value", () => {

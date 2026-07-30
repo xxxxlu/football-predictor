@@ -95,6 +95,21 @@ function readEnum<T extends string>(raw: string | null | undefined, allowed: rea
   return allowed.includes(raw as T) ? (raw as T) : invalid(field);
 }
 
+/**
+ * The roster search is a literal substring match against the username and the
+ * nickname, so the text needs no character filtering to be safe: `strpos` has no
+ * wildcard syntax and the value crosses as a bound parameter.
+ *
+ * It used to be stripped to `[a-z0-9_]`, which was not a guard but a silent
+ * widening. A nickname is unconstrained, so searching "张伟" — the name actually
+ * on screen — normalized to the empty string, which the query reads as "no
+ * search" and answers with the entire roster while the page still reports it as
+ * filtered. Only control characters are removed, and the length is capped.
+ */
+function readSearch(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\p{C}/gu, "").trim().toLowerCase().slice(0, MAX_SEARCH_LENGTH);
+}
+
 function readBoundedInteger(raw: string | null | undefined, field: string, min: number, max: number, fallback: number): number {
   if (raw === null || raw === undefined || raw === "") return fallback;
   if (!/^\d+$/.test(raw.trim())) return invalid(field);
@@ -109,9 +124,7 @@ function readBoundedInteger(raw: string | null | undefined, field: string, min: 
  */
 export function parseUserSecurityQuery(raw: Record<string, string | null | undefined>): UserSecurityQuery {
   return {
-    // Only the characters a username can contain survive, so the value can never
-    // carry a LIKE wildcard or control character into the query.
-    search: (raw.search ?? "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, MAX_SEARCH_LENGTH),
+    search: readSearch(raw.search),
     status: readEnum(raw.status, ACCOUNT_STATUS_FILTERS, "status"),
     activity: readEnum(raw.activity, ACTIVITY_FILTERS, "activity"),
     restriction: readEnum(raw.restriction, RESTRICTION_FILTERS, "restriction"),
@@ -171,6 +184,28 @@ export const FORBIDDEN_USER_SECURITY_KEYS = [
 const FORBIDDEN_KEY_SET = new Set<string>(FORBIDDEN_USER_SECURITY_KEYS);
 
 /**
+ * Words that make a key unsafe wherever they appear in it. An exact-name list on
+ * its own was not a ban but a spelling test: `authToken`, `refreshToken`,
+ * `apiKey` and `secretKey` all walked straight through one.
+ */
+const SECRET_WORD = /(password|passphrase|recoverycode|token|secret|credential|apikey|privatekey)/;
+
+/**
+ * Words banned as whole key segments rather than as substrings, so a key is not
+ * condemned by coincidence: `ip` occurs inside `description` and `recipient`,
+ * and `pick` inside `picked`. Compared in snake_case, so `lastIpAddress` and
+ * `last_ip_address` are the same key.
+ */
+const FORBIDDEN_SEGMENT =
+  /(^|_)(ip|address|lat|latitude|lng|longitude|geo|coord|coords|location|city|region|timezone|useragent|selection|selections|pick|picks|stake|odds|balance|ledger)(_|$)/;
+
+function isForbiddenUserSecurityKey(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (FORBIDDEN_KEY_SET.has(lower) || SECRET_WORD.test(lower.replace(/[^a-z0-9]/g, ""))) return true;
+  return FORBIDDEN_SEGMENT.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase());
+}
+
+/**
  * The placeholder audit redaction leaves behind. Shared with the redaction
  * routine so the two cannot drift: audit metadata legitimately keeps a
  * secret-like key name with its value replaced, and that carries no information.
@@ -193,9 +228,7 @@ export function assertSafeUserSecurityPayload(payload: unknown, path = "$"): voi
   }
   if (!payload || typeof payload !== "object" || payload instanceof Date) return;
   for (const [key, value] of Object.entries(payload as Record<string, unknown>)) {
-    const normalized = key.toLowerCase();
-    const banned = FORBIDDEN_KEY_SET.has(normalized) || /(passwordhash|recoverycode|tokenhash|sessiontoken)/.test(normalized.replace(/_/g, ""));
-    if (banned && value !== REDACTION_MARKER) {
+    if (isForbiddenUserSecurityKey(key) && value !== REDACTION_MARKER) {
       throw new Error(`User security projection must not expose "${key}" (at ${path}.${key})`);
     }
     assertSafeUserSecurityPayload(value, `${path}.${key}`);

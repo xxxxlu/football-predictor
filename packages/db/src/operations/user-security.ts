@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   activityBucket,
+  assertSafeUserSecurityPayload,
   summarizeLifecycle,
   type Capability,
   type GrantableOperatorRole,
@@ -9,7 +10,7 @@ import {
   type UserSecuritySummary,
 } from "@pulse/domain";
 import type postgres from "postgres";
-import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
+import { manageableAccountPredicate, readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { anonymizeAccountWithin, normalizeAuditEvent, type GovernanceAuditRow } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
 
@@ -40,7 +41,9 @@ export class PostgresUserSecurityRepository {
     const rows = await this.sql<RosterRow[]>`
       ${this.rosterSelect()}
       WHERE u.is_super_admin = false
-        AND (${query.search} = '' OR strpos(u.username_canonical, ${query.search}) > 0)
+        AND (${query.search} = ''
+          OR strpos(u.username_canonical, ${query.search}) > 0
+          OR strpos(lower(COALESCE(u.nickname, '')), ${query.search}) > 0)
         AND (${query.status} = 'ALL' OR u.status::text = ${query.status})
         AND COALESCE(m.room_count, 0) >= ${query.minRooms}
         AND (${query.restriction} = 'ALL'
@@ -49,7 +52,9 @@ export class PostgresUserSecurityRepository {
         AND ${this.activityPredicate(query)}
       ORDER BY s.last_seen_at DESC NULLS LAST, u.username_canonical ASC
       LIMIT ${query.limit}`;
-    return rows.map((row) => this.toSummary(row, now));
+    const users = rows.map((row) => this.toSummary(row, now));
+    assertSafeUserSecurityPayload(users);
+    return users;
   }
 
   async getUser(actorUserId: string, targetUserId: string): Promise<UserSecurityDetail> {
@@ -78,12 +83,12 @@ export class PostgresUserSecurityRepository {
           FROM ops.audit_events a WHERE a.target_type = 'USER' AND a.target_id = ${targetUserId}
       ) merged
       LEFT JOIN identity.users actor ON actor.id = merged.actor_user_id
-      ORDER BY merged.occurred_at DESC LIMIT 50`;
+      ORDER BY merged.occurred_at DESC, merged.id ASC LIMIT 50`;
     const [request] = await this.sql<Array<{ status: "RECEIVED" | "COMPLETED"; requestedAt: DbTimestamp; completedAt: DbTimestamp | null }>>`
       SELECT status, requested_at AS "requestedAt", completed_at AS "completedAt" FROM ops.privacy_requests
       WHERE user_id = ${targetUserId} AND kind = 'ACCOUNT_DELETION' ORDER BY requested_at DESC LIMIT 1`;
 
-    return {
+    const detail: UserSecurityDetail = {
       ...this.toSummary(row, now),
       registeredAt: timestampDate(row.registeredAt),
       operatorRoles: roles.map((entry) => entry.role),
@@ -93,6 +98,12 @@ export class PostgresUserSecurityRepository {
       }),
       anonymization: summarizeLifecycle(request ? { status: request.status, requestedAt: timestampDate(request.requestedAt), completedAt: request.completedAt ? timestampDate(request.completedAt) : null } : null, now),
     };
+    // The projection guard runs on the response, not only in tests. The audit
+    // metadata carried by the timeline is the one part of this payload no SELECT
+    // list constrains, so a future writer who stores a banned field here fails
+    // loudly instead of leaking it.
+    assertSafeUserSecurityPayload(detail);
+    return detail;
   }
 
   /**
@@ -104,8 +115,9 @@ export class PostgresUserSecurityRepository {
     const now = this.clock.now().toISOString(); const auditId = randomUUID();
     return this.sql.begin(async (tx) => {
       await this.assertCapability(actorUserId, "USER_SECURITY_WRITE", tx);
+      this.assertNotSelf(actorUserId, targetUserId);
       const [target] = await tx<Array<{ id: string }>>`
-        SELECT id FROM identity.users WHERE id=${targetUserId} AND is_super_admin = false FOR UPDATE`;
+        SELECT id FROM identity.users WHERE ${manageableAccountPredicate(tx, targetUserId)} FOR UPDATE`;
       if (!target) throw new OperationError("TARGET_NOT_MANAGEABLE", 422);
       const revoked = await tx<Array<{ userId: string }>>`
         UPDATE identity.sessions SET revoked_at=${now} WHERE user_id=${targetUserId} AND revoked_at IS NULL RETURNING user_id AS "userId"`;
@@ -120,8 +132,9 @@ export class PostgresUserSecurityRepository {
     const now = this.clock.now().toISOString(); const auditId = randomUUID(); const requestId = randomUUID();
     return this.sql.begin(async (tx) => {
       await this.assertCapability(actorUserId, "USER_SECURITY_WRITE", tx);
+      this.assertNotSelf(actorUserId, targetUserId);
       const [target] = await tx<Array<{ id: string }>>`
-        SELECT id FROM identity.users WHERE id=${targetUserId} AND is_super_admin = false AND status='ACTIVE' FOR UPDATE`;
+        SELECT id FROM identity.users WHERE ${manageableAccountPredicate(tx, targetUserId)} AND status='ACTIVE' FOR UPDATE`;
       if (!target) throw new OperationError("TARGET_NOT_MANAGEABLE", 422);
       try {
         await tx`INSERT INTO ops.privacy_requests (id,user_id,kind,status,requested_at,requested_by,reason)
@@ -143,6 +156,12 @@ export class PostgresUserSecurityRepository {
     const now = this.clock.now().toISOString(); const auditId = randomUUID();
     return this.sql.begin(async (tx) => {
       await this.assertCapability(actorUserId, "USER_SECURITY_WRITE", tx);
+      this.assertNotSelf(actorUserId, targetUserId);
+      // Re-checked here and not only at filing time: a duty can be granted to the
+      // subject after the request was recorded, and completion is irreversible.
+      const [target] = await tx<Array<{ id: string }>>`
+        SELECT id FROM identity.users WHERE ${manageableAccountPredicate(tx, targetUserId)} FOR UPDATE`;
+      if (!target) throw new OperationError("TARGET_NOT_MANAGEABLE", 422);
       const [request] = await tx<Array<{ id: string }>>`
         SELECT id FROM ops.privacy_requests
         WHERE id=${requestId} AND user_id=${targetUserId} AND kind='ACCOUNT_DELETION' AND status='RECEIVED' FOR UPDATE`;
@@ -197,7 +216,10 @@ export class PostgresUserSecurityRepository {
       LEFT JOIN (
         SELECT rr.created_by, COUNT(*) AS open_reports
         FROM room.reports rp JOIN room.rooms rr ON rr.id = rp.room_id
-        WHERE rp.status IN ('OPEN','ASSIGNED') GROUP BY rr.created_by
+        -- Room filings only. A message report is against the member who wrote it,
+        -- not against the room's owner: counting those here would charge an owner
+        -- for what their members say once Story 12.3 starts producing them.
+        WHERE rp.kind = 'ROOM' AND rp.status IN ('OPEN','ASSIGNED') GROUP BY rr.created_by
       ) r ON r.created_by = u.id`;
   }
 
@@ -237,6 +259,17 @@ export class PostgresUserSecurityRepository {
   private async assertCapability(userId: string, capability: Capability, sql: OperatorSql = this.sql) {
     const authorization = await readOperatorAuthorization(sql, userId);
     if (!authorization.capabilities.includes(capability)) throw new OperationError("FORBIDDEN", 403);
+  }
+
+  /**
+   * An operator may not aim this console at their own account, matching the
+   * self-change refusal on duty grants. Signing yourself out everywhere or
+   * anonymizing yourself is available through the account's own settings, where
+   * it is the holder's decision rather than an administrative act on a third
+   * party — and a self-disable would need the other super-admin to undo.
+   */
+  private assertNotSelf(actorUserId: string, targetUserId: string) {
+    if (actorUserId === targetUserId) throw new OperationError("TARGET_NOT_MANAGEABLE", 422);
   }
 }
 

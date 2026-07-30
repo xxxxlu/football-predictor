@@ -27,7 +27,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 import { readOperatorAuthorization, type OperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
-import { normalizeAuditEvent, type GovernanceAuditRow } from "./moderation-privacy.js";
+import { normalizeAuditEvent, type GovernanceAuditRow, type ModeratedRoomStatus } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
 
 type DbTimestamp = Date | string;
@@ -39,8 +39,9 @@ type ReportRow = {
 };
 
 type ReportTargetRow = {
-  reportId: string; kind: ReportKind; status: ReportStatus; reporterUserId: string;
-  roomId: string; roomName: string; roomOwnerId: string; messageId: string | null; subjectUserId: string | null;
+  reportId: string; kind: ReportKind; status: ReportStatus; reporterUserId: string; assignedTo: string | null;
+  roomId: string; roomName: string; roomStatus: ModeratedRoomStatus; roomOwnerId: string;
+  messageId: string | null; subjectUserId: string | null;
 };
 
 /**
@@ -140,7 +141,11 @@ export class PostgresGovernanceInboxRepository {
           updated_at = ${now}
         WHERE id = ${reportId}
         RETURNING id AS "reportId", status, severity`;
-      await this.audit(tx, { auditId, actorUserId, action: "REPORT_TRIAGED", targetId: reportId, occurredAt: now, metadata: { reportId, assigned: assignedTo === undefined ? "unchanged" : assignedTo ? "self" : "none", severity: updated!.severity } });
+      // Claiming a report someone else holds, or releasing their claim, is allowed
+      // — but it must not be silent. Recording who held it keeps the chain of
+      // responsibility readable after a takeover.
+      const takenFrom = assignedTo !== undefined && target.assignedTo && target.assignedTo !== actorUserId ? { takenFrom: target.assignedTo } : {};
+      await this.audit(tx, { auditId, actorUserId, action: "REPORT_TRIAGED", targetId: reportId, occurredAt: now, metadata: { reportId, assigned: assignedTo === undefined ? "unchanged" : assignedTo ? "self" : "none", severity: updated!.severity, ...takenFrom } });
       return { ...updated!, auditId };
     });
   }
@@ -173,17 +178,45 @@ export class PostgresGovernanceInboxRepository {
         case "CLOSE_ROOM":
         case "RESTORE_ROOM": {
           const roomStatus = roomStatusForDisposition(input.disposition);
+          // A disposition that leaves the room where it already is settles every
+          // open filing against it while changing nothing — "restore" on a room
+          // that was never restricted would empty the queue as a favour. Closing a
+          // report needs a decision that actually acts on what was reported.
+          if (roomStatus === target.roomStatus) throw new OperationError("ROOM_ALREADY_IN_STATE", 409);
           await tx`UPDATE room.rooms SET status = ${roomStatus}, updated_at = ${now} WHERE id = ${target.roomId}`;
           // One decision settles every open filing against that room, and each of
           // those reporters is told the outcome.
-          const siblings = await tx<Array<{ reporterUserId: string }>>`
+          const siblings = await tx<Array<{ reportId: string; reporterUserId: string }>>`
             UPDATE room.reports SET status = ${status}, resolved_by = ${actorUserId}, resolution = ${input.disposition},
               resolution_note = ${input.reason}, resolved_at = ${now}, updated_at = ${now}
             WHERE room_id = ${target.roomId} AND kind = 'ROOM' AND status IN ('OPEN','ASSIGNED')
-            RETURNING reporter_user_id AS "reporterUserId"`;
+            RETURNING id AS "reportId", reporter_user_id AS "reporterUserId"`;
           if (audience.includes("ROOM_OWNER")) note(target.roomOwnerId, "ROOM_OWNER");
           if (audience.includes("REPORTER")) for (const sibling of siblings) note(sibling.reporterUserId, "REPORTER");
-          details = { roomStatus, resolvedReports: siblings.length };
+          // Each filing closed along the way gets its own entry. The decision is
+          // audited once under the report it was taken on; without a row of their
+          // own, the other reports would read as "resolved" with nothing in their
+          // timeline explaining by what.
+          for (const sibling of siblings) {
+            if (sibling.reportId === reportId) continue;
+            await this.audit(tx, {
+              auditId: randomUUID(), actorUserId, action: `REPORT_${status}`, targetId: sibling.reportId, occurredAt: now,
+              metadata: { reportId: sibling.reportId, disposition: input.disposition, reason: input.reason, resolutionAuditId: auditId },
+            });
+          }
+          // The room's own status change is audited under the room, in the same
+          // vocabulary the room list writes (`ROOM_CLOSE` and friends). Without it
+          // a closure reached through a report would be invisible to a search by
+          // room and would not count as the high-risk action it is — the report
+          // entry below records the decision, this one records what it did.
+          const roomAuditId = randomUUID();
+          await this.audit(tx, {
+            auditId: roomAuditId, actorUserId, targetType: "ROOM",
+            action: `ROOM_${input.disposition.replace("_ROOM", "")}`,
+            targetId: target.roomId, occurredAt: now,
+            metadata: { reportId, roomStatus, reason: input.reason, resolutionAuditId: auditId },
+          });
+          details = { roomStatus, resolvedReports: siblings.length, roomAuditId };
           break;
         }
         case "HIDE_MESSAGE": {
@@ -231,8 +264,11 @@ export class PostgresGovernanceInboxRepository {
       }
 
       await this.audit(tx, { auditId, actorUserId, action: `REPORT_${status}`, targetId: reportId, occurredAt: now, metadata: { reportId, kind: target.kind, disposition: input.disposition, reason: input.reason, ...details } });
-      await this.notify(tx, { affected, kind: DISPOSITION_NOTICE_KIND[input.disposition], reportId, reason: input.reason, auditId, occurredAt: now, actorUserId });
-      return { reportId, status, disposition: input.disposition, notifiedUsers: affected.size, auditId };
+      // The count of notices written, not of accounts considered: the operator is
+      // skipped when they are also the owner or a reporter, and the console shows
+      // this number as "N members told".
+      const notifiedUsers = await this.notify(tx, { affected, kind: DISPOSITION_NOTICE_KIND[input.disposition], reportId, reason: input.reason, auditId, occurredAt: now, actorUserId });
+      return { reportId, status, disposition: input.disposition, notifiedUsers, auditId };
     });
   }
 
@@ -284,7 +320,13 @@ export class PostgresGovernanceInboxRepository {
             AND reporter_user_id=${input.reporterUserId} AND status IN ('OPEN','ASSIGNED') LIMIT 1`;
         throw existing ? new OperationError("REPORT_ALREADY_OPEN", 409) : new OperationError("ROOM_NOT_FOUND", 404);
       }
-      await this.audit(tx, { auditId, actorUserId: input.reporterUserId, action: "MESSAGE_REPORTED", targetId: reportId, occurredAt: now, metadata: { reportId, roomId: input.roomId } });
+      // The room goes in the target columns, not the metadata. `history()` returns
+      // metadata but not the target, so a `roomId` here would have handed the room
+      // identifier to a community moderator through this report's own timeline —
+      // exactly what the message projection withholds (FR83). Targeting the room
+      // keeps the filing findable when auditing that room, and the timeline still
+      // picks the row up by its `reportId` metadata.
+      await this.audit(tx, { auditId, actorUserId: input.reporterUserId, action: "MESSAGE_REPORTED", targetType: "ROOM", targetId: input.roomId, occurredAt: now, metadata: { reportId } });
       return inserted[0];
     });
   }
@@ -297,12 +339,19 @@ export class PostgresGovernanceInboxRepository {
     return rows.map((row) => ({ id: row.id, kind: row.kind, reason: row.reason, createdAt: timestampIso(row.createdAt), readAt: row.readAt ? timestampIso(row.readAt) : null }));
   }
 
+  /**
+   * Marking a notice read is idempotent: the first read stamps the time, a repeat
+   * returns the stamp already there. Only a notice that is missing or belongs to
+   * someone else is a 404 — reporting "already read" as "not found" made a double
+   * tap look like the notice had disappeared.
+   */
   async markNoticeRead(userId: string, noticeId: string) {
     const now = this.clock.now().toISOString();
-    const [updated] = await this.sql<Array<{ id: string }>>`
-      UPDATE ops.governance_notices SET read_at = ${now} WHERE id = ${noticeId} AND user_id = ${userId} AND read_at IS NULL RETURNING id`;
+    const [updated] = await this.sql<Array<{ id: string; readAt: DbTimestamp }>>`
+      UPDATE ops.governance_notices SET read_at = COALESCE(read_at, ${now})
+      WHERE id = ${noticeId} AND user_id = ${userId} RETURNING id, read_at AS "readAt"`;
     if (!updated) throw new OperationError("NOTICE_NOT_FOUND", 404);
-    return { id: updated.id, readAt: now };
+    return { id: updated.id, readAt: timestampIso(updated.readAt) };
   }
 
   /**
@@ -316,7 +365,8 @@ export class PostgresGovernanceInboxRepository {
     const visible = visibleReportKinds(authorization.capabilities);
     const [row] = await tx<ReportTargetRow[]>`
       SELECT rp.id AS "reportId", rp.kind, rp.status, rp.reporter_user_id AS "reporterUserId",
-        rp.room_id AS "roomId", r.name AS "roomName", r.created_by AS "roomOwnerId",
+        rp.assigned_to AS "assignedTo",
+        rp.room_id AS "roomId", r.name AS "roomName", r.status AS "roomStatus", r.created_by AS "roomOwnerId",
         rp.message_id AS "messageId", rp.subject_user_id AS "subjectUserId"
       FROM room.reports rp JOIN room.rooms r ON r.id = rp.room_id
       WHERE rp.id = ${reportId} FOR UPDATE OF rp`;
@@ -325,20 +375,24 @@ export class PostgresGovernanceInboxRepository {
     return row;
   }
 
+  /** Returns how many notices were actually written, which is what the console reports. */
   private async notify(tx: OperatorSql, input: { affected: Map<string, NoticeAudienceRole>; kind: GovernanceNoticeKind; reportId: string; reason: string; auditId: string; occurredAt: string; actorUserId: string }) {
+    let notified = 0;
     for (const [userId, role] of input.affected) {
       // The operator does not need to be told about their own decision.
       if (userId === input.actorUserId) continue;
       await tx`INSERT INTO ops.governance_notices (id,user_id,kind,audience_role,report_id,reason,audit_id,created_at)
         VALUES (${randomUUID()},${userId},${input.kind},${role},${input.reportId},${input.reason},${input.auditId},${input.occurredAt})`;
+      notified++;
     }
+    return notified;
   }
 
-  private async audit(tx: OperatorSql, input: { auditId: string; actorUserId: string; action: string; targetId: string; occurredAt: string; metadata: Record<string, unknown> }) {
+  private async audit(tx: OperatorSql, input: { auditId: string; actorUserId: string; action: string; targetId: string; occurredAt: string; metadata: Record<string, unknown>; targetType?: "REPORT" | "ROOM" }) {
     // `::text::jsonb`, never a bare `::jsonb`: postgres.js would encode the JSON
     // a second time and store a jsonb *string*, breaking metadata->>'reportId'.
     await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-      VALUES (${input.auditId},${input.actorUserId},${input.action},'REPORT',${input.targetId},'SUCCESS',${JSON.stringify(input.metadata)}::text::jsonb,${input.occurredAt})`;
+      VALUES (${input.auditId},${input.actorUserId},${input.action},${input.targetType ?? "REPORT"},${input.targetId},'SUCCESS',${JSON.stringify(input.metadata)}::text::jsonb,${input.occurredAt})`;
   }
 
   /**
@@ -407,16 +461,21 @@ export class PostgresGovernanceInboxRepository {
   /** This report's own trail, oldest first, so the operator reads it as a story. */
   private async history(reportId: string): Promise<ReportHistoryEntry[]> {
     const legacy = `%"reportId":"${reportId}"%`;
+    // Selected newest-first so the cap drops the oldest events, then reversed for
+    // reading. Ordering ASC before the LIMIT threw away the most recent
+    // dispositions — the part of the trail an operator actually came for.
     const rows = await this.sql<GovernanceAuditRow[]>`
-      SELECT a.id::text AS id, COALESCE(u.nickname, u.username_canonical) AS actor, a.action,
-        a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
-      FROM ops.audit_events a LEFT JOIN identity.users u ON u.id = a.actor_user_id
-      WHERE (a.target_type = 'REPORT' AND a.target_id = ${reportId})
-        OR (jsonb_typeof(a.metadata) = 'object' AND a.metadata->>'reportId' = ${reportId})
-        -- Filings written before the double-encoding fix stored the object as a
-        -- jsonb string; match those too rather than losing the first event.
-        OR (jsonb_typeof(a.metadata) = 'string' AND a.metadata #>> '{}' LIKE ${legacy})
-      ORDER BY a.occurred_at ASC LIMIT 50`;
+      SELECT * FROM (
+        SELECT a.id::text AS id, COALESCE(u.nickname, u.username_canonical) AS actor, a.action,
+          a.target_type, a.target_id, a.result, a.metadata, a.occurred_at
+        FROM ops.audit_events a LEFT JOIN identity.users u ON u.id = a.actor_user_id
+        WHERE (a.target_type = 'REPORT' AND a.target_id = ${reportId})
+          OR (jsonb_typeof(a.metadata) = 'object' AND a.metadata->>'reportId' = ${reportId})
+          -- Filings written before the double-encoding fix stored the object as a
+          -- jsonb string; match those too rather than losing the first event.
+          OR (jsonb_typeof(a.metadata) = 'string' AND a.metadata #>> '{}' LIKE ${legacy})
+        ORDER BY a.occurred_at DESC, a.id ASC LIMIT 50
+      ) recent ORDER BY recent.occurred_at ASC, recent.id ASC`;
     return rows.map((row) => {
       const normalized = normalizeAuditEvent(row);
       return { id: normalized.id, action: normalized.action, actor: normalized.actor, result: normalized.result, metadata: normalized.metadata, occurredAt: new Date(normalized.occurredAt) };

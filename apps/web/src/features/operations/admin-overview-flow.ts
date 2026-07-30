@@ -74,9 +74,13 @@ const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
  * Serializes only the filters that actually narrow the trail, so the default view
  * has a clean URL.
  *
- * A `<input type="date">` yields a bare day. Sent as-is it would mean midnight,
- * so an operator asking for "up to the 30th" would silently lose that whole day —
- * the bounds are widened to the full day the operator actually picked.
+ * A `<input type="date">` yields a bare day. Sent as-is it would mean midnight, so
+ * an operator asking for "up to the 30th" would silently lose that whole day. The
+ * day is widened to its own boundaries **in the operator's timezone**, because the
+ * timestamps on screen are rendered in that timezone too: a UTC+8 reviewer picking
+ * the 30th means their 30th, not 08:00 on the 30th through 08:00 on the 31st. The
+ * upper bound is the start of the following day and the server treats it as
+ * exclusive, so the whole picked day is covered to the microsecond.
  */
 export function buildAuditQuery(filters: AuditFilters): string {
   const params = new URLSearchParams();
@@ -84,12 +88,18 @@ export function buildAuditQuery(filters: AuditFilters): string {
     const current = String(value).trim();
     if (current === "" || current === "ALL") continue;
     if (DATE_ONLY.test(current) && (key === "from" || key === "to")) {
-      params.set(key, `${current}T${key === "from" ? "00:00:00.000Z" : "23:59:59.999Z"}`);
+      params.set(key, localDayBoundary(current, key === "to").toISOString());
       continue;
     }
     params.set(key, current);
   }
   return params.toString();
+}
+
+/** Local midnight of a bare `YYYY-MM-DD`, or of the day after it for an end bound. */
+function localDayBoundary(day: string, next: boolean): Date {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return new Date(year, month - 1, date + (next ? 1 : 0), 0, 0, 0, 0);
 }
 
 export async function loadOverview(fetcher: Fetcher = fetch): Promise<OperationsOverview> {
@@ -145,9 +155,28 @@ export async function retryJob(fetcher: Fetcher = fetch, input: { jobId: string;
   return result.data;
 }
 
+/**
+ * A failed read, carrying the status so the console can tell "this duty is not
+ * yours" apart from "this request did not get through". Rendering the second as
+ * the first would tell an operator they lack a permission they actually hold.
+ */
+export class OverviewRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = "OverviewRequestError";
+  }
+}
+
+/** A refusal about permission — as opposed to a transport or server failure. */
+export function isRefusal(error: unknown): boolean {
+  return error instanceof OverviewRequestError && (error.status === 401 || error.status === 403);
+}
+
 async function read<T>(fetcher: Fetcher, path: string, failure: string): Promise<T> {
   const response = await fetcher(path, { credentials: "same-origin", cache: "no-store" });
   const result = await response.json().catch(() => ({})) as Failure & { data?: T };
-  if (!response.ok || result.data === undefined) throw new Error(result.error?.message || failure);
+  if (!response.ok || result.data === undefined) {
+    throw new OverviewRequestError(result.error?.message || failure, response.status);
+  }
   return result.data;
 }

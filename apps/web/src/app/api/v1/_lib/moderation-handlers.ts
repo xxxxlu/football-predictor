@@ -2,10 +2,12 @@ import { OperationError, type RoomModerationAction } from "@pulse/db";
 import { AuthError, type Capability } from "@pulse/domain";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../auth/_lib/handlers";
+import { governanceReason } from "./reason";
 import { assertSameOrigin } from "./request-origin";
 
-const reportSchema = z.object({ reason: z.string().trim().min(10).max(500) }).strict();
-const moderationSchema = z.object({ action: z.enum(["RESTRICT", "CLOSE", "RESTORE"]), reason: z.string().trim().min(5).max(500) }).strict();
+// `room.reports.reason` is CHECKed at 10-500, the moderation note at 5-500.
+const reportSchema = z.object({ reason: governanceReason(10) }).strict();
+const moderationSchema = z.object({ action: z.enum(["RESTRICT", "CLOSE", "RESTORE"]), reason: governanceReason() }).strict();
 const visibilitySchema = z.object({ preMatchStakeVisible: z.boolean() }).strict();
 const deleteSchema = z.object({ confirmation: z.literal("DELETE") }).strict();
 
@@ -47,7 +49,11 @@ export function createModerationHandlers(identity: Identity, moderation: Moderat
       assertSameOrigin(request); const id = await user(request); const input = reportSchema.parse(await request.json());
       return json({ data: await moderation.reportRoom(roomId, id, input.reason) }, 201);
     }),
-    listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await governanceReader(request, "ROOM_REPORT_READ")) })),
+    // Room filings, not the shared queue: this read is not narrowed by report kind
+    // and hands back room identity, so it needs the room-side duty. ROOM_REPORT_READ
+    // is the governance inbox's shared key (Story 11.3) and a community moderator
+    // holds it — gating this route on it would let them enumerate every room.
+    listReports: (request: Request) => execute(async () => json({ data: await moderation.listReports(await governanceReader(request, "ROOM_GOVERNANCE_READ")) })),
     listRooms: (request: Request) => execute(async () => json({ data: await moderation.listRooms(await governanceReader(request, "ROOM_GOVERNANCE_READ")) })),
     moderateRoom: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const input = moderationSchema.parse(await request.json());

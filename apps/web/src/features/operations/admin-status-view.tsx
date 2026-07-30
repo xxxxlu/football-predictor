@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
 import { GovernanceConfirmPanel } from "./admin-governance-view";
@@ -12,6 +12,7 @@ import {
   TARGET_LABELS,
   auditActionLabel,
   cardLabel,
+  isRefusal,
   loadAudit,
   loadFailedJobs,
   loadOverview,
@@ -56,8 +57,10 @@ export function AdminStatusView() {
   const [applied, setApplied] = useState<AuditFilters>(initialFilters);
   const [reloadToken, setReloadToken] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [forbidden, setForbidden] = useState(false);
+  const [failure, setFailure] = useState<Error>();
   const [pending, setPending] = useState<FailedJob>();
+  const [auditError, setAuditError] = useState("");
+  const jumped = useRef(initialFilters().correlationId !== "");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [busy, setBusy] = useState(false);
@@ -65,15 +68,36 @@ export function AdminStatusView() {
   useEffect(() => {
     let active = true;
     loadOverview().then(
-      (result) => { if (!active) return; setOverview(result); setLoading(false); },
-      (reason: Error) => { if (!active) return; setForbidden(true); setError(reason.message); setLoading(false); },
+      (result) => { if (!active) return; setOverview(result); setFailure(undefined); setLoading(false); },
+      (reason: Error) => { if (!active) return; setFailure(reason); setLoading(false); },
     );
     // A refused section stays undefined and renders nothing: a duty an operator
-    // does not hold is not an error worth shouting about.
-    void loadFailedJobs().then((result) => { if (active) setJobs(result); }, () => undefined);
-    void loadAudit(fetch, applied).then((result) => { if (active) setAudit(result); }, () => undefined);
+    // does not hold is not an error worth shouting about. Anything that is *not* a
+    // refusal is surfaced, because a filter that came back 422 or a request that
+    // never arrived must not leave the previous results on screen under the new
+    // filters — an operator would read them as the answer to what they just asked.
+    void loadFailedJobs().then(
+      (result) => { if (active) setJobs(result); },
+      (reason: Error) => { if (active && !isRefusal(reason)) setError(reason.message); },
+    );
+    void loadAudit(fetch, applied).then(
+      (result) => { if (active) { setAudit(result); setAuditError(""); } },
+      (reason: Error) => {
+        if (!active || isRefusal(reason)) return;
+        setAudit([]); setAuditError(reason.message);
+      },
+    );
     return () => { active = false; };
   }, [reloadToken, applied]);
+
+  // NFR37: an audit number arriving as ?audit=<id> has to be looked at, not just
+  // loaded. The section does not exist while the trail is still in flight, so the
+  // browser cannot honour the #audit fragment on its own.
+  useEffect(() => {
+    if (audit === undefined || !jumped.current) return;
+    jumped.current = false;
+    document.getElementById("audit")?.scrollIntoView({ block: "start" });
+  }, [audit]);
 
   async function confirmRetry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -94,9 +118,17 @@ export function AdminStatusView() {
   }
 
   if (loading) return <DataStatePanel state="loading" title="正在加载运营总览" description=""/>;
-  if (forbidden || !overview) {
-    return <DataStatePanel state="forbidden" title="没有查看运营总览的权限"
-      description={error || "此页面只对持有运营职责的账户开放。系统不会向普通用户或房主返回运营数据。"}/>;
+  // A refusal is a permanent answer about this account; anything else is a failure
+  // that may well succeed on the next try, so it says so and offers that try.
+  if (!overview) {
+    return isRefusal(failure)
+      ? <DataStatePanel state="forbidden" title="没有查看运营总览的权限"
+          description={failure?.message || "此页面只对持有运营职责的账户开放。系统不会向普通用户或房主返回运营数据。"}/>
+      : <DataStatePanel state="error" title="无法加载运营总览"
+          description={failure?.message || "请稍后重试。"}
+          action={<button type="button"
+            onClick={() => { setLoading(true); setFailure(undefined); setReloadToken((token) => token + 1); }}
+            className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white">重试</button>}/>;
   }
 
   return <div className="space-y-6">
@@ -177,7 +209,9 @@ export function AdminStatusView() {
         </div>
       </form>
 
-      {audit.length === 0
+      {auditError && <div className="mt-5"><StatusMessage tone="error" title="筛选未生效">{auditError}</StatusMessage></div>}
+
+      {auditError ? null : audit.length === 0
         ? <p className="mt-5 text-sm text-[var(--muted)]">没有符合当前筛选条件的审计记录。</p>
         : <ul className="mt-5 divide-y divide-[var(--line)]">{audit.map((event) => <li key={event.id} className="py-3 text-sm">
           <div className="flex flex-wrap items-baseline gap-2">

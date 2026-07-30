@@ -344,9 +344,23 @@ function isUuid(value: string) {
  * Every governance write carries an operator-authored justification (FR81/FR90).
  * Bounds match the room moderation reason so one rule covers the whole console.
  */
+export const GOVERNANCE_REASON_MIN = 5;
+export const GOVERNANCE_REASON_MAX = 500;
+
+/**
+ * Counts characters the way the database does. Postgres `char_length` counts code
+ * points; `String.length` counts UTF-16 units and sees three emoji as six. Using
+ * the JS count let a three-character reason satisfy a minimum of five here and
+ * then violate the identical CHECK constraint, turning a refusal into a 500.
+ */
+export function governanceReasonLength(reason: string): number {
+  return [...reason].length;
+}
+
 export function assertGovernanceReason(reason: unknown) {
   const trimmed = typeof reason === "string" ? reason.trim() : "";
-  if (trimmed.length < 5 || trimmed.length > 500) {
+  const length = governanceReasonLength(trimmed);
+  if (length < GOVERNANCE_REASON_MIN || length > GOVERNANCE_REASON_MAX) {
     throw new AuthError("REASON_REQUIRED", 422, "Give a reason between 5 and 500 characters.");
   }
   return trimmed;

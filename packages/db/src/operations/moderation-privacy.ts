@@ -47,14 +47,28 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
  * are expected to persist only non-sensitive fields, this guarantees the admin
  * audit response never surfaces a token, password, recovery code, invite secret
  * or proof — satisfying FR54/NFR41 regardless of what a future writer stores.
+ *
+ * Precise location is on the same list (AC4 of Story 11.4 names it). Location keys
+ * are matched as whole words, not as substrings: `ip` occurs inside `description`
+ * and `recipient`, and redacting an operator's own written reason would be worse
+ * than the leak it was guarding against. Keys are compared in snake_case so a
+ * camelCase `reporterIpAddress` and a snake_case `reporter_ip_address` are the
+ * same key.
  */
 const SENSITIVE_AUDIT_KEY = /(token|password|secret|recovery|invite|proof|hash|credential|otp|apikey|api_key)/i;
+const LOCATION_AUDIT_KEY = /(^|_)(ip|address|lat|latitude|lng|longitude|geo|coord|coords|location|placename)(_|$)/;
+
+function isSensitiveAuditKey(key: string): boolean {
+  if (SENSITIVE_AUDIT_KEY.test(key)) return true;
+  const snake = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
+  return LOCATION_AUDIT_KEY.test(snake);
+}
 export function redactAuditMetadata(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(redactAuditMetadata);
   if (value && typeof value === "object") {
     const output: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      output[key] = SENSITIVE_AUDIT_KEY.test(key) ? REDACTION_MARKER : redactAuditMetadata(entry);
+      output[key] = isSensitiveAuditKey(key) ? REDACTION_MARKER : redactAuditMetadata(entry);
     }
     return output;
   }
@@ -110,7 +124,12 @@ export function normalizeAuditEvent(row: GovernanceAuditRow) {
  * runtime instruments Date, which defeats postgres.js's instanceof-based type
  * inference and throws ERR_INVALID_ARG_TYPE.
  */
-export async function listGovernanceAudit(sql: postgres.Sql, query: AuditQuery) {
+export async function listGovernanceAudit(sql: postgres.Sql, actorUserId: string, query: AuditQuery) {
+  // The gate lives with the read rather than at the one call site that exists
+  // today: this function is the whole platform-wide trail, so any future importer
+  // has to arrive holding AUDIT_READ instead of remembering to check first.
+  const authorization = await readOperatorAuthorization(sql, actorUserId);
+  if (!authorization.capabilities.includes("AUDIT_READ")) throw new OperationError("FORBIDDEN", 403);
   const actions = resolveAuditActions(query);
   const actionPredicate = actions.length === 0 ? sql`true` : sql`merged.action = ANY(${actions as string[]})`;
   const actorPredicate = query.actor === ""
@@ -120,7 +139,10 @@ export async function listGovernanceAudit(sql: postgres.Sql, query: AuditQuery) 
   const targetIdPredicate = query.targetId === "" ? sql`true` : sql`merged.target_id = ${query.targetId}`;
   const resultPredicate = query.result === "ALL" ? sql`true` : sql`merged.result = ${query.result}`;
   const fromPredicate = query.from === null ? sql`true` : sql`merged.occurred_at >= ${query.from.toISOString()}::timestamptz`;
-  const toPredicate = query.to === null ? sql`true` : sql`merged.occurred_at <= ${query.to.toISOString()}::timestamptz`;
+  // Exclusive upper bound: `occurred_at` is microsecond precision, so an
+  // inclusive bound built from a millisecond literal would drop the last
+  // sub-millisecond of the range an operator asked for.
+  const toPredicate = query.to === null ? sql`true` : sql`merged.occurred_at < ${query.to.toISOString()}::timestamptz`;
   // NFR37: the correlation id is the audit id itself, so a report timeline or a
   // member notice can hand an operator one identifier that resolves to one entry.
   const correlationPredicate = query.correlationId === "" ? sql`true` : sql`merged.id = ${query.correlationId}`;
@@ -167,7 +189,8 @@ export class PostgresModerationPrivacyRepository {
   }
 
   async listReports(adminUserId: string) {
-    await this.assertCapability(adminUserId, "ROOM_REPORT_READ");
+    // Room-side duty, not the inbox's shared ROOM_REPORT_READ key: see the route.
+    await this.assertCapability(adminUserId, "ROOM_GOVERNANCE_READ");
     const rows = await this.sql<Array<{ reportId: string; roomId: string; roomName: string; roomStatus: ModeratedRoomStatus; reporter: string; reason: string; status: string; createdAt: DbTimestamp; resolvedAt: DbTimestamp | null }>>`
       SELECT rp.id AS "reportId",rp.room_id AS "roomId",r.name AS "roomName",r.status AS "roomStatus",
         COALESCE(u.nickname,u.username_canonical) AS reporter,rp.reason,rp.status,rp.created_at AS "createdAt",rp.resolved_at AS "resolvedAt"
@@ -216,11 +239,22 @@ export class PostgresModerationPrivacyRepository {
       if (!updated[0]) throw new OperationError("ROOM_NOT_FOUND", 404);
       // Same vocabulary as the governance inbox (Story 11.3): one decision closes
       // every open filing against the room, including the ones already claimed.
-      await tx`UPDATE room.reports SET status='RESOLVED',resolved_by=${adminUserId},resolution=${`${action}_ROOM`},
+      const resolved = await tx<Array<{ reportId: string }>>`
+        UPDATE room.reports SET status='RESOLVED',resolved_by=${adminUserId},resolution=${`${action}_ROOM`},
         resolution_note=${reason},resolved_at=${now},updated_at=${now}
-        WHERE room_id=${roomId} AND kind='ROOM' AND status IN ('OPEN','ASSIGNED')`;
+        WHERE room_id=${roomId} AND kind='ROOM' AND status IN ('OPEN','ASSIGNED')
+        RETURNING id AS "reportId"`;
       await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
-        VALUES (${auditId},${adminUserId},${`ROOM_${action}`},'ROOM',${roomId},'SUCCESS',${JSON.stringify({ reason, status })}::text::jsonb,${now})`;
+        VALUES (${auditId},${adminUserId},${`ROOM_${action}`},'ROOM',${roomId},'SUCCESS',${JSON.stringify({ reason, status, resolvedReports: resolved.length })}::text::jsonb,${now})`;
+      // A filing closed by a decision taken from the room list needs an entry of
+      // its own, the same as one closed from the governance inbox. The room-scoped
+      // row above is not reachable from a report's timeline, so without these the
+      // report would show as resolved with nothing recording what resolved it.
+      for (const report of resolved) {
+        await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
+          VALUES (${randomUUID()},${adminUserId},'REPORT_RESOLVED','REPORT',${report.reportId},'SUCCESS',
+          ${JSON.stringify({ reportId: report.reportId, disposition: `${action}_ROOM`, reason, resolutionAuditId: auditId })}::text::jsonb,${now})`;
+      }
       return updated[0];
     });
   }

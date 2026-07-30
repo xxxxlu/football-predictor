@@ -2,6 +2,7 @@ import { AuthError, parseUserSecurityQuery, type Capability, type UserSecurityQu
 import { OperationError } from "@pulse/db";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
+import { governanceReason } from "../../_lib/reason";
 import { assertSameOrigin } from "../../_lib/request-origin";
 
 /**
@@ -11,8 +12,8 @@ import { assertSameOrigin } from "../../_lib/request-origin";
  * fresh re-auth proof and a justification (NFR18). The console repository
  * re-checks the same capability, so no route is a single point of failure.
  */
-const statusSchema = z.object({ status: z.enum(["ACTIVE", "DISABLED"]), reason: z.string().trim().min(5).max(500) }).strict();
-const reasonSchema = z.object({ reason: z.string().trim().min(5).max(500) }).strict();
+const statusSchema = z.object({ status: z.enum(["ACTIVE", "DISABLED"]), reason: governanceReason() }).strict();
+const reasonSchema = z.object({ reason: governanceReason() }).strict();
 const uuidSchema = z.string().uuid();
 
 interface AdminIdentity {
@@ -75,9 +76,12 @@ export function createAdminIdentityHandlers(identity: AdminIdentity, console_: U
       const input = statusSchema.parse(await request.json());
       return json({ data: await identity.setAccountStatus({ actorSessionToken: session(request), proofToken, targetUserId: target(userId), status: input.status, reason: input.reason }) });
     }),
+    // Authorization comes before the body throughout: parsing first answered an
+    // unauthenticated, cross-origin caller with a field-level 422, which confirms
+    // the endpoint exists and reveals its validation rules.
     revokeSessions: (request: Request, userId: string) => execute(async () => {
-      const input = reasonSchema.parse(await request.json());
       const actorId = await writer(request, "USER_SECURITY_WRITE");
+      const input = reasonSchema.parse(await request.json());
       return json({ data: await console_.revokeSessions(actorId, target(userId), input.reason) });
     }),
     listAnonymizationRequests: (request: Request) => execute(async () => {
@@ -85,15 +89,15 @@ export function createAdminIdentityHandlers(identity: AdminIdentity, console_: U
       return json({ data: { requests: await console_.listAnonymizationRequests(actorId) } });
     }),
     fileAnonymizationRequest: (request: Request, userId: string) => execute(async () => {
-      const input = reasonSchema.parse(await request.json());
       const actorId = await writer(request, "USER_SECURITY_WRITE");
+      const input = reasonSchema.parse(await request.json());
       return json({ data: await console_.fileAnonymizationRequest(actorId, target(userId), input.reason) }, 201);
     }),
     completeAnonymizationRequest: (request: Request, userId: string, requestId: string) => execute(async () => {
+      const actorId = await writer(request, "USER_SECURITY_WRITE");
       const input = reasonSchema.parse(await request.json());
       const parsedRequest = uuidSchema.safeParse(requestId);
       if (!parsedRequest.success) throw new AuthError("ANONYMIZATION_REQUEST_NOT_OPEN", 409, "That anonymization request is not open.");
-      const actorId = await writer(request, "USER_SECURITY_WRITE");
       return json({ data: await console_.completeAnonymizationRequest(actorId, target(userId), parsedRequest.data, input.reason) });
     }),
   };

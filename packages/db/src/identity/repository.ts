@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, count, desc, eq, gt, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gt, isNull, notExists, or, sql } from "drizzle-orm";
 import { drizzle, type PostgresJsDatabase } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import { AuthError, hasCapability, operatorRolesOf, type AccessContext, type AccessEventKind, type AudienceDimension, type AuthAttemptKind, type GrantableOperatorRole, type IdentityAccount, type IdentityRepository, type OperatorRoleChangeOutcome, type OperatorRosterEntry } from "@pulse/domain";
@@ -115,8 +115,19 @@ export class DrizzleIdentityRepository implements IdentityRepository {
         .where(and(eq(identityUsers.id, input.actorUserId), eq(identityUsers.status, "ACTIVE")))
         .limit(1);
       if (!actor || !hasCapability(operatorRolesOf({ isSuperAdmin: actor.isSuperAdmin, operatorRoles: actor.roles ?? [] }), "USER_SECURITY_WRITE")) return false;
+      // Self-changes go through the account's own settings, as they do for duties.
+      if (input.actorUserId === input.targetUserId) return false;
+      // Ordinary accounts only. A colleague holding a live duty is out of reach:
+      // disabling them denies them every capability (readOperatorAuthorization
+      // requires an ACTIVE account), which would make one restricted duty a lever
+      // on another — a change reserved for OPERATOR_ROLE_MANAGE (FR80).
       const updated = await tx.update(identityUsers).set({ status: input.status, updatedAt: input.changedAt })
-        .where(and(eq(identityUsers.id, input.targetUserId), eq(identityUsers.isSuperAdmin, false)))
+        .where(and(
+          eq(identityUsers.id, input.targetUserId),
+          eq(identityUsers.isSuperAdmin, false),
+          notExists(tx.select({ one: sql`1` }).from(operatorRoleGrants)
+            .where(and(eq(operatorRoleGrants.userId, input.targetUserId), isNull(operatorRoleGrants.revokedAt)))),
+        ))
         .returning({ id: identityUsers.id });
       if (!updated.length) return false;
       if (input.status === "DISABLED") await tx.update(sessions).set({ revokedAt: input.changedAt }).where(and(eq(sessions.userId, input.targetUserId), isNull(sessions.revokedAt)));
@@ -130,7 +141,11 @@ export class DrizzleIdentityRepository implements IdentityRepository {
     const rows = await this.db
       .select({ id: identityUsers.id, username: identityUsers.usernameCanonical, status: identityUsers.status, isSuperAdmin: identityUsers.isSuperAdmin, roles: activeOperatorRoles })
       .from(identityUsers)
-      .orderBy(desc(identityUsers.isSuperAdmin), identityUsers.usernameCanonical);
+      .orderBy(desc(identityUsers.isSuperAdmin), identityUsers.usernameCanonical)
+      // Bounded like every other console read. This page renders a row with two
+      // buttons per account, so an unbounded scan of the whole user table is the
+      // first thing to degrade as the platform grows.
+      .limit(500);
     return rows.map((row) => ({ ...row, roles: row.roles ?? [] }));
   }
 
@@ -143,9 +158,16 @@ export class DrizzleIdentityRepository implements IdentityRepository {
    */
   async setOperatorRole(input: { actorUserId: string; targetUserId: string; role: GrantableOperatorRole; granted: boolean; changedAt: Date; auditId: string }): Promise<OperatorRoleChangeOutcome> {
     return this.db.transaction(async (tx) => {
-      const [actor] = await tx.select({ allowed: identityUsers.isSuperAdmin }).from(identityUsers)
-        .where(and(eq(identityUsers.id, input.actorUserId), eq(identityUsers.status, "ACTIVE"))).limit(1);
-      if (!actor?.allowed) return "ACTOR_FORBIDDEN";
+      // Checked as a capability, not as the `is_super_admin` flag. The two are
+      // equivalent today because only SUPER_ADMIN holds OPERATOR_ROLE_MANAGE, but
+      // the domain gate asks for the capability, and reading the flag here is the
+      // drift that let setNormalAccountStatus disagree with its own domain layer.
+      const [actor] = await tx
+        .select({ isSuperAdmin: identityUsers.isSuperAdmin, roles: activeOperatorRoles })
+        .from(identityUsers)
+        .where(and(eq(identityUsers.id, input.actorUserId), eq(identityUsers.status, "ACTIVE")))
+        .limit(1);
+      if (!actor || !hasCapability(operatorRolesOf({ isSuperAdmin: actor.isSuperAdmin, operatorRoles: actor.roles ?? [] }), "OPERATOR_ROLE_MANAGE")) return "ACTOR_FORBIDDEN";
       if (input.actorUserId === input.targetUserId) return "ACTOR_FORBIDDEN";
 
       const [target] = await tx.select({ isSuperAdmin: identityUsers.isSuperAdmin }).from(identityUsers)
@@ -156,7 +178,16 @@ export class DrizzleIdentityRepository implements IdentityRepository {
       if (input.granted) {
         const [existing] = await tx.select({ id: operatorRoleGrants.id }).from(operatorRoleGrants).where(activeGrant).limit(1);
         if (existing) return "UNCHANGED";
-        await tx.insert(operatorRoleGrants).values({ id: randomUUID(), userId: input.targetUserId, role: input.role, grantedBy: input.actorUserId, grantedAt: input.changedAt });
+        try {
+          await tx.insert(operatorRoleGrants).values({ id: randomUUID(), userId: input.targetUserId, role: input.role, grantedBy: input.actorUserId, grantedAt: input.changedAt });
+        } catch (error) {
+          // The read above and this insert are two statements, so two operators
+          // granting the same duty at once both get past the read and the partial
+          // unique index rejects the loser. That is the same outcome as the read
+          // having seen the row — an unchanged grant, not a server error.
+          if (!isUniqueViolation(error)) throw error;
+          return "UNCHANGED";
+        }
       } else {
         const revoked = await tx.update(operatorRoleGrants).set({ revokedAt: input.changedAt, revokedBy: input.actorUserId }).where(activeGrant).returning({ id: operatorRoleGrants.id });
         if (!revoked.length) return "UNCHANGED";

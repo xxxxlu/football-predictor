@@ -285,10 +285,22 @@ describe("unified audit trail", () => {
     }
   });
 
+  it("gates itself, not just its caller", async () => {
+    // The merged read is the whole platform-wide trail, so the capability check
+    // belongs to it: reaching it directly must not be a way around AUDIT_READ.
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    for (const authorization of [AS_OPS_ADMIN, AS_MODERATOR, AS_MEMBER]) {
+      await expect(listGovernanceAudit(fakeSql(responder(authorization), log), "ops-1", query()))
+        .rejects.toMatchObject({ code: "FORBIDDEN", status: 403 });
+    }
+    // Refused before the trail is touched, not after.
+    expect(log.queries.every((query) => query.includes("identity.operator_role_grants"))).toBe(true);
+  });
+
   it("merges all three audit tables", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
-    await listGovernanceAudit(fakeSql(() => [], log), query());
-    const merged = log.queries[0]!;
+    await listGovernanceAudit(fakeSql(responder(AS_SUPER_ADMIN), log), "root-1", query());
+    const merged = log.queries[1]!;
     for (const table of ["ops.audit_events", "identity.admin_account_audit_events", "room.audit_events"]) {
       expect(merged).toContain(table);
     }
@@ -297,34 +309,37 @@ describe("unified audit trail", () => {
 
   it("binds no action predicate when the trail is unfiltered", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
-    await listGovernanceAudit(fakeSql(() => [], log), query());
+    await listGovernanceAudit(fakeSql(responder(AS_SUPER_ADMIN), log), "root-1", query());
     // postgres.js cannot infer an element type for an empty array, so the
     // predicate has to disappear from the SQL rather than bind `= ANY('{}')`.
-    expect(log.queries[0]).not.toContain("merged.action = ANY");
+    expect(log.queries[1]).not.toContain("merged.action = ANY");
     expect(log.values).not.toContainEqual([]);
   });
 
   it("expands a group filter into its whole family", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
-    await listGovernanceAudit(fakeSql(() => [], log), query({ group: "ROLE" }));
-    expect(log.queries[0]).toContain("merged.action = ANY");
+    await listGovernanceAudit(fakeSql(responder(AS_SUPER_ADMIN), log), "root-1", query({ group: "ROLE" }));
+    expect(log.queries[1]).toContain("merged.action = ANY");
     expect(log.values).toContainEqual(["OPERATOR_ROLE_GRANTED", "OPERATOR_ROLE_REVOKED"]);
   });
 
   it("applies every documented filter dimension", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
-    await listGovernanceAudit(fakeSql(() => [], log), query({
+    await listGovernanceAudit(fakeSql(responder(AS_SUPER_ADMIN), log), "root-1", query({
       actor: "ops_admin", targetType: "ROOM", targetId: "room-1", action: "ROOM_CLOSE", group: "ROOM",
       result: "FAILURE", from: new Date("2026-07-01T00:00:00.000Z"), to: new Date("2026-07-30T00:00:00.000Z"),
       correlationId: "audit-1", limit: 25,
     }));
-    const sql = log.queries[0]!;
+    const sql = log.queries[1]!;
     expect(sql).toContain("strpos(COALESCE(u.username_canonical, ''),");
     expect(sql).toContain("merged.target_type =");
     expect(sql).toContain("merged.target_id =");
     expect(sql).toContain("merged.result =");
     expect(sql).toContain("merged.occurred_at >=");
-    expect(sql).toContain("merged.occurred_at <=");
+    // Exclusive upper bound: `occurred_at` is microsecond precision, so an
+    // inclusive bound built from a millisecond literal would clip the range.
+    expect(sql).toContain("merged.occurred_at <");
+    expect(sql).not.toContain("merged.occurred_at <=");
     expect(sql).toContain("merged.id =");
     expect(log.values).toContain("ops_admin");
     expect(log.values).toContain("audit-1");
@@ -335,7 +350,7 @@ describe("unified audit trail", () => {
   });
 
   it("redacts a secret a writer should never have stored", async () => {
-    const [event] = await listGovernanceAudit(fakeSql(() => [auditRow]), query());
+    const [event] = await listGovernanceAudit(fakeSql(responder(AS_SUPER_ADMIN, () => [auditRow])), "root-1", query());
     expect((event!.metadata as Record<string, unknown>).role).toBe("OPERATIONS_ADMIN");
     expect((event!.metadata as Record<string, unknown>).sessionToken).not.toBe("leaked");
     expect(event!.occurredAt).toBe("2026-07-30T09:00:00.000Z");

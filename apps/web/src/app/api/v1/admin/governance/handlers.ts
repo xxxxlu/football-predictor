@@ -14,6 +14,7 @@ import {
 import { OperationError } from "@pulse/db";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
+import { governanceReason } from "../../_lib/reason";
 import { assertSameOrigin } from "../../_lib/request-origin";
 
 /**
@@ -32,7 +33,7 @@ import { assertSameOrigin } from "../../_lib/request-origin";
 /** Governance write duties. The repository decides which one this report requires. */
 const GOVERNANCE_WRITE_CAPABILITIES = ["ROOM_GOVERNANCE_WRITE", "COMMUNITY_GOVERNANCE_WRITE"] as const satisfies readonly Capability[];
 
-const reasonField = z.string().trim().min(5).max(500);
+const reasonField = governanceReason();
 const resolutionSchema = z.object({
   disposition: z.enum(REPORT_DISPOSITIONS),
   reason: reasonField,
@@ -122,19 +123,22 @@ export function createGovernanceInboxHandlers(identity: GovernanceIdentity, inbo
       const actorId = await reader(request);
       return json({ data: await inbox.getReport(actorId, report(reportId)) });
     }),
+    // Authorize before reading the body throughout: parsing first answered an
+    // unauthenticated, cross-origin caller with field-level 422s, which let them
+    // enumerate the disposition vocabulary and the reason bounds without a session.
     triage: (request: Request, reportId: string) => execute(async () => {
-      const input = triageSchema.parse(await request.json());
       const actorId = await triager(request);
+      const input = triageSchema.parse(await request.json());
       return json({ data: await inbox.triageReport(actorId, report(reportId), input) });
     }),
     resolve: (request: Request, reportId: string) => execute(async () => {
-      const input = resolutionSchema.parse(await request.json());
       const actorId = await writer(request);
+      const input = resolutionSchema.parse(await request.json());
       return json({ data: await inbox.resolveReport(actorId, report(reportId), input) });
     }),
     liftMute: (request: Request, reportId: string) => execute(async () => {
-      const input = reasonSchema.parse(await request.json());
       const actorId = await writer(request);
+      const input = reasonSchema.parse(await request.json());
       return json({ data: await inbox.liftMute(actorId, report(reportId), input.reason) });
     }),
   };
@@ -170,6 +174,7 @@ const MESSAGES: Record<string, string> = {
   REAUTH_REQUIRED: "Confirm your password again before this operation.",
   REPORT_NOT_FOUND: "The requested report was not found.",
   REPORT_ALREADY_CLOSED: "That report has already been decided.",
+  ROOM_ALREADY_IN_STATE: "That room is already in the state this decision would set.",
   REPORT_TRANSITION_INVALID: "That report cannot move to the requested state.",
   MESSAGE_NOT_HIDDEN: "That message is not currently hidden.",
   MUTE_ALREADY_ACTIVE: "That member already has an active mute in this room.",

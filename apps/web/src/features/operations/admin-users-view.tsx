@@ -28,6 +28,8 @@ type Pending =
   | { kind: "ANONYMIZE_REQUEST"; user: ManagedUser }
   | { kind: "ANONYMIZE_COMPLETE"; user: ManagedUser; requestId: string };
 
+/** Mirrors the roster read's server-side default cap (`DEFAULT_LIMIT` in the domain). */
+const ROSTER_PAGE_SIZE = 100;
 const dateTime = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium", timeStyle: "short" });
 const day = new Intl.DateTimeFormat("zh-CN", { dateStyle: "medium" });
 
@@ -43,6 +45,7 @@ export function AdminUsersView() {
   const [detail, setDetail] = useState<ManagedUserDetail>();
   const [detailError, setDetailError] = useState("");
   const [queue, setQueue] = useState<AnonymizationRequest[]>([]);
+  const [queueError, setQueueError] = useState("");
   const [audience, setAudience] = useState<AudienceStats>();
   const [pending, setPending] = useState<Pending>();
   const [error, setError] = useState("");
@@ -61,8 +64,14 @@ export function AdminUsersView() {
 
   useEffect(() => {
     let active = true;
-    // The roster is the primary view; a queue failure must not blank it.
-    void loadAnonymizationQueue().then((data) => { if (active) setQueue(data); }, () => undefined);
+    // The roster is the primary view, so a queue failure must not blank it — but it
+    // must not vanish silently either. This queue is how a seven-day deadline
+    // (NFR22) is seen at all; swallowing the rejection would hide an overdue
+    // request behind an empty section that looks like "nothing to do".
+    void loadAnonymizationQueue().then(
+      (data) => { if (!active) return; setQueue(data); setQueueError(""); },
+      (reason: unknown) => { if (!active) return; setQueueError((reason as Error).message || "无法加载匿名化申请队列"); },
+    );
     return () => { active = false; };
   }, [reloadToken]);
 
@@ -130,6 +139,12 @@ export function AdminUsersView() {
       </form>
     </section>
 
+    {queueError !== "" && <section className="surface p-5" role="alert">
+      <p className="eyebrow">LIFECYCLE</p>
+      <h2 className="display mt-1 text-2xl font-bold">待处理匿名化申请未能加载</h2>
+      <p className="mt-2 text-sm text-[var(--muted)]">{queueError}　队列为空与加载失败不是一回事，请重新载入后再判断是否有逾期申请。</p>
+    </section>}
+
     {queue.length > 0 && <section className="surface p-5" aria-labelledby="anonymization-queue-title">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -161,7 +176,13 @@ export function AdminUsersView() {
           <h2 className="display text-2xl font-bold">用户列表</h2>
           <p className="mt-2 text-sm text-[var(--muted)]">禁用会同时结束该用户全部会话；单独撤销会话只结束当前设备，用户仍可重新登录。</p>
         </div>
-        <span className="text-xs text-[var(--muted)]">{queryHint ? `已筛选 · ${users.length} 个结果` : `共 ${users.length} 个`}</span>
+        {/* The read is capped server-side and there is no paging yet, so a full page
+            is reported as "the first N", not as a total the console cannot know. */}
+        <span className="text-xs text-[var(--muted)]">
+          {users.length >= ROSTER_PAGE_SIZE
+            ? `已显示前 ${users.length} 个${queryHint ? "（筛选后仍被截断，请继续收窄）" : "，请用筛选收窄"}`
+            : queryHint ? `已筛选 · ${users.length} 个结果` : `共 ${users.length} 个`}
+        </span>
       </div>
       {users.length === 0
         ? <p className="mt-5 text-sm text-[var(--muted)]">没有符合条件的用户。</p>
@@ -189,7 +210,10 @@ export function AdminUsersView() {
     {detailError && <StatusMessage tone="error" title="账户概览不可用">{detailError}</StatusMessage>}
     {detail && <UserDetailPanel detail={detail} onClose={() => { setDetailId(undefined); setDetail(undefined); }} onAction={startAction}/>}
 
-    {pending && <ConfirmPanel pending={pending} busy={busy} onSubmit={confirm} onCancel={() => setPending(undefined)}/>}
+    {/* Keyed on the action and its target: the form is uncontrolled, so switching
+        from one pending action to another without a remount would carry the reason
+        typed for the previous account into the audit record of the next one. */}
+    {pending && <ConfirmPanel key={`${pending.kind}:${pending.user.id}`} pending={pending} busy={busy} onSubmit={confirm} onCancel={() => setPending(undefined)}/>}
     {audience && <AudienceOverview stats={audience}/>}
   </div>;
 }
@@ -278,7 +302,10 @@ function ConfirmPanel({ pending, busy, onSubmit, onCancel }: { pending: Pending;
           className="mt-2 w-full rounded-lg border border-[var(--line)] bg-[var(--paper-raised)] px-3 py-2 font-normal"/>
       </label>
       <label className="block text-sm font-bold">当前管理员密码
-        <input name="password" type="password" autoComplete="current-password" required minLength={12} maxLength={128}
+        {/* No minimum: this is the operator's existing password, not a new one, and
+            a client-side floor would lock out any account whose password predates
+            the current policy. The server decides whether it is correct. */}
+        <input name="password" type="password" autoComplete="current-password" required maxLength={128}
           className="mt-2 min-h-12 w-full rounded-lg border border-[var(--line)] px-3"/>
       </label>
       <p className="text-xs text-[var(--muted)]">身份确认结果最多有效 5 分钟，且只对后台接口生效。</p>

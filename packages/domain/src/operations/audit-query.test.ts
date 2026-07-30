@@ -60,6 +60,28 @@ describe("parseAuditQuery", () => {
     expect(parseAuditQuery({ actor: "ops%_ad'min;--" }).actor).toBe("ops_admin");
   });
 
+  it("refuses an actor fragment that nothing survives, rather than widening the trail", () => {
+    // Every character was unusable, so there is no filter left. Returning the
+    // whole platform trail would answer a question nobody asked.
+    for (const actor of ["运营小李", "%%%", "'; --"]) {
+      expect(() => parseAuditQuery({ actor })).toThrowError(expect.objectContaining({ code: "INVALID_REQUEST", status: 422 }));
+    }
+    expect(parseAuditQuery({ actor: "   " }).actor).toBe("");
+  });
+
+  it("requires an instant with an explicit zone, so the window cannot depend on where the server runs", () => {
+    for (const value of ["2026-07-30", "2026-7-1T00:00:00Z", "2026-07-30T00:00:00", "July 1 2026"]) {
+      expect(() => parseAuditQuery({ from: value })).toThrowError(expect.objectContaining({ code: "INVALID_REQUEST", status: 422 }));
+    }
+    expect(parseAuditQuery({ from: "2026-07-30T08:00:00+08:00" }).from?.toISOString()).toBe("2026-07-30T00:00:00.000Z");
+  });
+
+  it("returns the page size the endpoint returned before it had filters", () => {
+    // An operator who passes nothing must not silently get a shorter trail than
+    // the unfiltered endpoint has always given them.
+    expect(parseAuditQuery({}).limit).toBe(200);
+  });
+
   it("refuses an unknown filter value rather than ignoring it", () => {
     for (const raw of [{ targetType: "LEDGER" }, { result: "MAYBE" }, { group: "BALANCE" }, { action: "LEDGER_ADJUSTED" }]) {
       expect(() => parseAuditQuery(raw)).toThrowError(expect.objectContaining({ code: "INVALID_REQUEST", status: 422 }));

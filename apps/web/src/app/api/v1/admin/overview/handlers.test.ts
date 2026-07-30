@@ -123,14 +123,23 @@ describe("audit route", () => {
     expect(operationsStub.listAudit).toHaveBeenCalledWith("operator-1", expect.objectContaining({ group: "ALL", action: "", targetType: "ALL", from: null, to: null }));
   });
 
-  it("refuses an unknown filter value without authorizing or querying anything", async () => {
+  it("refuses an unknown filter value without querying anything", async () => {
     const identityStub = identity();
     const operationsStub = operations();
     for (const query of ["?targetType=LEDGER", "?action=LEDGER_ADJUSTED", "?group=ROLE&action=ROOM_CLOSE", "?from=yesterday", "?correlationId=42"]) {
       const response = await handlersFor(identityStub, operationsStub).audit(request(`/api/v1/admin/audit${query}`));
       expect(response.status).toBe(422);
     }
-    expect(identityStub.requireCapability).not.toHaveBeenCalled();
+    expect(operationsStub.listAudit).not.toHaveBeenCalled();
+  });
+
+  it("authorizes before it validates, so a stranger learns nothing about the vocabulary", async () => {
+    // A 422 tells the caller their value was a recognised filter name with an
+    // unrecognised value. Nobody without AUDIT_READ gets to find that out.
+    const identityStub = identity({ requireCapability: vi.fn(async () => forbidden()) });
+    const operationsStub = operations();
+    const response = await handlersFor(identityStub, operationsStub).audit(request("/api/v1/admin/audit?targetType=LEDGER"));
+    expect(response.status).toBe(403);
     expect(operationsStub.listAudit).not.toHaveBeenCalled();
   });
 
@@ -177,6 +186,17 @@ describe("safe task retry route", () => {
         request(`/api/v1/admin/jobs/${JOB_ID}/retry`, { method: "POST", body: payload, proof: "proof-token" }), JOB_ID);
       expect(response.status).toBe(422);
     }
+    expect(operationsStub.retryJob).not.toHaveBeenCalled();
+  });
+
+  it("establishes the identity before it reads the body", async () => {
+    // A caller with no proof gets the re-auth refusal, not a schema critique of a
+    // body the server should never have parsed on their behalf.
+    const operationsStub = operations();
+    const response = await handlersFor(identity(), operationsStub).retryJob(
+      request(`/api/v1/admin/jobs/${JOB_ID}/retry`, { method: "POST", body: "not json at all" }), JOB_ID);
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "REAUTH_REQUIRED" } });
     expect(operationsStub.retryJob).not.toHaveBeenCalled();
   });
 

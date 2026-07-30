@@ -37,6 +37,17 @@ describe("moderation and privacy API", () => {
     expect((await forbidden.handlers.listReports(request("/api/v1/admin/reports"))).status).toBe(403);
   });
 
+  it("asks for the room duty, not the shared inbox key, before listing room filings", async () => {
+    // ROOM_REPORT_READ is the governance inbox's shared entry point and a
+    // COMMUNITY_MODERATOR holds it. This route is not narrowed by report kind and
+    // returns room identity and status, so gating it on that key would have let a
+    // moderator enumerate every room through an endpoint the UI no longer calls.
+    const { handlers, identity } = setup();
+    await handlers.listReports(request("/api/v1/admin/reports"));
+    expect(identity.requireCapability).toHaveBeenCalledWith("token", "ROOM_GOVERNANCE_READ");
+    expect(identity.requireCapability).not.toHaveBeenCalledWith("token", "ROOM_REPORT_READ");
+  });
+
   it("requires a session-bound re-auth proof before changing room status", async () => {
     const valid = setup();
     const response = await valid.handlers.moderateRoom(request("/api/v1/admin/rooms/room-1", "PATCH", { action: "RESTRICT", reason: "收到有效举报" }), "room-1");

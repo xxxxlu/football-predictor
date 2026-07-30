@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { GrantableOperatorRole } from "./capabilities.js";
+import { hasCapability, operatorRolesOf, type GrantableOperatorRole } from "./capabilities.js";
 import {
   AuthError,
   IdentityService,
@@ -68,7 +68,15 @@ class MemoryIdentityRepository implements IdentityRepository {
   async setNormalAccountStatus(input: { actorUserId: string; targetUserId: string; status: "ACTIVE" | "DISABLED"; reason: string; changedAt: Date; auditId: string }) {
     const actor = [...this.accounts.values()].find((candidate) => candidate.id === input.actorUserId);
     const target = [...this.accounts.values()].find((candidate) => candidate.id === input.targetUserId);
-    if (!actor?.isSuperAdmin || !target || target.isSuperAdmin) return false;
+    if (!actor || actor.status !== "ACTIVE") return false;
+    // Mirrors the real repository: the duty is what authorizes this, not the
+    // super-admin flag. Encoding the flag here made the whole domain suite pass
+    // with the capability check reverted.
+    if (!hasCapability(operatorRolesOf({ isSuperAdmin: actor.isSuperAdmin, operatorRoles: this.activeRoles(actor.id) }), "USER_SECURITY_WRITE")) return false;
+    if (!target || target.isSuperAdmin) return false;
+    // An account holding a live duty is not an ordinary account.
+    if (this.activeRoles(target.id).length > 0) return false;
+    if (actor.id === target.id) return false;
     target.status = input.status;
     if (input.status === "DISABLED") for (const session of this.sessions.values()) if (session.userId === target.id) session.revokedAt = input.changedAt;
     this.adminEvents.push({ actorUserId: actor.id, targetUserId: target.id, action: input.status === "DISABLED" ? "ACCOUNT_DISABLED" : "ACCOUNT_RESTORED", metadata: { reason: input.reason } });

@@ -47,9 +47,13 @@ const ACTIVITY_LABELS: Record<ActivityBucket, string> = {
 /** Chinese labels for the audit actions this console can produce or read back. */
 export const ACTION_LABELS: Record<string, string> = {
   ACCOUNT_DISABLED: "禁用账户", ACCOUNT_RESTORED: "恢复账户", SESSIONS_REVOKED: "撤销全部会话",
-  ROLE_GRANTED: "授予运营职责", ROLE_REVOKED: "撤销运营职责",
+  // The names the writers actually persist. `ROLE_GRANTED` / `ROOM_RESTRICTED` and
+  // friends were never produced by anything, so those four rows fell through to
+  // the raw enum on screen.
+  OPERATOR_ROLE_GRANTED: "授予运营职责", OPERATOR_ROLE_REVOKED: "撤销运营职责",
   ACCOUNT_ANONYMIZATION_REQUESTED: "登记匿名化申请", ACCOUNT_ANONYMIZED: "已匿名化",
-  ROOM_RESTRICTED: "限制房间", ROOM_UNRESTRICTED: "解除房间限制", REPORT_RESOLVED: "处理举报",
+  ROOM_RESTRICT: "限制房间", ROOM_RESTORE: "解除房间限制", ROOM_CLOSE: "关闭房间",
+  REPORT_RESOLVED: "处理举报", REPORT_DISMISSED: "驳回举报",
 };
 
 export function activityLabel(bucket: ActivityBucket) { return ACTIVITY_LABELS[bucket] ?? bucket; }
@@ -89,10 +93,18 @@ export async function loadUserDetail(fetcher: Fetcher = fetch, userId: string): 
 
 export async function loadAnonymizationQueue(fetcher: Fetcher = fetch): Promise<AnonymizationRequest[]> {
   const data = await read<{ requests?: Array<Record<string, unknown>> }>(fetcher, "/api/v1/admin/anonymization-requests", "无法加载匿名化申请");
-  return (data.requests ?? []).map((entry) => ({
-    id: String(entry.id), userId: String(entry.userId), username: String(entry.username),
-    reason: (entry.reason as string | null) ?? null, ...reviveLifecycle(entry)!,
-  }));
+  return (data.requests ?? []).flatMap((entry) => {
+    // A row without a revivable deadline is dropped rather than spread from null:
+    // `{...null}` is silently empty, which left `dueAt` undefined, and
+    // `Intl.format(undefined)` renders today — a fabricated seven-day deadline on
+    // the one screen whose purpose is to show when the real one falls.
+    const lifecycle = reviveLifecycle(entry);
+    if (!lifecycle) return [];
+    return [{
+      id: String(entry.id), userId: String(entry.userId), username: String(entry.username),
+      reason: (entry.reason as string | null) ?? null, ...lifecycle,
+    }];
+  });
 }
 
 export async function loadAudienceStats(fetcher: Fetcher = fetch): Promise<AudienceStats> {

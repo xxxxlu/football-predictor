@@ -83,6 +83,15 @@ describe("report state machine", () => {
     expect(isTerminalReportStatus("RESOLVED")).toBe(true);
     expect(isTerminalReportStatus("OPEN")).toBe(false);
   });
+
+  it("permits both self-loops, because triage does not change status", () => {
+    // Changing severity leaves the status where it was, so an unclaimed report
+    // stays OPEN. Without this edge, adjusting the severity of an unclaimed filing
+    // — and releasing one that is already unassigned — was refused as an invalid
+    // transition, which contradicts triage being available on any open report.
+    expect(canTransitionReport("OPEN", "OPEN")).toBe(true);
+    expect(canTransitionReport("ASSIGNED", "ASSIGNED")).toBe(true);
+  });
 });
 
 describe("inbox filters", () => {

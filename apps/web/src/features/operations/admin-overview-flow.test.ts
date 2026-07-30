@@ -34,10 +34,14 @@ describe("audit filter serialization", () => {
     expect(buildAuditQuery({ ...DEFAULT_AUDIT_FILTERS, correlationId: "audit-1" })).toBe("correlationId=audit-1");
   });
 
-  it("widens a picked day to the whole day, so the end date is not silently lost", () => {
+  it("widens a picked day to that day in the operator's own timezone", () => {
+    // The dates on screen are rendered in the operator's timezone, so the window
+    // has to be cut the same way: their 1st is local midnight to local midnight,
+    // not 00:00Z (which for UTC+8 would start at 08:00 on their own clock). The
+    // end bound is the start of the following day and the server excludes it.
     const query = new URLSearchParams(buildAuditQuery({ ...DEFAULT_AUDIT_FILTERS, from: "2026-07-01", to: "2026-07-30" }));
-    expect(query.get("from")).toBe("2026-07-01T00:00:00.000Z");
-    expect(query.get("to")).toBe("2026-07-30T23:59:59.999Z");
+    expect(query.get("from")).toBe(new Date(2026, 6, 1, 0, 0, 0, 0).toISOString());
+    expect(query.get("to")).toBe(new Date(2026, 6, 31, 0, 0, 0, 0).toISOString());
   });
 
   it("passes an explicit instant through untouched", () => {

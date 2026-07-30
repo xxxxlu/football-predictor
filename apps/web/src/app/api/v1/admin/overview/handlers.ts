@@ -80,6 +80,9 @@ export function createOperationsOverviewHandlers(identity: OverviewIdentity, ope
       return json({ data: { jobs: await operations.listFailedJobs(actorId) } });
     }),
     audit: (request: Request) => execute(async () => {
+      // Authorization first: a caller who may not read the trail learns nothing
+      // about the filter vocabulary, not even which values it would have accepted.
+      const actorId = await reader(request, "AUDIT_READ");
       // Filters are validated in the domain: an unknown value is refused rather
       // than dropped, so a narrowed trail can never silently widen.
       const url = new URL(request.url);
@@ -90,12 +93,13 @@ export function createOperationsOverviewHandlers(identity: OverviewIdentity, ope
         from: url.searchParams.get("from"), to: url.searchParams.get("to"),
         correlationId: url.searchParams.get("correlationId"), limit: url.searchParams.get("limit"),
       });
-      const actorId = await reader(request, "AUDIT_READ");
       return json({ data: { query: serializeQuery(query), events: await operations.listAudit(actorId, query) } });
     }),
     retryJob: (request: Request, jobId: string) => execute(async () => {
-      const input = retrySchema.parse(await request.json());
+      // Same origin, session, fresh proof and the capability are all established
+      // before the body is read: an unauthenticated caller gets no schema feedback.
       const actorId = await retryActor(request);
+      const input = retrySchema.parse(await request.json());
       return json({ data: await operations.retryJob(actorId, job(jobId), input.reason) });
     }),
   };

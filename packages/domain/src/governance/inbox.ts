@@ -46,13 +46,20 @@ export function isTerminalReportStatus(status: ReportStatus): boolean {
 }
 
 const ALLOWED_TRANSITIONS: Record<ReportStatus, readonly ReportStatus[]> = {
-  OPEN: ["ASSIGNED", "RESOLVED", "DISMISSED"],
+  OPEN: ["OPEN", "ASSIGNED", "RESOLVED", "DISMISSED"],
   ASSIGNED: ["OPEN", "ASSIGNED", "RESOLVED", "DISMISSED"],
   RESOLVED: [],
   DISMISSED: [],
 };
 
-/** `ASSIGNED → ASSIGNED` is allowed: reassignment and severity changes are ordinary triage. */
+/**
+ * Both self-loops are allowed, because triage is not a disposition: changing a
+ * report's severity leaves its status alone, so an unclaimed filing stays `OPEN`
+ * and a claimed one stays `ASSIGNED`. Refusing a self-loop would make severity
+ * the one triage action that cannot be performed on an unclaimed report, and
+ * would turn releasing an already-unassigned report into an error rather than a
+ * no-op. Closed states keep an empty row: they are final.
+ */
 export function canTransitionReport(from: ReportStatus, to: ReportStatus): boolean {
   return (ALLOWED_TRANSITIONS[from] ?? []).includes(to);
 }

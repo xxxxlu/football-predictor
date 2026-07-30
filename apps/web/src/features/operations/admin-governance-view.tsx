@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useId, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
 import {
@@ -278,8 +278,12 @@ export function GovernanceConfirmPanel({ title, note, verb, needsMuteDuration = 
   reasonLabel?: string; busy: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void; onCancel: () => void;
 }) {
-  return <section className="surface border-2 border-[var(--ink)] p-5" aria-labelledby="governance-confirm-title">
-    <h2 id="governance-confirm-title" className="display text-xl font-bold">{title}</h2>
+  // The heading id is generated per mount. The moderation page renders this panel
+  // and the room-governance one together, so a fixed id put two elements with the
+  // same id on screen and left `aria-labelledby` pointing at whichever came first.
+  const headingId = useId();
+  return <section className="surface border-2 border-[var(--ink)] p-5" aria-labelledby={headingId}>
+    <h2 id={headingId} className="display text-xl font-bold">{title}</h2>
     <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{note}</p>
     <form onSubmit={onSubmit} className="mt-5 space-y-4">
       {needsMuteDuration && <label className="block text-sm font-bold">禁言时长

@@ -54,8 +54,8 @@ const ROOM_REPORT = {
 };
 const MESSAGE_REPORT = { ...ROOM_REPORT, reportId: "report-message", kind: "MESSAGE", subject: "阿强" };
 const ROOM_TARGET = {
-  reportId: "report-room", kind: "ROOM", status: "OPEN", reporterUserId: "member-1",
-  roomId: "room-1", roomName: "周末德甲", roomOwnerId: "owner-1", messageId: null, subjectUserId: null,
+  reportId: "report-room", kind: "ROOM", status: "OPEN", reporterUserId: "member-1", assignedTo: null,
+  roomId: "room-1", roomName: "周末德甲", roomStatus: "ACTIVE", roomOwnerId: "owner-1", messageId: null, subjectUserId: null,
 };
 const MESSAGE_TARGET = { ...ROOM_TARGET, reportId: "report-message", kind: "MESSAGE", messageId: "message-1", subjectUserId: "author-1" };
 
@@ -164,7 +164,9 @@ describe("governance inbox dispositions", () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_OPS_ADMIN, {
       target: ROOM_TARGET,
-      extra: (query) => query.includes("UPDATE room.reports SET status") ? [{ reporterUserId: "member-1" }, { reporterUserId: "member-2" }] : [],
+      extra: (query) => query.includes("UPDATE room.reports SET status")
+        ? [{ reportId: "report-room", reporterUserId: "member-1" }, { reportId: "report-sibling", reporterUserId: "member-2" }]
+        : [],
     }), log), clock);
 
     const result = await repository.resolveReport("ops-1", "report-room", { disposition: "CLOSE_ROOM", reason: "反复违规拉人，关闭房间" });
@@ -178,8 +180,27 @@ describe("governance inbox dispositions", () => {
     // Immutable audit, written the only way that survives postgres.js encoding.
     const audit = log.queries.find((query) => query.includes("INSERT INTO ops.audit_events"))!;
     expect(audit).toContain("::text::jsonb");
-    expect(audit).toContain("'REPORT'");
-    expect(log.values).toContain(JSON.stringify({ reportId: "report-room", kind: "ROOM", disposition: "CLOSE_ROOM", reason: "反复违规拉人，关闭房间", roomStatus: "CLOSED", resolvedReports: 2 }));
+    // Two entries: the decision, filed under the report, and what it did to the
+    // room, filed under the room so a search by room or by high-risk action finds
+    // the closure that was reached through a report.
+    expect(log.values).toContain("REPORT");
+    expect(log.values).toContain("ROOM");
+    expect(log.values).toContain("ROOM_CLOSE");
+    expect(log.values).toContain("room-1");
+    const metadata = log.values.filter((value): value is string => typeof value === "string" && value.startsWith("{")).map((value) => JSON.parse(value) as Record<string, unknown>);
+    const decision = metadata.find((entry) => entry.resolvedReports !== undefined)!;
+    expect(decision).toMatchObject({ reportId: "report-room", kind: "ROOM", disposition: "CLOSE_ROOM", reason: "反复违规拉人，关闭房间", roomStatus: "CLOSED", resolvedReports: 2 });
+    // The room entry points back at the decision that produced it, so either half
+    // of the pair leads to the other.
+    const roomEntry = metadata.find((entry) => entry.roomStatus !== undefined && entry.resolutionAuditId !== undefined)!;
+    expect(roomEntry).toMatchObject({ reportId: "report-room", roomStatus: "CLOSED", resolutionAuditId: result.auditId });
+    expect(decision.roomAuditId).toEqual(expect.any(String));
+    // Every other filing this decision closed gets an entry of its own, or it would
+    // read as resolved with an empty timeline. The decision is not duplicated.
+    const carried = metadata.filter((entry) => entry.resolutionAuditId === result.auditId && entry.roomStatus === undefined);
+    expect(carried).toHaveLength(1);
+    expect(carried[0]).toMatchObject({ reportId: "report-sibling", disposition: "CLOSE_ROOM", reason: "反复违规拉人，关闭房间" });
+    expect(log.values).toContain("report-sibling");
 
     // One notice per affected account, each carrying the same reason as the audit.
     const notices = log.queries.filter((query) => query.includes("INSERT INTO ops.governance_notices"));
@@ -269,6 +290,17 @@ describe("governance inbox dispositions", () => {
     expect(log.queries.some((query) => query.includes("INSERT INTO ops.audit_events") && query.includes("::text::jsonb"))).toBe(true);
   });
 
+  it("refuses a room decision that would leave the room exactly where it is", async () => {
+    // "Restore" on a room that was never restricted changes nothing about the room
+    // but closes every open filing against it — the queue emptied as a favour. A
+    // closure has to be a decision that acts on what was reported.
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_OPS_ADMIN, {
+      target: { ...ROOM_TARGET, roomStatus: "ACTIVE" },
+    })), clock);
+    await expect(repository.resolveReport("root-1", "report-room", { disposition: "RESTORE_ROOM", reason: "看起来没问题，恢复房间" }))
+      .rejects.toMatchObject({ code: "ROOM_ALREADY_IN_STATE", status: 409 });
+  });
+
   it("claims a report without asking for a reason, and records who claimed it", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
@@ -280,6 +312,32 @@ describe("governance inbox dispositions", () => {
     expect(log.values).toContain("REPORT_TRIAGED");
     // Triage is invisible to members, so it explains nothing to anyone.
     expect(log.queries.some((query) => query.includes("ops.governance_notices"))).toBe(false);
+  });
+
+  it("records the previous holder when a claim is taken over", async () => {
+    // Taking over a colleague's claim is ordinary triage, but it must not be
+    // silent: without the previous holder in the audit metadata the chain of
+    // responsibility for a report simply changes hands with no trace.
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
+      target: { ...MESSAGE_TARGET, status: "ASSIGNED", assignedTo: "mod-2" },
+      extra: (query) => query.includes("UPDATE room.reports SET") ? [{ reportId: "report-message", status: "ASSIGNED", severity: "NORMAL" }] : [],
+    }), log), clock);
+    await repository.triageReport("mod-1", "report-message", { assign: "ME" });
+    const metadata = log.values.filter((value): value is string => typeof value === "string" && value.startsWith("{")).map((value) => JSON.parse(value) as Record<string, unknown>);
+    expect(metadata.some((entry) => entry.takenFrom === "mod-2")).toBe(true);
+  });
+
+  it("leaves the severity of an unclaimed report adjustable", async () => {
+    // An unclaimed report stays OPEN when only its severity changes, so this used
+    // to be refused as an invalid OPEN → OPEN transition — the one triage action
+    // the inbox promised but could never perform.
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
+      target: { ...MESSAGE_TARGET, status: "OPEN", assignedTo: null },
+      extra: (query) => query.includes("UPDATE room.reports SET") ? [{ reportId: "report-message", status: "OPEN", severity: "HIGH" }] : [],
+    })), clock);
+    await expect(repository.triageReport("mod-1", "report-message", { severity: "HIGH" }))
+      .resolves.toMatchObject({ status: "OPEN", severity: "HIGH" });
   });
 });
 

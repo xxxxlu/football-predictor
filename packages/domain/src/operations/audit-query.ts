@@ -20,7 +20,11 @@ import { AuthError } from "../identity/service.js";
 
 const MAX_ACTOR_LENGTH = 32;
 const MAX_LIMIT = 200;
-const DEFAULT_LIMIT = 100;
+/**
+ * The unfiltered page is the same size the endpoint has always returned, so an
+ * operator who passes no filters sees the trail they saw before it gained them.
+ */
+const DEFAULT_LIMIT = 200;
 
 /** What an audited action was performed *on*. Widened as new targets appear. */
 export const AUDIT_TARGET_TYPES = ["USER", "ROOM", "REPORT", "JOB"] as const;
@@ -127,7 +131,14 @@ export interface AuditQuery {
   /** One exact action from the closed vocabulary, or "" for the whole group. */
   action: string;
   result: AuditResultFilter;
+  /** Inclusive lower bound. */
   from: Date | null;
+  /**
+   * Exclusive upper bound. Exclusive so a whole day can be selected without the
+   * bound having to name the last representable instant inside it — the database
+   * stores microseconds, and no end-of-day literal a client can build is the last
+   * one of them.
+   */
   to: Date | null;
   /** NFR37: a single audit identifier, used to jump straight to one entry. */
   correlationId: string;
@@ -151,9 +162,7 @@ export function parseAuditQuery(raw: Record<string, string | null | undefined>):
   const to = readInstant(raw.to, "to");
   if (from && to && from.getTime() > to.getTime()) invalid("time range");
   return {
-    // Only the characters a canonical username can contain survive, so the value
-    // can never carry a LIKE wildcard or a control character into the query.
-    actor: (raw.actor ?? "").trim().toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, MAX_ACTOR_LENGTH),
+    actor: readActorFragment(raw.actor),
     targetType: readEnum(raw.targetType, AUDIT_TARGET_TYPE_FILTERS, "targetType"),
     targetId: readUuid(raw.targetId, "targetId"),
     group,
@@ -186,6 +195,20 @@ function readEnum<T extends string>(raw: string | null | undefined, allowed: rea
   return allowed.includes(raw as T) ? (raw as T) : invalid(field);
 }
 
+/**
+ * Only the characters a canonical username can contain survive, so the value can
+ * never carry a LIKE wildcard or a control character into the query. A fragment
+ * that is left empty by that reduction is refused rather than dropped: an
+ * operator who filtered to one person must not be handed the platform-wide trail
+ * because none of what they typed could match a username.
+ */
+function readActorFragment(raw: string | null | undefined): string {
+  const value = (raw ?? "").trim();
+  if (value === "") return "";
+  const cleaned = value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, MAX_ACTOR_LENGTH);
+  return cleaned === "" ? invalid("actor") : cleaned;
+}
+
 function readUuid(raw: string | null | undefined, field: string): string {
   const value = (raw ?? "").trim();
   if (value === "") return "";
@@ -201,9 +224,18 @@ function readAction(raw: string | null | undefined, group: AuditActionGroupFilte
   return value;
 }
 
+/**
+ * An explicit instant with an explicit zone. A bare day or a loosely parsable
+ * string would be read in whatever zone the server happens to run in, so the same
+ * request would mean different windows on different deployments — the console
+ * therefore widens the day it was given before sending it.
+ */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,3})?)?(Z|[+-]\d{2}:\d{2})$/;
+
 function readInstant(raw: string | null | undefined, field: string): Date | null {
   const value = (raw ?? "").trim();
   if (value === "") return null;
+  if (!ISO_INSTANT.test(value)) return invalid(field);
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? invalid(field) : parsed;
 }

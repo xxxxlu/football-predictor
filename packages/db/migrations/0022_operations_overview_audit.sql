@@ -41,8 +41,8 @@ CREATE INDEX IF NOT EXISTS "room_audit_events_actor_idx"
 -- where it is enforced.
 -- ---------------------------------------------------------------------------
 
--- The risk queue lists failed jobs oldest-first so the longest-stuck task is the
--- one an operator sees. The existing (status, available_at) index answers the
+-- The risk queue lists failed jobs most-recently-failed first, which is the order
+-- this index serves. The existing (status, available_at) index answers the
 -- worker's claim, not this ordering.
 CREATE INDEX IF NOT EXISTS "ops_jobs_failed_idx"
   ON "ops"."jobs" ("updated_at" DESC) WHERE "status" = 'FAILED';

@@ -45,7 +45,10 @@ function fakeSql(respond: Respond, log?: { queries: string[]; values: unknown[] 
 }
 
 const clock = { now: () => new Date("2026-07-30T10:00:00.000Z") };
-const grants = (rows: Row[]): Respond => (query) => (query.includes("identity.operator_role_grants") ? rows : []);
+// Matched on `array_agg(g.role`, which only readOperatorAuthorization issues. The
+// table name alone is no longer distinctive: the target lookup now names the same
+// table to keep a colleague's account out of reach.
+const grants = (rows: Row[]): Respond => (query) => (query.includes("array_agg(g.role") ? rows : []);
 const AS_SUPER_ADMIN = [{ isSuperAdmin: true, roles: null }];
 const AS_OPS_ADMIN = [{ isSuperAdmin: false, roles: ["OPERATIONS_ADMIN"] }];
 const DENIED: Row[][] = [
@@ -152,7 +155,7 @@ describe("user security console writes", () => {
   it("ends every live session and records the count and reason in one audit row", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = new PostgresUserSecurityRepository(fakeSql((query) => {
-      if (query.includes("identity.operator_role_grants")) return AS_OPS_ADMIN;
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
       if (query.includes("FROM identity.users")) return [{ id: "user-1" }];
       if (query.includes("UPDATE identity.sessions")) return [{ userId: "user-1" }, { userId: "user-1" }];
       return [];
@@ -184,9 +187,40 @@ describe("user security console writes", () => {
     }
   });
 
+  it("keeps a colleague's account out of reach: the target must hold no live duty", async () => {
+    // Excluding the two super-admins is not enough. Disabling, signing out or
+    // anonymizing an operations-admin would deny them every capability, making one
+    // restricted duty a lever on another — reserved for OPERATOR_ROLE_MANAGE.
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresUserSecurityRepository(fakeSql(grants(AS_OPS_ADMIN), log), clock);
+    await repository.revokeSessions("ops-1", "peer-1", "尝试处理同事账户").catch(() => undefined);
+    const lookup = log.queries.find((query) => query.includes("FROM identity.users WHERE"))!;
+    expect(lookup).toContain("NOT EXISTS");
+    expect(lookup).toContain("identity.operator_role_grants");
+    expect(lookup).toContain("revoked_at IS NULL");
+    // Whether a real row is excluded is a database fact; this asserts the clause is
+    // in the statement that locks the target, not merely checked somewhere earlier.
+    expect(lookup).toContain("FOR UPDATE");
+  });
+
+  it("refuses to aim the console at the operator's own account", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresUserSecurityRepository(fakeSql(grants(AS_OPS_ADMIN), log), clock);
+    for (const write of [
+      repository.revokeSessions("ops-1", "ops-1", "退出所有设备"),
+      repository.fileAnonymizationRequest("ops-1", "ops-1", "注销我自己"),
+      repository.completeAnonymizationRequest("ops-1", "ops-1", "request-1", "注销我自己"),
+    ]) {
+      const failure = await write.catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(OperationError);
+      expect((failure as OperationError).code).toBe("TARGET_NOT_MANAGEABLE");
+    }
+    expect(log.queries.some((query) => query.includes("UPDATE identity.sessions") || query.includes("INSERT INTO ops.privacy_requests"))).toBe(false);
+  });
+
   it("keeps one open anonymization request per account", async () => {
     const repository = new PostgresUserSecurityRepository(fakeSql((query) => {
-      if (query.includes("identity.operator_role_grants")) return AS_OPS_ADMIN;
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
       if (query.includes("FROM identity.users")) return [{ id: "user-1" }];
       if (query.includes("INSERT INTO ops.privacy_requests")) throw Object.assign(new Error("duplicate key value violates unique constraint"), { code: "23505" });
       return [];
@@ -199,7 +233,7 @@ describe("user security console writes", () => {
 
   it("starts the seven-day clock on a filed request and reports it in the queue", async () => {
     const repository = new PostgresUserSecurityRepository(fakeSql((query) => {
-      if (query.includes("identity.operator_role_grants")) return AS_OPS_ADMIN;
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
       if (query.includes("FROM identity.users u")) return [];
       if (query.includes("FROM identity.users")) return [{ id: "user-1" }];
       if (query.includes("FROM ops.privacy_requests p")) return [{ id: "request-1", userId: "user-1", username: "alice", status: "RECEIVED", requestedAt: "2026-07-24T10:00:00.000Z", reason: "用户来信申请" }];
@@ -213,14 +247,20 @@ describe("user security console writes", () => {
   });
 
   it("only completes a request that is still open, and anonymizes instead of deleting", async () => {
-    const closed = new PostgresUserSecurityRepository(fakeSql(grants(AS_OPS_ADMIN)), clock);
+    // A manageable target with no open request: the refusal must name the request,
+    // not the account.
+    const closed = new PostgresUserSecurityRepository(fakeSql((query) => {
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
+      if (query.includes("FROM identity.users WHERE")) return [{ id: "user-1" }];
+      return [];
+    }), clock);
     const failure = await closed.completeAnonymizationRequest("ops-1", "user-1", "request-1", "按申请处理").catch((error: unknown) => error);
     expect((failure as OperationError).code).toBe("ANONYMIZATION_REQUEST_NOT_OPEN");
     expect((failure as OperationError).status).toBe(409);
 
     const log = { queries: [] as string[], values: [] as unknown[] };
     const open = new PostgresUserSecurityRepository(fakeSql((query) => {
-      if (query.includes("identity.operator_role_grants")) return AS_OPS_ADMIN;
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
       if (query.includes("FROM ops.privacy_requests")) return [{ id: "request-1" }];
       if (query.includes("FROM identity.users")) return [{ superAdmin: false, username: "alice" }];
       return [];

@@ -5,6 +5,7 @@ import {
   type Capability,
   type OverviewCard,
   type OverviewSeverity,
+  HIGH_RISK_AUDIT_ACTIONS,
   accountRiskSeverity,
   jobSeverity,
   overallSeverity,
@@ -59,10 +60,14 @@ export class PostgresOperationsOverviewRepository {
     const visible = new Set<OverviewCard>(cards);
     const now = this.clock.now();
 
-    const status = visible.has("SUPPLIER_HEALTH") ? await this.health.adminStatus(actorUserId) : null;
+    // One health read serves the three health cards, but each card still stands on
+    // its own entry in the registry: if their capabilities ever diverge, the card
+    // that lost its capability stops rendering without this block being revisited.
+    const needsHealth = visible.has("SUPPLIER_HEALTH") || visible.has("SETTLEMENT_HEALTH") || visible.has("JOB_HEALTH");
+    const status = needsHealth ? await this.health.adminStatus(actorUserId) : null;
     const sections: OverviewSection[] = [];
 
-    if (status) {
+    if (status && visible.has("SUPPLIER_HEALTH")) {
       const budget = status.supplierBudget;
       const generalRemaining = budget.limit - budget.settlementReserved - budget.generalUsed;
       sections.push({
@@ -76,7 +81,9 @@ export class PostgresOperationsOverviewRepository {
         ],
         detail: status.cache.oldestDataAsOf ? `最旧缓存时间 ${status.cache.oldestDataAsOf}` : null,
       });
+    }
 
+    if (status && visible.has("SETTLEMENT_HEALTH")) {
       const settlement = await this.settlementRisk();
       sections.push({
         card: "SETTLEMENT_HEALTH",
@@ -87,7 +94,9 @@ export class PostgresOperationsOverviewRepository {
         ],
         detail: settlement.oldestPendingEventAt ? `最早未结算赛事 ${settlement.oldestPendingEventAt}` : null,
       });
+    }
 
+    if (status && visible.has("JOB_HEALTH")) {
       const jobs = status.jobs;
       sections.push({
         card: "JOB_HEALTH",
@@ -223,8 +232,9 @@ export class PostgresOperationsOverviewRepository {
   }
 
   async listAudit(actorUserId: string, query: AuditQuery) {
-    await this.assertCapability(actorUserId, "AUDIT_READ");
-    return listGovernanceAudit(this.sql, query);
+    // The AUDIT_READ gate lives inside the merged read itself, so it cannot be
+    // left behind by a caller that reaches the trail some other way.
+    return listGovernanceAudit(this.sql, actorUserId, query);
   }
 
   private async settlementRisk() {
@@ -246,6 +256,9 @@ export class PostgresOperationsOverviewRepository {
   }
 
   private async reportQueue(actorUserId: string, kinds: readonly string[]) {
+    // A duty that opens the queue but covers no kind sees an empty queue rather
+    // than an error: postgres.js cannot infer an element type for `ANY('{}')`.
+    if (kinds.length === 0) return { pending: 0, unassigned: 0, mine: 0, high: 0, oldestPendingAt: null };
     const [row] = await this.sql<Array<{ pending: number; unassigned: number; mine: number; high: number; oldestPendingAt: DbTimestamp | null }>>`
       SELECT COUNT(*)::int AS pending,
         COUNT(*) FILTER (WHERE assigned_to IS NULL)::int AS unassigned,
@@ -332,12 +345,11 @@ const DAY_MS = 86_400_000;
 const ANONYMIZATION_SLA_MS = 7 * DAY_MS;
 
 /**
- * Kept as a plain array so it can be bound as a single `= ANY(...)` parameter.
- * Mirrors HIGH_RISK_AUDIT_ACTIONS in the domain; the two are pinned together by
- * a test rather than by an import, because this one has to be mutable-typed for
- * the postgres.js parameter encoder.
+ * The domain's list, copied into a mutable array because that is what the
+ * postgres.js parameter encoder accepts for `= ANY(...)`. Spread from the single
+ * source rather than retyped, so the two can never name different actions.
  */
-const HIGH_RISK_ACTIONS: string[] = ["OPERATOR_ROLE_GRANTED", "OPERATOR_ROLE_REVOKED", "ACCOUNT_ANONYMIZED", "ACCOUNT_DISABLED", "ROOM_CLOSE", "JOB_RETRY_REQUESTED"];
+const HIGH_RISK_ACTIONS: string[] = [...HIGH_RISK_AUDIT_ACTIONS];
 
 function timestampIso(value: DbTimestamp) {
   return (value instanceof Date ? value : new Date(value)).toISOString();
