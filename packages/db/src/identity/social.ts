@@ -1,0 +1,302 @@
+import {
+  assertMinimalFriendProjection,
+  BLOCK_PROJECTION_KEYS,
+  canonicalPair,
+  canRespondToRequest,
+  decideFriendRequest,
+  FRIEND_LIST_PROJECTION_KEYS,
+  FRIEND_REQUEST_PROJECTION_KEYS,
+  FRIEND_REQUESTS_PER_DAY,
+  FRIEND_REQUESTS_PER_HOUR,
+  PRESENCE_PREFERENCES_PROJECTION_KEYS,
+  PRESENCE_TTL_MS,
+  type FriendshipStatus,
+  type PresencePreferences,
+  type RespondAction,
+} from "@pulse/domain";
+import type postgres from "postgres";
+
+import { isUniqueViolation } from "./repository.js";
+import { OperationError } from "../operations/repository.js";
+
+/**
+ * Friends, blocks, privacy toggles and presence heartbeats (Story 12.1).
+ *
+ * Everything here reads and writes the identity schema only — no join, FK or
+ * write path reaches rooms, predictions, balances or settlement (FR59/NFR19),
+ * and every outgoing projection passes the minimal-disclosure guard.
+ *
+ * Anti-enumeration stance (AC2): a blocked requester gets the exact same
+ * response as a successful one, an invalid or foreign request id is always
+ * REQUEST_NOT_FOUND, and rate-limit events are recorded even for suppressed
+ * requests so probing costs the same as asking.
+ */
+export type SocialSql = postgres.Sql;
+
+export interface FriendEntry {
+  userId: string;
+  pulseId: string;
+  nickname: string | null;
+  online: boolean;
+}
+
+export interface FriendRequestEntry {
+  requestId: string;
+  direction: "INCOMING" | "OUTGOING";
+  pulseId: string;
+  nickname: string | null;
+  createdAt: Date;
+}
+
+export interface BlockEntry {
+  userId: string;
+  pulseId: string;
+  nickname: string | null;
+  createdAt: Date;
+}
+
+export function createSocialRepository(sql: SocialSql, clock: () => Date = () => new Date()) {
+  async function resolveActiveUserByPulseId(tx: postgres.ISql, pulseId: string): Promise<string> {
+    const [target] = await tx<Array<{ id: string }>>`
+      SELECT id FROM identity.users
+      WHERE username_canonical = ${pulseId} AND status = 'ACTIVE' LIMIT 1`;
+    if (!target) throw new OperationError("USER_NOT_FOUND", 404);
+    return target.id;
+  }
+
+  async function pairIsBlocked(tx: postgres.ISql, a: string, b: string): Promise<boolean> {
+    const rows = await tx<Array<{ present: number }>>`
+      SELECT 1 AS present FROM identity.user_blocks
+      WHERE (blocker_user_id = ${a} AND blocked_user_id = ${b})
+         OR (blocker_user_id = ${b} AND blocked_user_id = ${a})
+      LIMIT 1`;
+    return rows.length > 0;
+  }
+
+  async function requestFriendOnce(requesterId: string, pulseId: string): Promise<{ status: FriendshipStatus }> {
+    return await sql.begin(async (tx) => {
+      const targetId = await resolveActiveUserByPulseId(tx, pulseId);
+      if (targetId === requesterId) throw new OperationError("SELF_FRIEND_FORBIDDEN", 422);
+
+      const now = clock();
+      const nowIso = now.toISOString();
+      const hourAgoIso = new Date(now.getTime() - 3_600_000).toISOString();
+      const dayAgoIso = new Date(now.getTime() - 86_400_000).toISOString();
+      const [window] = await tx<Array<{ hourCount: string | number; dayCount: string | number }>>`
+        SELECT count(*) FILTER (WHERE occurred_at >= ${hourAgoIso}) AS "hourCount", count(*) AS "dayCount"
+        FROM identity.friend_request_events
+        WHERE requester_user_id = ${requesterId} AND occurred_at >= ${dayAgoIso}`;
+      if (
+        Number(window?.hourCount ?? 0) >= FRIEND_REQUESTS_PER_HOUR ||
+        Number(window?.dayCount ?? 0) >= FRIEND_REQUESTS_PER_DAY
+      ) {
+        throw new OperationError("RATE_LIMITED", 429);
+      }
+      // Suppressed (blocked) attempts consume quota too, so probing for blocks
+      // costs exactly as much as making real requests.
+      await tx`INSERT INTO identity.friend_request_events (requester_user_id, occurred_at)
+        VALUES (${requesterId}, ${nowIso})`;
+
+      const blocked = await pairIsBlocked(tx, requesterId, targetId);
+      const pair = canonicalPair(requesterId, targetId);
+      const existing = blocked
+        ? null
+        : ((await tx<Array<{ status: FriendshipStatus; requestedBy: string }>>`
+            SELECT status, requested_by AS "requestedBy" FROM identity.friendships
+            WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId}
+            FOR UPDATE`)[0] ?? null);
+
+      const decision = decideFriendRequest({ requesterId, targetId, existing, blocked });
+      switch (decision.kind) {
+        case "SUPPRESS":
+          return { status: "PENDING" as const };
+        case "CREATE":
+          await tx`INSERT INTO identity.friendships (user_lo_id, user_hi_id, status, requested_by, created_at)
+            VALUES (${pair.loUserId}, ${pair.hiUserId}, 'PENDING', ${requesterId}, ${nowIso})`;
+          return { status: "PENDING" as const };
+        case "ACCEPT":
+          await tx`UPDATE identity.friendships SET status = 'ACCEPTED', responded_at = ${nowIso}
+            WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId} AND status = 'PENDING'`;
+          return { status: "ACCEPTED" as const };
+        case "NOOP":
+          return { status: decision.status };
+      }
+    });
+  }
+
+  return {
+    /**
+     * Creates/replays a friend request addressed by PULSE ID. Retried once as a
+     * whole transaction on a pair-unique violation: 23505 inside a transaction
+     * aborts it, so the losing side of a concurrent mutual request must re-run
+     * from the top, where it now sees the winner's row and ACCEPTs or NOOPs.
+     */
+    async requestFriend(requesterId: string, pulseId: string): Promise<{ status: FriendshipStatus }> {
+      try {
+        return await requestFriendOnce(requesterId, pulseId);
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        return await requestFriendOnce(requesterId, pulseId);
+      }
+    },
+
+    async respondToFriendRequest(
+      responderId: string,
+      requestId: string,
+      action: RespondAction,
+    ): Promise<{ status: "ACCEPTED" | "DECLINED" }> {
+      return await sql.begin(async (tx) => {
+        const [row] = await tx<
+          Array<{ id: string; userLoId: string; userHiId: string; status: FriendshipStatus; requestedBy: string }>
+        >`
+          SELECT id, user_lo_id AS "userLoId", user_hi_id AS "userHiId", status, requested_by AS "requestedBy"
+          FROM identity.friendships
+          WHERE id = ${requestId} AND (user_lo_id = ${responderId} OR user_hi_id = ${responderId})
+          FOR UPDATE`;
+        if (!row || !canRespondToRequest({ responderId, requestedBy: row.requestedBy, status: row.status })) {
+          throw new OperationError("REQUEST_NOT_FOUND", 404);
+        }
+        const otherId = row.userLoId === responderId ? row.userHiId : row.userLoId;
+        if (await pairIsBlocked(tx, responderId, otherId)) {
+          throw new OperationError("REQUEST_NOT_FOUND", 404);
+        }
+        if (action === "accept") {
+          await tx`UPDATE identity.friendships SET status = 'ACCEPTED', responded_at = ${clock().toISOString()}
+            WHERE id = ${row.id}`;
+          return { status: "ACCEPTED" as const };
+        }
+        await tx`DELETE FROM identity.friendships WHERE id = ${row.id}`;
+        return { status: "DECLINED" as const };
+      });
+    },
+
+    /** Removes a friendship (or cancels an own pending request) for the pair. */
+    async removeFriend(userId: string, friendUserId: string): Promise<{ removed: boolean }> {
+      if (userId === friendUserId) return { removed: false };
+      const pair = canonicalPair(userId, friendUserId);
+      const rows = await sql<Array<{ id: string }>>`
+        DELETE FROM identity.friendships
+        WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId}
+        RETURNING id`;
+      return { removed: rows.length > 0 };
+    },
+
+    async listFriends(userId: string): Promise<FriendEntry[]> {
+      const ttlCutoffIso = new Date(clock().getTime() - PRESENCE_TTL_MS).toISOString();
+      const rows = await sql<FriendEntry[]>`
+        SELECT u.id AS "userId", u.username_canonical AS "pulseId", u.nickname,
+          COALESCE(u.show_online_to_friends AND p.online_beat_at > ${ttlCutoffIso}, false) AS online
+        FROM identity.friendships f
+        JOIN identity.users u
+          ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
+        LEFT JOIN identity.presence_signals p ON p.user_id = u.id
+        WHERE (f.user_lo_id = ${userId} OR f.user_hi_id = ${userId})
+          AND f.status = 'ACCEPTED' AND u.status = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM identity.user_blocks b
+            WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
+               OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${userId}))
+        ORDER BY u.username_canonical`;
+      assertMinimalFriendProjection(rows, FRIEND_LIST_PROJECTION_KEYS);
+      return rows;
+    },
+
+    async listFriendRequests(userId: string): Promise<FriendRequestEntry[]> {
+      const rows = await sql<FriendRequestEntry[]>`
+        SELECT f.id AS "requestId",
+          CASE WHEN f.requested_by = ${userId} THEN 'OUTGOING' ELSE 'INCOMING' END AS direction,
+          u.username_canonical AS "pulseId", u.nickname, f.created_at AS "createdAt"
+        FROM identity.friendships f
+        JOIN identity.users u
+          ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
+        WHERE (f.user_lo_id = ${userId} OR f.user_hi_id = ${userId})
+          AND f.status = 'PENDING' AND u.status = 'ACTIVE'
+          AND NOT EXISTS (
+            SELECT 1 FROM identity.user_blocks b
+            WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
+               OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${userId}))
+        ORDER BY f.created_at DESC`;
+      assertMinimalFriendProjection(rows, FRIEND_REQUEST_PROJECTION_KEYS);
+      return rows;
+    },
+
+    /** Blocking also severs any existing friendship/request in the same transaction. */
+    async blockUser(blockerId: string, pulseId: string): Promise<{ blocked: true }> {
+      return await sql.begin(async (tx) => {
+        const targetId = await resolveActiveUserByPulseId(tx, pulseId);
+        if (targetId === blockerId) throw new OperationError("SELF_BLOCK_FORBIDDEN", 422);
+        await tx`INSERT INTO identity.user_blocks (blocker_user_id, blocked_user_id, created_at)
+          VALUES (${blockerId}, ${targetId}, ${clock().toISOString()})
+          ON CONFLICT (blocker_user_id, blocked_user_id) DO NOTHING`;
+        const pair = canonicalPair(blockerId, targetId);
+        await tx`DELETE FROM identity.friendships
+          WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId}`;
+        return { blocked: true as const };
+      });
+    },
+
+    async unblockUser(blockerId: string, blockedUserId: string): Promise<{ unblocked: boolean }> {
+      const rows = await sql<Array<{ blockedUserId: string }>>`
+        DELETE FROM identity.user_blocks
+        WHERE blocker_user_id = ${blockerId} AND blocked_user_id = ${blockedUserId}
+        RETURNING blocked_user_id AS "blockedUserId"`;
+      return { unblocked: rows.length > 0 };
+    },
+
+    async listBlocks(blockerId: string): Promise<BlockEntry[]> {
+      const rows = await sql<BlockEntry[]>`
+        SELECT u.id AS "userId", u.username_canonical AS "pulseId", u.nickname, b.created_at AS "createdAt"
+        FROM identity.user_blocks b
+        JOIN identity.users u ON u.id = b.blocked_user_id
+        WHERE b.blocker_user_id = ${blockerId}
+        ORDER BY b.created_at DESC`;
+      assertMinimalFriendProjection(rows, BLOCK_PROJECTION_KEYS);
+      return rows;
+    },
+
+    async getPrivacyPreferences(userId: string): Promise<PresencePreferences> {
+      const [row] = await sql<PresencePreferences[]>`
+        SELECT show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends"
+        FROM identity.users WHERE id = ${userId} LIMIT 1`;
+      if (!row) throw new OperationError("USER_NOT_FOUND", 404);
+      assertMinimalFriendProjection(row, PRESENCE_PREFERENCES_PROJECTION_KEYS);
+      return row;
+    },
+
+    async updatePrivacyPreferences(
+      userId: string,
+      patch: Partial<PresencePreferences>,
+    ): Promise<PresencePreferences> {
+      const [row] = await sql<PresencePreferences[]>`
+        UPDATE identity.users SET
+          show_online_to_friends = COALESCE(${patch.showOnlineToFriends ?? null}, show_online_to_friends),
+          show_lobby_to_friends = COALESCE(${patch.showLobbyToFriends ?? null}, show_lobby_to_friends),
+          updated_at = ${clock().toISOString()}
+        WHERE id = ${userId}
+        RETURNING show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends"`;
+      if (!row) throw new OperationError("USER_NOT_FOUND", 404);
+      assertMinimalFriendProjection(row, PRESENCE_PREFERENCES_PROJECTION_KEYS);
+      return row;
+    },
+
+    /**
+     * Records an online heartbeat, gated in SQL on account status and consent:
+     * with both toggles off, no row is ever written no matter what the client
+     * sends — the server, not the UI, enforces the opt-in (FR85).
+     */
+    async recordHeartbeat(userId: string): Promise<{ recorded: boolean }> {
+      const nowIso = clock().toISOString();
+      const rows = await sql<Array<{ userId: string }>>`
+        INSERT INTO identity.presence_signals (user_id, online_beat_at, updated_at)
+        SELECT u.id, ${nowIso}, ${nowIso} FROM identity.users u
+        WHERE u.id = ${userId} AND u.status = 'ACTIVE'
+          AND (u.show_online_to_friends OR u.show_lobby_to_friends)
+        ON CONFLICT (user_id) DO UPDATE
+          SET online_beat_at = EXCLUDED.online_beat_at, updated_at = EXCLUDED.updated_at
+        RETURNING user_id AS "userId"`;
+      return { recorded: rows.length > 0 };
+    },
+  };
+}
+
+export type SocialRepository = ReturnType<typeof createSocialRepository>;

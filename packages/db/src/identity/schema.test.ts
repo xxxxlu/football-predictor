@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, operatorRoleGrants, reauthProofs, ruleAcceptances, sessions } from "./schema.js";
+import { accessEvents, adminAccountAuditEvents, authAttempts, friendRequestEvents, friendships, identityUsers, operatorRoleGrants, presenceSignals, reauthProofs, ruleAcceptances, sessions, userBlocks } from "./schema.js";
 
 describe("identity database schema", () => {
   it("keeps credentials and sessions as hashes with unique account identity", () => {
@@ -54,6 +54,58 @@ describe("identity database schema", () => {
     // The grantable duties never include a super-admin.
     expect(migration).toContain("'OPERATIONS_ADMIN', 'COMMUNITY_MODERATOR'");
     expect(migration).not.toMatch(/is_super_admin\s*=\s*true/);
+  });
+
+  it("stores friendships as one canonical pair row with directional blocks alongside", () => {
+    const pairs = getTableConfig(friendships);
+    expect(pairs.schema).toBe("identity");
+    expect(pairs.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["user_lo_id", "user_hi_id", "status", "requested_by", "created_at", "responded_at"]),
+    );
+    expect(pairs.uniqueConstraints.some((constraint) => constraint.name === "friendships_pair_unique")).toBe(true);
+    const blocks = getTableConfig(userBlocks);
+    expect(blocks.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["blocker_user_id", "blocked_user_id", "created_at"]),
+    );
+    // Blocks carry no reason/status/visibility column: nothing to leak to the blocked side.
+    expect(blocks.columns).toHaveLength(3);
+  });
+
+  it("keeps presence as consent toggles defaulting OFF plus TTL-filtered heartbeats", () => {
+    const users = getTableConfig(identityUsers);
+    for (const name of ["show_online_to_friends", "show_lobby_to_friends"]) {
+      const column = users.columns.find((entry) => entry.name === name);
+      expect(column?.notNull).toBe(true);
+      expect(column?.default).toBe(false);
+    }
+    const signals = getTableConfig(presenceSignals);
+    expect(signals.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["user_id", "online_beat_at", "lobby_beat_at", "updated_at"]),
+    );
+    // Rate limiting is persisted counting, never an in-memory counter.
+    expect(getTableConfig(friendRequestEvents).columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["requester_user_id", "occurred_at"]),
+    );
+  });
+
+  it("keeps migration 0023 idempotent with pair canonicalisation enforced by the database", async () => {
+    const migration = await readFile(new URL("../../migrations/0023_social_foundation.sql", import.meta.url), "utf8");
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."friendships"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."user_blocks"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."presence_signals"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."friend_request_events"');
+    // The database — not application code — arbitrates pair identity and self-relations.
+    expect(migration).toContain('CHECK ("user_lo_id" < "user_hi_id")');
+    expect(migration).toContain('UNIQUE ("user_lo_id", "user_hi_id")');
+    expect(migration).toContain('CHECK ("blocker_user_id" <> "blocked_user_id")');
+    expect(migration).toContain('CHECK ("requested_by" IN ("user_lo_id", "user_hi_id"))');
+    expect(migration).toMatch(/CHECK \(\("status" = 'ACCEPTED'\) = \("responded_at" IS NOT NULL\)\)/);
+    // Privacy toggles must default OFF at the database layer (FR85).
+    expect(migration).toMatch(/"show_online_to_friends" boolean NOT NULL DEFAULT false/);
+    expect(migration).toMatch(/"show_lobby_to_friends" boolean NOT NULL DEFAULT false/);
+    // Physical isolation: the SQL itself (comments stripped) must never touch reward-side schemas.
+    const sqlOnly = migration.replace(/--[^\n]*/g, "");
+    expect(sqlOnly).not.toMatch(/"room"\.|"predictions"\.|balance|ledger|settle/i);
   });
 
   it("stores registration/login audience context without device fingerprint identifiers", () => {

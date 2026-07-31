@@ -110,6 +110,7 @@ export const sharedPageCopy: Record<string, { title: string; description: string
   "房间赛事": { title: "Group event", description: "Manage members and invitations. Before submission, points, data freshness, and the actual lock state are checked again." },
   "成员提交状态": { title: "Member submission status", description: "Hosts can only see who has submitted. No one’s selections or stakes are visible before the market locks." },
   "我的账户": { title: "My account", description: "Review balances, picks, and point movements for each group, and manage your profile." },
+  "好友": { title: "Friends", description: "Add friends by PULSE ID, handle requests, and manage your block list. Presence is visible only between mutual friends who both opted in." },
   "比赛中心": { title: "Match centre", description: "Only event data held in the product cache is shown here. Stale or unavailable data is explicitly marked." },
   "F1 赛程": { title: "F1 schedule", description: "Browse by race weekend. Predictions lock at the start of each session and settle automatically after official results are recorded." },
   "房间排行榜": { title: "Group leaderboard", description: "Rankings are calculated only within the current private group and never mix points from other groups." },

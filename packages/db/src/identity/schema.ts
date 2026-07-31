@@ -15,6 +15,8 @@ export const identityUsers = identitySchema.table("users", {
   nickname: text("nickname"),
   isSuperAdmin: boolean("is_super_admin").notNull().default(false),
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  showOnlineToFriends: boolean("show_online_to_friends").notNull().default(false),
+  showLobbyToFriends: boolean("show_lobby_to_friends").notNull().default(false),
   status: accountStatus("status").notNull().default("ACTIVE"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -90,6 +92,51 @@ export const securityEvents = identitySchema.table("security_events", {
   sourceKey: text("source_key").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
 });
+
+/**
+ * One row per user pair in canonical order (user_lo_id < user_hi_id) so the
+ * pair unique constraint arbitrates duplicate/concurrent relationships (FR84).
+ */
+export const friendships = identitySchema.table("friendships", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userLoId: uuid("user_lo_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  userHiId: uuid("user_hi_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("PENDING"),
+  requestedBy: uuid("requested_by").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  respondedAt: timestamp("responded_at", { withTimezone: true }),
+}, (table) => [
+  unique("friendships_pair_unique").on(table.userLoId, table.userHiId),
+  index("friendships_user_hi_idx").on(table.userHiId),
+]);
+
+/** Directional blocks; a block in either direction outranks friendship actions. */
+export const userBlocks = identitySchema.table("user_blocks", {
+  blockerUserId: uuid("blocker_user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  blockedUserId: uuid("blocked_user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.blockerUserId, table.blockedUserId] }),
+  index("user_blocks_blocked_idx").on(table.blockedUserId),
+]);
+
+/**
+ * Heartbeat signals filtered by TTL at read time (FR85). lobby_beat_at is
+ * reserved for Story 12.4; sessions.last_seen_at must never back presence.
+ */
+export const presenceSignals = identitySchema.table("presence_signals", {
+  userId: uuid("user_id").primaryKey().references(() => identityUsers.id, { onDelete: "cascade" }),
+  onlineBeatAt: timestamp("online_beat_at", { withTimezone: true }),
+  lobbyBeatAt: timestamp("lobby_beat_at", { withTimezone: true }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Persisted counting window for friend-request rate limiting (10/h, 50/d). */
+export const friendRequestEvents = identitySchema.table("friend_request_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  requesterUserId: uuid("requester_user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("friend_request_events_requester_time_idx").on(table.requesterUserId, table.occurredAt)]);
 
 export const accessEvents = identitySchema.table("access_events", {
   id: uuid("id").defaultRandom().primaryKey(),

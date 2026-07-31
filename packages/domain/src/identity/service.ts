@@ -317,9 +317,20 @@ export class IdentityService {
   }
 }
 
+/**
+ * Shared canonical form of the account handle. The PULSE ID members exchange to
+ * add friends (Story 12.1) IS the login username, so the two features must never
+ * drift onto different rules — both normalize through this single function.
+ * Returns null instead of throwing so callers pick their own error contract.
+ */
+export function canonicalUsername(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  return USERNAME_PATTERN.test(normalized) ? normalized : null;
+}
+
 function normalizeUsername(username: string) {
-  const normalized = username.trim().toLowerCase();
-  if (!USERNAME_PATTERN.test(normalized)) {
+  const normalized = canonicalUsername(username);
+  if (normalized === null) {
     throw new AuthError("INVALID_USERNAME", 422, "Use 3-32 lowercase letters, numbers, or underscores.");
   }
   return normalized;

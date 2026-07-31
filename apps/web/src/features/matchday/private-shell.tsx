@@ -9,6 +9,7 @@ import { PulseMotion } from "@/components/pulse-motion";
 import { PulseTransition } from "@/components/pulse-transition";
 import { sharedPageCopy } from "@/lib/i18n/messages";
 import { SessionGuard } from "@/features/auth/session-guard";
+import { PresenceHeartbeat } from "@/features/friends/presence-heartbeat";
 
 export function PrivateShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   const { locale, t } = useLocale();
@@ -19,6 +20,7 @@ export function PrivateShell({ title, description, children }: { title: string; 
 
   return <SessionGuard>
     <div className="pd-has-bottom-nav min-h-screen">
+      <PresenceHeartbeat />
       <PulseMotion />
       <PulseTransition />
       <header className="pd-header">

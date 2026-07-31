@@ -291,7 +291,7 @@ function mapAccount(user: typeof identityUsers.$inferSelect, acceptedRulesVersio
 // generic outer message), so a top-level `.code` check silently misses it and the duplicate surfaces as
 // a 500 instead of a friendly 409. Walk the cause chain and fall back to the message text so a duplicate
 // is caught regardless of how the driver wraps it. Regression-tested in repository.test.ts.
-function isUniqueViolation(error: unknown): boolean {
+export function isUniqueViolation(error: unknown): boolean {
   for (let current: unknown = error, depth = 0; current !== null && current !== undefined && depth < 5; depth++) {
     if (typeof current !== "object") break;
     const candidate = current as { code?: unknown; message?: unknown; cause?: unknown };
