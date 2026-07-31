@@ -8,6 +8,8 @@
  * (the 12.2 precedent: the domain barrel pulls node-only modules).
  */
 
+import type { MessageKey } from "@/lib/i18n/messages";
+
 export type ChatMessageRecord = {
   id: string;
   authorPulseId: string;
@@ -133,6 +135,69 @@ export function retryPending(pending: PendingMessage[], localId: string): Pendin
 export function mergeConfirmed(messages: ChatMessageRecord[], confirmed: ChatMessageRecord): ChatMessageRecord[] {
   if (messages.some((message) => message.id === confirmed.id)) return messages;
   return [confirmed, ...messages];
+}
+
+/**
+ * Business rejections arrive as stable error codes; the UI renders them
+ * through i18n, never the server's English `message` string. Room chat and
+ * the club channel share one vocabulary (`chat.err.*`).
+ */
+export function chatErrorKey(code: string | undefined): MessageKey {
+  switch (code) {
+    case "MUTED": return "chat.err.MUTED";
+    case "COMMUNITY_MUTED": return "chat.err.COMMUNITY_MUTED";
+    case "RULES_CONFIRMATION_REQUIRED": return "chat.err.RULES_CONFIRMATION_REQUIRED";
+    case "RATE_LIMITED": return "chat.err.RATE_LIMITED";
+    case "DUPLICATE_MESSAGE": return "chat.err.DUPLICATE_MESSAGE";
+    case "MESSAGE_INVALID": return "chat.err.MESSAGE_INVALID";
+    case "ROOM_NOT_ACTIVE": return "chat.err.ROOM_NOT_ACTIVE";
+    case "ROOM_NOT_FOUND": return "chat.err.ROOM_NOT_FOUND";
+    case "MESSAGE_NOT_FOUND": return "chat.err.MESSAGE_NOT_FOUND";
+    case "MESSAGE_NOT_PINNED": return "chat.err.MESSAGE_NOT_PINNED";
+    case "MEMBER_NOT_FOUND": return "chat.err.MEMBER_NOT_FOUND";
+    case "SELF_MUTE_FORBIDDEN": return "chat.err.SELF_MUTE_FORBIDDEN";
+    case "SELF_REPORT_FORBIDDEN": return "chat.err.SELF_REPORT_FORBIDDEN";
+    case "MUTE_ALREADY_ACTIVE": return "chat.err.MUTE_ALREADY_ACTIVE";
+    case "MUTE_NOT_ACTIVE": return "chat.err.MUTE_NOT_ACTIVE";
+    case "REPORT_ALREADY_OPEN": return "chat.err.REPORT_ALREADY_OPEN";
+    case "INVALID_REQUEST": return "chat.err.INVALID_REQUEST";
+    case "UNAUTHENTICATED": return "chat.err.UNAUTHENTICATED";
+    case "INVALID_ORIGIN": return "chat.err.INVALID_ORIGIN";
+    default: return "room.chat.errorGeneric";
+  }
+}
+
+type KeyedMessage = { id: string; createdAt: string };
+
+/**
+ * Reconcile a freshly polled page with what is already on screen. A poll that
+ * was issued BEFORE a send committed can resolve AFTER the send's
+ * mergeConfirmed — replacing state with that stale snapshot makes the user's
+ * just-confirmed message vanish for a full poll cycle (and invites a resend
+ * that hits DUPLICATE_MESSAGE). Keep any current message that is strictly
+ * newer than the snapshot's newest row; everything else follows the snapshot,
+ * so moderation removals still land.
+ */
+export function reconcileMessages<T extends KeyedMessage>(current: T[], incoming: T[]): T[] {
+  const newest = incoming[0];
+  const keep = current.filter(
+    (message) =>
+      !incoming.some((entry) => entry.id === message.id) &&
+      (!newest ||
+        message.createdAt > newest.createdAt ||
+        (message.createdAt === newest.createdAt && message.id > newest.id)),
+  );
+  return keep.length === 0 ? incoming : [...keep, ...incoming];
+}
+
+/**
+ * Drop optimistic entries the poll has already confirmed: when a poll lands
+ * while the POST is still in flight, the same text would otherwise render
+ * twice (confirmed row + "sending…" row). Failed entries stay — they hold the
+ * retry/discard controls.
+ */
+export function dropDeliveredPending(pending: PendingMessage[], messages: Array<{ body: string }>): PendingMessage[] {
+  return pending.filter((entry) => !(entry.status === "sending" && messages.some((message) => message.body === entry.body)));
 }
 
 /** True while the caller's mute window is still running. */

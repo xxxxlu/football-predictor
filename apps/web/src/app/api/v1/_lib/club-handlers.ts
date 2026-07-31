@@ -22,6 +22,14 @@ import { assertSameOrigin } from "./request-origin";
 const attemptSchema = z.object({ answer: z.enum(CHALLENGE_OPTION_KEYS) }).strict();
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// Shape alone admits calendar-invalid days ("2026-02-31" sorts before today,
+// then blows up in the PG date cast as a 500). Round-trip through Date pins
+// the value to a real calendar day.
+function isCalendarDay(day: string): boolean {
+  if (!DAY_PATTERN.test(day)) return false;
+  const parsed = new Date(`${day}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+}
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface Identity {
@@ -74,7 +82,7 @@ export function createClubHandlers(identity: Identity, club: Club, now: () => Da
         const url = new URL(request.url);
         const today = productDay(now());
         const dayParam = url.searchParams.get("day")?.trim();
-        if (dayParam !== undefined && dayParam !== "" && (!DAY_PATTERN.test(dayParam) || dayParam > today)) {
+        if (dayParam !== undefined && dayParam !== "" && (!isCalendarDay(dayParam) || dayParam > today)) {
           return failure("INVALID_REQUEST", 422);
         }
         const day = dayParam || today;
@@ -113,6 +121,7 @@ function failure(code: string, status: number) {
     code === "UNAUTHENTICATED" ? "Log in to continue."
     : code === "ROOM_NOT_FOUND" ? "The requested room was not found."
     : code === "INVALID_REQUEST" ? "Check the submitted fields and try again."
+    : code === "INVALID_ORIGIN" ? "Reload this page and try again."
     : "The request could not be completed.";
   return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
 }

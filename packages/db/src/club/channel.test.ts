@@ -80,6 +80,9 @@ describe("channel read path", () => {
     expect(pageQuery).toContain("b.blocker_user_id =");
     expect(pageQuery).toContain("b.blocked_user_id = u.id");
     expect(pageQuery).toContain("b.blocker_user_id = u.id");
+    // The read window bounds pagination to the newest N stored messages — the
+    // 12.4 product default is enforced here, not just declared in the domain.
+    expect(pageQuery).toContain("OFFSET");
     // A second request with the cursor narrows by the compound key.
     await repository.listMessages("viewer-1", { cursor: page.cursor! });
     expect(log.queries.some((q) => q.includes("AND (m.created_at, m.id) <"))).toBe(true);
@@ -144,6 +147,9 @@ describe("channel write path", () => {
     }, log), clock);
     const message = await repository.sendMessage("user-1", "今晚谁夺冠？");
     expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁夺冠？", createdAt: NOW });
+    // Count-then-insert gates need a per-user arbiter under READ COMMITTED:
+    // the send transaction serializes on an advisory lock.
+    expect(log.queries[0]).toContain("pg_advisory_xact_lock");
     // AC1: the lobby is not a points room — no query leaves identity.* and club.*.
     for (const query of log.queries) {
       for (const forbidden of ["room.", "ledger.", "prediction.", "supplier.", "available_points", "DELETE FROM"]) {
@@ -201,15 +207,17 @@ describe("friend activity", () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = createClubChannelRepository(fakeSql((q) => {
       if (q.includes("AS answered")) return [{ answered: false }];
-      if (q.includes("FROM identity.friendships f")) return [{ pulseId: "pulse_two", nickname: null, online: true, answeredToday: null }];
+      if (q.includes("FROM identity.friendships f")) return [{ pulseId: "pulse_two", nickname: null, online: true, inLobby: false, answeredToday: null }];
       return [];
     }, log), clock);
     const activity = await repository.friendActivity("viewer-1", "2026-07-31");
     expect(activity.viewerAnswered).toBe(false);
-    expect(activity.friends).toEqual([{ pulseId: "pulse_two", nickname: null, online: true, answeredToday: null }]);
+    expect(activity.friends).toEqual([{ pulseId: "pulse_two", nickname: null, online: true, inLobby: false, answeredToday: null }]);
     const friends = log.queries.find((q) => q.includes("FROM identity.friendships f"))!;
     // Presence keeps the 12.1 consent semantics; blocks filter both ways.
+    // `inLobby` is the reader for 向好友展示「正在大厅」 — its own toggle, own beat.
     expect(friends).toContain("u.show_online_to_friends AND p.online_beat_at >");
+    expect(friends).toContain("u.show_lobby_to_friends AND p.lobby_beat_at >");
     expect(friends).toContain("f.status = 'ACCEPTED'");
     expect(friends).toContain("b.blocked_user_id = u.id");
     expect(friends).not.toContain("last_seen_at");

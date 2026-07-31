@@ -37,7 +37,14 @@ describe("decideFriendRequest", () => {
     });
   });
 
-  it("suppresses with no write when a block exists in either direction", () => {
+  it("writes the same rows under a block, but never completes a handshake", () => {
+    // No row yet: the request lands exactly like a normal one — the
+    // requester's own outbox must not betray the block (AC2).
+    expect(
+      decideFriendRequest({ requesterId: "a", targetId: "b", existing: null, blocked: true }),
+    ).toEqual({ kind: "CREATE" });
+    // A pending request from the other side would normally auto-accept;
+    // across a block it must stay PENDING-shaped instead.
     expect(
       decideFriendRequest({
         requesterId: "a",
@@ -45,7 +52,7 @@ describe("decideFriendRequest", () => {
         existing: { status: "PENDING", requestedBy: "b" },
         blocked: true,
       }),
-    ).toEqual({ kind: "SUPPRESS" });
+    ).toEqual({ kind: "NOOP", status: "PENDING" });
   });
 
   it("accepts when the other side already has a pending request (mutual intent)", () => {

@@ -15,7 +15,10 @@ import { assertSameOrigin } from "../../_lib/request-origin";
  * sent-at) from the message row itself, never from the reporter.
  */
 
-const sendSchema = z.object({ body: z.string() }).strict();
+// The hard bound is 500 code points, counted after normalization; the schema
+// cap only exists to refuse megabyte bodies before they are trimmed and
+// code-point-counted (500 astral code points = 1000 UTF-16 units, plus slack).
+const sendSchema = z.object({ body: z.string().max(4000) }).strict();
 const muteSchema = z.object({
   memberUserId: z.string().uuid(),
   muteHours: z.union(MUTE_DURATION_HOURS.map((hours) => z.literal(hours)) as [z.ZodLiteral<1>, z.ZodLiteral<24>, z.ZodLiteral<72>, z.ZodLiteral<168>]),
@@ -93,10 +96,15 @@ export function createRoomChatHandlers(identity: ChatIdentity, chat: RoomChat, r
     unmute: (request: Request, roomId: string, muteId: string) => execute(async () => {
       assertSameOrigin(request);
       const accountId = await userId(request);
-      const parsed = uuidSchema.safeParse(muteId);
-      if (!parsed.success) throw new OperationError("MUTE_NOT_ACTIVE", 409);
       const input = unmuteSchema.parse(await request.json());
-      return json({ data: await chat.unmuteMember(room(roomId), accountId, parsed.data, input.reason) });
+      // A malformed muteId is folded to the nil uuid instead of answered
+      // early: the repository then runs its owner/room gate first, so a
+      // non-owner probing with junk gets the same ROOM_NOT_FOUND as on every
+      // other surface, and an owner gets MUTE_NOT_ACTIVE — never a bespoke
+      // pre-auth shape.
+      const parsed = uuidSchema.safeParse(muteId);
+      const muteKey = parsed.success ? parsed.data : "00000000-0000-0000-0000-000000000000";
+      return json({ data: await chat.unmuteMember(room(roomId), accountId, muteKey, input.reason) });
     }),
     report: (request: Request, roomId: string, messageId: string) => execute(async () => {
       assertSameOrigin(request);
@@ -134,6 +142,7 @@ async function execute(operation: () => Promise<Response>) {
     if (error instanceof AuthError) return failure(error.code, error.status, error.action);
     if (error instanceof OperationError) return failure(error.code, error.status);
     if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422);
+    console.error("room chat handler failed", error);
     return failure("INTERNAL_ERROR", 500);
   }
 }

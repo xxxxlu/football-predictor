@@ -50,6 +50,15 @@ describe("buildFortuneShareText", () => {
     expect(zh).not.toContain("http");
     expect(buildFortuneShareText(card, "en")).toContain("Iron Midfielder");
   });
+
+  it("stays byte-identical to the domain template it deliberately duplicates", async () => {
+    // The client copy exists so the bundle never imports @pulse/domain
+    // (node:crypto); this pin is the only thing keeping the two from drifting.
+    const { fortuneShareText } = await import("@pulse/domain");
+    const card = { key: "k", title: { zh: "铁血中场", en: "Iron Midfielder" }, text: { zh: "文案", en: "Copy" } };
+    expect(buildFortuneShareText(card, "zh-CN")).toBe(fortuneShareText(card, "zh"));
+    expect(buildFortuneShareText(card, "en")).toBe(fortuneShareText(card, "en"));
+  });
 });
 
 describe("badgeLabel", () => {

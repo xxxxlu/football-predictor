@@ -3,7 +3,9 @@ import {
   CHANNEL_MESSAGE_PROJECTION_KEYS,
   CHANNEL_MESSAGES_PER_WINDOW,
   CHANNEL_PAGE_SIZE,
+  CHANNEL_READ_WINDOW_MESSAGES,
   CHANNEL_WINDOW_SECONDS,
+  CHANNEL_WRITE_REFUSALS,
   COMMUNITY_RULES_VERSION,
   decodeChatCursor,
   encodeChatCursor,
@@ -98,7 +100,10 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
      * The channel page a viewer may read: newest-first keyset page excluding
      * HIDDEN messages and messages from authors the viewer has a block with in
      * either direction, plus the viewer's own write-gate state (their own mute
-     * and rules confirmation are not disclosures).
+     * and rules confirmation are not disclosures). The read window bounds how
+     * far back any viewer can paginate: only the newest
+     * CHANNEL_READ_WINDOW_MESSAGES stored messages are reachable (the 12.4
+     * product default) — older history stays stored but is not served.
      */
     async listMessages(viewerId: string, options: { cursor?: string } = {}) {
       const nowIso = clock().toISOString();
@@ -117,6 +122,12 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         WHERE NOT EXISTS (SELECT 1 FROM club.channel_message_moderation mm
             WHERE mm.message_id = m.id AND mm.state = 'HIDDEN')
           AND ${blockedPairPredicate(sql, viewerId)}
+          AND NOT EXISTS (
+            SELECT 1 FROM (
+              SELECT created_at, id FROM club.channel_messages
+              ORDER BY created_at DESC, id DESC
+              OFFSET ${CHANNEL_READ_WINDOW_MESSAGES - 1} LIMIT 1) edge
+            WHERE (m.created_at, m.id) < (edge.created_at, edge.id))
           ${cursorPredicate}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${CHANNEL_PAGE_SIZE + 1}`;
@@ -143,27 +154,40 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
      */
     async sendMessage(userId: string, body: string): Promise<ChannelMessageProjection> {
       return await sql.begin(async (tx) => {
+        // Serialize sends per user: rate and duplicate gates are
+        // count-then-insert under READ COMMITTED and need an arbiter against
+        // parallel bursts. Transaction-scoped, released on commit/abort.
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended('channel-send:' || ${userId}, 0))`;
         const [account] = await tx<Array<{ pulseId: string; nickname: string | null }>>`
           SELECT username_canonical AS "pulseId", nickname FROM identity.users
           WHERE id = ${userId} AND status = 'ACTIVE' LIMIT 1`;
         if (!account) throw new OperationError("USER_NOT_FOUND", 404);
 
-        if (!(await hasConfirmedRules(tx, userId))) throw new OperationError("RULES_CONFIRMATION_REQUIRED", 403);
+        // Statuses come from the domain refusal table so the two cannot drift.
+        if (!(await hasConfirmedRules(tx, userId))) {
+          throw new OperationError("RULES_CONFIRMATION_REQUIRED", CHANNEL_WRITE_REFUSALS.RULES_CONFIRMATION_REQUIRED);
+        }
 
         const now = clock();
         const nowIso = now.toISOString();
-        if (await activeMuteUntil(tx, userId, nowIso)) throw new OperationError("COMMUNITY_MUTED", 403);
+        if (await activeMuteUntil(tx, userId, nowIso)) {
+          throw new OperationError("COMMUNITY_MUTED", CHANNEL_WRITE_REFUSALS.COMMUNITY_MUTED);
+        }
 
         const windowStartIso = new Date(now.getTime() - CHANNEL_WINDOW_SECONDS * 1000).toISOString();
         const [window] = await tx<Array<{ recent: string | number }>>`
           SELECT count(*) AS recent FROM club.channel_messages
           WHERE user_id = ${userId} AND created_at >= ${windowStartIso}`;
-        if (Number(window?.recent ?? 0) >= CHANNEL_MESSAGES_PER_WINDOW) throw new OperationError("RATE_LIMITED", 429);
+        if (Number(window?.recent ?? 0) >= CHANNEL_MESSAGES_PER_WINDOW) {
+          throw new OperationError("RATE_LIMITED", CHANNEL_WRITE_REFUSALS.RATE_LIMITED);
+        }
 
         const [previous] = await tx<Array<{ body: string }>>`
           SELECT body FROM club.channel_messages WHERE user_id = ${userId}
           ORDER BY created_at DESC, id DESC LIMIT 1`;
-        if (isDuplicateMessage(previous?.body ?? null, body)) throw new OperationError("DUPLICATE_MESSAGE", 422);
+        if (isDuplicateMessage(previous?.body ?? null, body)) {
+          throw new OperationError("DUPLICATE_MESSAGE", CHANNEL_WRITE_REFUSALS.DUPLICATE_MESSAGE);
+        }
 
         const [inserted] = await tx<Array<{ id: string; createdAt: Date | string }>>`
           INSERT INTO club.channel_messages (user_id, body, created_at)
@@ -214,9 +238,12 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         SELECT EXISTS (SELECT 1 FROM club.daily_challenge_attempts a
           WHERE a.user_id = ${viewerId} AND a.product_day = ${productDay}) AS answered`;
       const viewerAnswered = viewer?.answered ?? false;
-      const rows = await sql<Array<{ pulseId: string; nickname: string | null; online: boolean; answeredToday: boolean | null }>>`
+      const rows = await sql<
+        Array<{ pulseId: string; nickname: string | null; online: boolean; inLobby: boolean; answeredToday: boolean | null }>
+      >`
         SELECT u.username_canonical AS "pulseId", u.nickname,
           COALESCE(u.show_online_to_friends AND p.online_beat_at > ${ttlCutoffIso}, false) AS online,
+          COALESCE(u.show_lobby_to_friends AND p.lobby_beat_at > ${ttlCutoffIso}, false) AS "inLobby",
           CASE WHEN ${viewerAnswered} THEN EXISTS (SELECT 1 FROM club.daily_challenge_attempts a
             WHERE a.user_id = u.id AND a.product_day = ${productDay}) END AS "answeredToday"
         FROM identity.friendships f

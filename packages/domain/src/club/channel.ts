@@ -76,8 +76,10 @@ export const LOBBY_DIRECTORY_PROJECTION_KEYS = ["pulseId", "nickname"] as const;
  * Friend activity is a composed read model (12.1 presence × 12.2 challenge
  * completion), not an event stream. `answeredToday` is null when the viewer has
  * not answered today's challenge themselves — the 12.2 mutual-submission gate.
+ * `inLobby` is the reader for the 12.1 `show_lobby_to_friends` toggle: friends
+ * only, gated on that consent column and the presence TTL.
  */
-export const FRIEND_ACTIVITY_PROJECTION_KEYS = ["pulseId", "nickname", "online", "answeredToday"] as const;
+export const FRIEND_ACTIVITY_PROJECTION_KEYS = ["pulseId", "nickname", "online", "inLobby", "answeredToday"] as const;
 
 /**
  * Forbidden categories for anything the lobby ships. `room` is on the list —

@@ -11,15 +11,19 @@ import {
   appendPending,
   CHAT_MESSAGE_MAX,
   CHAT_POLL_INTERVAL_MS,
+  chatErrorKey,
   chatMessageLength,
+  dropDeliveredPending,
   failPending,
   isMutedNow,
   listChannelRequest,
   LOBBY_HEARTBEAT_INTERVAL_MS,
+  LOBBY_SECTIONS_REFRESH_MS,
   lobbyHeartbeatRequest,
   lobbyRequest,
   mergeConfirmedChannelMessage,
   normalizeChatInput,
+  reconcileMessages,
   removePending,
   reportChannelMessageRequest,
   retryPending,
@@ -52,6 +56,12 @@ export function ClubLobbyView() {
   const [confirmingRules, setConfirmingRules] = useState(false);
   const [busy, setBusy] = useState(false);
   const localSeq = useRef(0);
+  const reportReasonRef = useRef<HTMLTextAreaElement>(null);
+
+  // The report panel renders above the message list; move focus into it so a
+  // keyboard/screen-reader user activating 举报 on a deep message finds the
+  // form (NFR25).
+  useEffect(() => { if (reportTarget) reportReasonRef.current?.focus(); }, [reportTarget]);
 
   const loadLobby = useCallback(async (signal?: AbortSignal) => {
     const { url, init } = lobbyRequest();
@@ -90,13 +100,45 @@ export function ClubLobbyView() {
       controllers.add(controller);
       try {
         const data = await loadChannel(controller.signal);
-        if (!disposed) setChannel(data);
+        if (!disposed) {
+          setChannel((current) => current
+            ? {
+                ...data,
+                // Reconcile, don't replace: a stale snapshot must not erase a
+                // just-confirmed send…
+                messages: reconcileMessages(current.messages, data.messages),
+                // …and a poll issued before the rules acceptance committed
+                // must not re-lock the composer mid-typing (monotonic within
+                // the session — the version is a deploy-time constant).
+                rulesConfirmed: data.rulesConfirmed || current.rulesConfirmed,
+              }
+            : data);
+          setPending((current) => dropDeliveredPending(current, data.messages));
+        }
       } catch { /* keep stale channel data */ }
       finally { controllers.delete(controller); }
     };
     const interval = window.setInterval(() => { void refresh(); }, CHAT_POLL_INTERVAL_MS);
     return () => { disposed = true; window.clearInterval(interval); for (const controller of controllers) controller.abort(); };
   }, [loadChannel]);
+
+  // Directory and friend activity go stale against the 90s presence TTL and
+  // must recover from a failed section on their own (the section copy says
+  // so). Refresh them on a slow cadence; the channel state stays owned by the
+  // channel poll above.
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void loadLobby()
+        .then((data) => {
+          setLobby((current) => current
+            ? { ...current, directory: data.directory, friends: data.friends, failedSections: data.failedSections }
+            : data);
+        })
+        .catch(() => { /* keep stale sections; the next tick retries */ });
+    }, LOBBY_SECTIONS_REFRESH_MS);
+    return () => window.clearInterval(interval);
+  }, [loadLobby]);
 
   // Lobby presence heartbeat: fire-and-forget, consent enforced server-side —
   // with every toggle off the server records nothing no matter what we send.
@@ -116,7 +158,8 @@ export function ClubLobbyView() {
     try {
       const response = await fetch(url, init);
       const result = await response.json().catch(() => ({})) as ApiEnvelope<ChannelMessageRecord> & ApiFailure;
-      if (!response.ok) throw new Error(result.error?.message || t("room.chat.sendFailed"));
+      // Render by error CODE through i18n — the server message is English-only.
+      if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("room.chat.sendFailed"));
       setPending((current) => removePending(current, localId));
       setChannel((current) => current ? { ...current, messages: mergeConfirmedChannelMessage(current.messages, result.data) } : current);
     } catch (reason) {
@@ -145,7 +188,7 @@ export function ClubLobbyView() {
       const { url, init } = reportChannelMessageRequest(reportTarget.id, reportReason.trim());
       const response = await fetch(url, init);
       const result = await response.json().catch(() => ({})) as ApiFailure;
-      if (!response.ok) throw new Error(result.error?.message || t("room.chat.errorGeneric"));
+      if (!response.ok) throw new Error(t(chatErrorKey(result.error?.code)));
       setNotice({ tone: "success", text: t("room.chat.reportDone") });
       setReportTarget(null); setReportReason("");
     } catch (reason) {
@@ -161,7 +204,7 @@ export function ClubLobbyView() {
       const { url, init } = acceptCommunityRulesRequest();
       const response = await fetch(url, init);
       const result = await response.json().catch(() => ({})) as ApiFailure;
-      if (!response.ok) throw new Error(result.error?.message || t("club.lobby.rulesFailed"));
+      if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("club.lobby.rulesFailed"));
       // Unlock in place (AC2's recovery path made visible).
       setChannel((current) => current ? { ...current, rulesConfirmed: true } : current);
       setNotice({ tone: "success", text: t("club.lobby.rulesDone") });
@@ -210,6 +253,7 @@ export function ClubLobbyView() {
                     <span><b>{friend.nickname || friend.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">@{friend.pulseId}</span></span>
                     <span className="flex gap-2 text-xs">
                       <span className={`rounded-full border px-2 py-0.5 font-bold ${friend.online ? "border-[var(--field)] text-[var(--field)]" : "border-[var(--line)] text-[var(--muted)]"}`}>{friend.online ? t("club.lobby.online") : t("club.lobby.offline")}</span>
+                      {friend.inLobby && <span className="rounded-full border border-[var(--field)] px-2 py-0.5 font-bold text-[var(--field)]">{t("club.lobby.inLobby")}</span>}
                       {friend.answeredToday !== null && <span className={`rounded-full border px-2 py-0.5 font-bold ${friend.answeredToday ? "border-[var(--ink)]" : "border-[var(--line)] text-[var(--muted)]"}`}>{friend.answeredToday ? t("club.lobby.answered") : t("club.lobby.notAnswered")}</span>}
                     </span>
                   </li>)}
@@ -245,7 +289,7 @@ export function ClubLobbyView() {
             <h3 className="text-sm font-bold">{t("room.chat.reportTitle")}</h3>
             <p className="mt-1 truncate text-xs text-[var(--muted)]">“{reportTarget.body}”</p>
             <label htmlFor="channel-report-reason" className="mt-3 block text-xs font-bold">{t("room.chat.reportReasonLabel")}</label>
-            <textarea id="channel-report-reason" value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+            <textarea id="channel-report-reason" ref={reportReasonRef} value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
             <div className="mt-3 flex gap-2">
               <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.reportSubmit")}</button>
               <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setReportTarget(null)}>{t("room.chat.cancel")}</button>

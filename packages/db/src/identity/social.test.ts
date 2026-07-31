@@ -90,16 +90,36 @@ describe("requestFriend", () => {
     expect(log.queries.some((query) => query.includes("INSERT INTO identity.friendships"))).toBe(false);
   });
 
-  it("suppresses a blocked request with the same shape as success and no relationship write", async () => {
+  it("writes a blocked request exactly like a normal one — same shape, same row, same quota", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = createSocialRepository(
       fakeSql(respondWith([base.resolve([{ id: TARGET }]), base.window(0, 0), base.blocks(true)]), log),
       clock,
     );
     await expect(repository.requestFriend(REQUESTER, "bob")).resolves.toEqual({ status: "PENDING" });
-    // The attempt still consumes rate-limit quota, so probing costs the same as asking.
+    // The attempt consumes quota AND persists the row: writing nothing was the
+    // observable difference (missing outbox entry / no-op pair DELETE) that
+    // told the blocked side about the block. Only the blocker's views filter.
     expect(log.queries.some((query) => query.includes("INSERT INTO identity.friend_request_events"))).toBe(true);
-    expect(log.queries.some((query) => query.includes("identity.friendships"))).toBe(false);
+    expect(log.queries.some((query) => query.includes("INSERT INTO identity.friendships"))).toBe(true);
+  });
+
+  it("never auto-accepts across a block: a counterpart's pending request stays PENDING", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = createSocialRepository(
+      fakeSql(
+        respondWith([
+          base.resolve([{ id: TARGET }]),
+          base.window(0, 0),
+          base.blocks(true),
+          ["FROM identity.friendships WHERE user_lo_id = $ AND user_hi_id = $ FOR UPDATE", () => [{ status: "PENDING", requestedBy: TARGET }]],
+        ]),
+        log,
+      ),
+      clock,
+    );
+    await expect(repository.requestFriend(REQUESTER, "bob")).resolves.toEqual({ status: "PENDING" });
+    expect(log.queries.some((query) => query.includes("SET status = 'ACCEPTED'"))).toBe(false);
   });
 
   it("creates a pending row in canonical order for a fresh pair", async () => {
@@ -280,6 +300,20 @@ describe("blocks and privacy writes", () => {
     await expect(repository.blockUser(REQUESTER, "bob")).resolves.toEqual({ blocked: true });
     expect(log.queries.some((query) => query.includes("ON CONFLICT (blocker_user_id, blocked_user_id) DO NOTHING"))).toBe(true);
     expect(log.queries.some((query) => query.includes("DELETE FROM identity.friendships"))).toBe(true);
+    // Blocking is a priced social write like a friend request: it takes the
+    // per-user advisory lock and burns a BLOCK-kind event before anything else.
+    expect(log.queries[0]).toContain("pg_advisory_xact_lock");
+    const event = log.queries.find((query) => query.includes("INSERT INTO identity.friend_request_events"))!;
+    expect(event).toContain("kind");
+    expect(log.values).toContain("BLOCK");
+  });
+
+  it("rate-limits blocks from the same persisted window, kind-filtered", async () => {
+    const repository = createSocialRepository(
+      fakeSql(respondWith([base.resolve([{ id: TARGET }]), base.window(30, 30)])),
+      clock,
+    );
+    await expectOperationError(repository.blockUser(REQUESTER, "bob"), "RATE_LIMITED", 429);
   });
 
   it("refuses a self block", async () => {
@@ -319,8 +353,11 @@ describe("recordHeartbeat", () => {
     const recorded = createSocialRepository(fakeSql(() => [{ userId: REQUESTER }], log), clock);
     await expect(recorded.recordHeartbeat(REQUESTER)).resolves.toEqual({ recorded: true });
     expect(log.queries[0]).toContain("u.status = 'ACTIVE'");
-    // Each beat column is gated by its own consent, in SQL (12.1 + 12.4).
-    expect(log.queries[0]).toContain("CASE WHEN u.show_online_to_friends OR u.show_lobby_to_friends THEN");
+    // Each beat column is gated by its OWN consent, in SQL: the online beat
+    // answers to show_online_to_friends alone (review fix — it briefly rode on
+    // a sibling toggle), the lobby beat to either lobby-facing toggle.
+    expect(log.queries[0]).toContain("CASE WHEN u.show_online_to_friends THEN");
+    expect(log.queries[0]).not.toContain("show_online_to_friends OR u.show_lobby_to_friends");
     expect(log.queries[0]).toContain("(u.show_lobby_to_friends OR u.show_in_lobby_directory) THEN");
     const gated = createSocialRepository(fakeSql(() => []), clock);
     await expect(gated.recordHeartbeat(REQUESTER)).resolves.toEqual({ recorded: false });

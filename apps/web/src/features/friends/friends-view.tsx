@@ -48,19 +48,27 @@ export function FriendsView() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const load = async () => {
+    const load = async (initial: boolean) => {
       try {
         await reload(controller.signal);
         setLoadError("");
       } catch (reason) {
-        if ((reason as Error).name !== "AbortError") setLoadError((reason as Error).message || "无法加载好友数据");
+        // Only the initial load may blank the page. A failed 45s refresh keeps
+        // the stale lists (and whatever the user is typing) on screen — same
+        // discipline as the chat views; the next successful poll catches up.
+        if ((reason as Error).name !== "AbortError" && initial) {
+          setLoadError((reason as Error).message || "无法加载好友数据");
+        }
       } finally {
-        setLoading(false);
+        if (initial) setLoading(false);
       }
     };
-    void load();
+    void load(true);
     // Presence dots go stale within the 90s TTL, so refresh on the shared cadence.
-    const timer = window.setInterval(() => void load(), FRIENDS_POLL_INTERVAL_MS);
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      void load(false);
+    }, FRIENDS_POLL_INTERVAL_MS);
     return () => { controller.abort(); window.clearInterval(timer); };
   }, [reload]);
 
@@ -166,7 +174,8 @@ export function FriendsView() {
               {outgoing.map((request) => <li key={request.requestId} className="flex flex-wrap items-center gap-3 py-3 text-sm">
                 <span className="font-bold">{request.nickname || request.pulseId}</span>
                 <span className="text-xs text-[var(--muted)]">等待对方处理</span>
-                <button type="button" onClick={() => void act(async () => { await api(`/api/v1/friends/requests/${request.requestId}`, { method: "POST", body: JSON.stringify({ action: "decline" }) }); return "已撤回申请。"; })}
+                {/* Requester-side withdrawal is the pair DELETE — decline is recipient-only and would 404. */}
+                <button type="button" onClick={() => void act(async () => { await api(`/api/v1/friends/${request.userId}`, { method: "DELETE" }); return "已撤回申请。"; })}
                   className="ml-auto rounded-full border border-[var(--line)] px-3 py-1.5 text-xs font-bold">撤回</button>
               </li>)}
             </ul>

@@ -23,7 +23,7 @@ describe("normalizePulseIdInput", () => {
 describe("splitRequests", () => {
   it("separates the inbox from sent requests without dropping entries", () => {
     const make = (direction: "INCOMING" | "OUTGOING", id: string): FriendRequestEntry => ({
-      requestId: id, direction, pulseId: "p", nickname: null, createdAt: "2026-07-31T00:00:00Z",
+      requestId: id, direction, userId: `user-${id}`, pulseId: "p", nickname: null, createdAt: "2026-07-31T00:00:00Z",
     });
     const { incoming, outgoing } = splitRequests([make("INCOMING", "1"), make("OUTGOING", "2"), make("INCOMING", "3")]);
     expect(incoming.map((entry) => entry.requestId)).toEqual(["1", "3"]);

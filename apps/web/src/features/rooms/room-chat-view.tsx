@@ -8,12 +8,15 @@ import {
   appendPending,
   CHAT_MESSAGE_MAX,
   CHAT_POLL_INTERVAL_MS,
+  chatErrorKey,
   chatMessageLength,
+  dropDeliveredPending,
   failPending,
   isMutedNow,
   listChatRequest,
   mergeConfirmed,
   MUTE_DURATION_OPTIONS,
+  reconcileMessages,
   muteMemberRequest,
   normalizeChatInput,
   pinChatRequest,
@@ -53,12 +56,23 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
   const [unmuteReason, setUnmuteReason] = useState("");
   const [busy, setBusy] = useState(false);
   const localSeq = useRef(0);
+  const reportReasonRef = useRef<HTMLTextAreaElement>(null);
+  const muteReasonRef = useRef<HTMLTextAreaElement>(null);
+  const unmuteReasonRef = useRef<HTMLTextAreaElement>(null);
+
+  // The inline panels render ABOVE the message list; without moving focus a
+  // keyboard or screen-reader user activating 举报/禁言 on a deep message never
+  // learns the form opened (NFR25).
+  useEffect(() => { if (reportTarget) reportReasonRef.current?.focus(); }, [reportTarget]);
+  useEffect(() => { if (muteTarget) muteReasonRef.current?.focus(); }, [muteTarget]);
+  useEffect(() => { if (unmuteTarget) unmuteReasonRef.current?.focus(); }, [unmuteTarget]);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const { url, init } = listChatRequest(roomId);
     const response = await fetch(url, { ...init, signal });
     const result = await response.json().catch(() => ({})) as ApiEnvelope<ChatPageRecord> & ApiFailure;
-    if (!response.ok) throw new Error(result.error?.message || t("room.chat.unavailable"));
+    // Render by error CODE through i18n — the server message is English-only.
+    if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("room.chat.unavailable"));
     return result.data;
   }, [roomId, t]);
 
@@ -72,7 +86,13 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       controllers.add(controller);
       try {
         const data = await load(controller.signal);
-        if (!disposed) { setPage(data); setError(""); }
+        if (!disposed) {
+          // Reconcile, don't replace: a stale snapshot must not erase a
+          // just-confirmed send; a landed poll retires its "sending…" row.
+          setPage((current) => current ? { ...data, messages: reconcileMessages(current.messages, data.messages) } : data);
+          setPending((current) => dropDeliveredPending(current, data.messages));
+          setError("");
+        }
       } catch (reason) {
         if (!disposed && (reason as Error).name !== "AbortError") setError((reason as Error).message);
       } finally {
@@ -90,7 +110,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
     try {
       const response = await fetch(url, init);
       const result = await response.json().catch(() => ({})) as ApiEnvelope<ChatMessageRecord> & ApiFailure;
-      if (!response.ok) throw new Error(result.error?.message || t("room.chat.sendFailed"));
+      if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("room.chat.sendFailed"));
       setPending((current) => removePending(current, localId));
       setPage((current) => current ? { ...current, messages: mergeConfirmed(current.messages, result.data) } : current);
     } catch (reason) {
@@ -117,7 +137,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
     try {
       const response = await fetch(request.url, request.init);
       const result = await response.json().catch(() => ({})) as ApiFailure;
-      if (!response.ok) throw new Error(result.error?.message || t("room.chat.errorGeneric"));
+      if (!response.ok) throw new Error(t(chatErrorKey(result.error?.code)));
       setNotice({ tone: "success", text: done });
       setReportTarget(null); setReportReason("");
       setMuteTarget(null); setMuteReason("");
@@ -179,7 +199,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       <h3 className="text-sm font-bold">{t("room.chat.reportTitle")}</h3>
       <p className="mt-1 truncate text-xs text-[var(--muted)]">“{reportTarget.body}”</p>
       <label htmlFor="chat-report-reason" className="mt-3 block text-xs font-bold">{t("room.chat.reportReasonLabel")}</label>
-      <textarea id="chat-report-reason" value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+      <textarea id="chat-report-reason" ref={reportReasonRef} value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
       <div className="mt-3 flex gap-2">
         <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.reportSubmit")}</button>
         <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setReportTarget(null)}>{t("room.chat.cancel")}</button>
@@ -197,7 +217,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
         {MUTE_DURATION_OPTIONS.map((option) => <option key={option.hours} value={option.hours}>{t(option.labelKey)}</option>)}
       </select>
       <label htmlFor="chat-mute-reason" className="mt-3 block text-xs font-bold">{t("room.chat.muteReasonLabel")}</label>
-      <textarea id="chat-mute-reason" value={muteReason} onChange={(event) => setMuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+      <textarea id="chat-mute-reason" ref={muteReasonRef} value={muteReason} onChange={(event) => setMuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
       <div className="mt-3 flex gap-2">
         <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--coral)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.muteSubmit")}</button>
         <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setMuteTarget(null)}>{t("room.chat.cancel")}</button>
@@ -207,7 +227,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
     {unmuteTarget && page.isOwner && <form className="mt-4 rounded-lg border border-[var(--line)] p-4" onSubmit={(event) => { event.preventDefault(); void act(unmuteMemberRequest(roomId, unmuteTarget.muteId, unmuteReason.trim()), t("room.chat.unmuteDone")); }}>
       <h3 className="text-sm font-bold">{t("room.chat.unmute")} · {unmuteTarget.pulseId}</h3>
       <label htmlFor="chat-unmute-reason" className="mt-3 block text-xs font-bold">{t("room.chat.unmuteReasonLabel")}</label>
-      <textarea id="chat-unmute-reason" value={unmuteReason} onChange={(event) => setUnmuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+      <textarea id="chat-unmute-reason" ref={unmuteReasonRef} value={unmuteReason} onChange={(event) => setUnmuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
       <div className="mt-3 flex gap-2">
         <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.unmute")}</button>
         <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setUnmuteTarget(null)}>{t("room.chat.cancel")}</button>

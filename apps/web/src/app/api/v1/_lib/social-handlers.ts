@@ -146,6 +146,7 @@ function failure(code: string, status: number) {
     : code === "RATE_LIMITED" ? "Too many friend requests. Try again later."
     : code === "REQUEST_NOT_FOUND" ? "The friend request was not found."
     : code === "INVALID_REQUEST" ? "Check the submitted fields and try again."
+    : code === "INVALID_ORIGIN" ? "Reload this page and try again."
     : "The request could not be completed.";
   return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
 }

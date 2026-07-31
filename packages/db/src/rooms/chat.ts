@@ -148,6 +148,11 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
     /** Sends one plain-text message; every gate lives in this transaction. */
     async sendMessage(roomId: string, userId: string, body: string): Promise<ChatMessageProjection> {
       return await sql.begin(async (tx) => {
+        // Serialize sends per (room, user): the rate and duplicate gates below
+        // are count-then-insert under READ COMMITTED, so without this lock a
+        // parallel burst all counts the same committed state and every request
+        // passes. The lock is transaction-scoped — released on commit/abort.
+        await tx`SELECT pg_advisory_xact_lock(hashtextextended('room-chat-send:' || ${roomId} || ':' || ${userId}, 0))`;
         const context = await memberContext(tx, roomId, userId);
         // RESTRICTED is readable but not writable — that is what the governance
         // restriction means. CLOSED rooms are read-only history.

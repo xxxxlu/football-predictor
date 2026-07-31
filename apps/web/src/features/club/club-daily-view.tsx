@@ -165,8 +165,8 @@ export function ClubDailyView() {
             : results.friends.length === 0 && (!results.room || results.room.length === 0)
               ? <p className="mt-4 text-sm text-[var(--muted)]">{t("club.daily.resultsEmpty")}</p>
               : <>
-                <ResultList rows={results.friends} title="FRIENDS" />
-                {results.room && <ResultList rows={results.room} title="ROOM" />}
+                <ResultList rows={results.friends} title={t("club.daily.resultsFriends")} />
+                {results.room && <ResultList rows={results.room} title={t("club.daily.resultsRoom")} />}
               </>}
         </section>
       </div>

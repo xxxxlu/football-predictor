@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
   appendPending,
+  chatErrorKey,
   chatMessageLength,
+  dropDeliveredPending,
   failPending,
   isMutedNow,
   listChatRequest,
   mergeConfirmed,
   MUTE_DURATION_OPTIONS,
   normalizeChatInput,
+  reconcileMessages,
   removePending,
   reportChatMessageRequest,
   retryPending,
@@ -67,6 +70,43 @@ describe("optimistic send bookkeeping", () => {
     const merged = mergeConfirmed(list, message("c"));
     expect(merged.map((entry) => entry.id)).toEqual(["c", "b", "a"]);
     expect(mergeConfirmed(merged, message("c"))).toBe(merged);
+  });
+
+  it("keeps a just-confirmed message when a stale poll snapshot lands after it", () => {
+    const at = (id: string, createdAt: string) => ({ ...message(id), createdAt });
+    const current = [at("confirmed", "2026-07-31T12:00:05.000Z"), at("b", "2026-07-31T12:00:00.000Z")];
+    // The poll was issued before the send committed: its snapshot lacks "confirmed".
+    const stale = [at("b", "2026-07-31T12:00:00.000Z"), at("a", "2026-07-31T11:59:00.000Z")];
+    expect(reconcileMessages(current, stale).map((entry) => entry.id)).toEqual(["confirmed", "b", "a"]);
+    // A snapshot that already contains it wins as-is (no duplicate).
+    const fresh = [at("confirmed", "2026-07-31T12:00:05.000Z"), at("b", "2026-07-31T12:00:00.000Z")];
+    expect(reconcileMessages(current, fresh).map((entry) => entry.id)).toEqual(["confirmed", "b"]);
+    // Moderation removals still land: an older message absent from the
+    // snapshot is dropped, not resurrected.
+    const hiddenB = [at("confirmed", "2026-07-31T12:00:05.000Z")];
+    expect(reconcileMessages(current, hiddenB).map((entry) => entry.id)).toEqual(["confirmed"]);
+  });
+
+  it("retires a sending entry the poll already confirmed, but never a failed one", () => {
+    const pending: PendingMessage[] = [
+      { localId: "l1", body: "已被确认的话", createdAt: "2026-07-31T12:00:00.000Z", status: "sending" },
+      { localId: "l2", body: "还在路上的话", createdAt: "2026-07-31T12:00:01.000Z", status: "sending" },
+      { localId: "l3", body: "已被确认的话", createdAt: "2026-07-31T12:00:02.000Z", status: "failed", error: "x" },
+    ];
+    const polled = [{ ...message("m1"), body: "已被确认的话" }];
+    expect(dropDeliveredPending(pending, polled).map((entry) => entry.localId)).toEqual(["l2", "l3"]);
+  });
+});
+
+describe("error-code localization", () => {
+  it("maps every chat business rejection to an i18n key, with a generic fallback", () => {
+    expect(chatErrorKey("MUTED")).toBe("chat.err.MUTED");
+    expect(chatErrorKey("RULES_CONFIRMATION_REQUIRED")).toBe("chat.err.RULES_CONFIRMATION_REQUIRED");
+    expect(chatErrorKey("COMMUNITY_MUTED")).toBe("chat.err.COMMUNITY_MUTED");
+    expect(chatErrorKey("DUPLICATE_MESSAGE")).toBe("chat.err.DUPLICATE_MESSAGE");
+    expect(chatErrorKey("RATE_LIMITED")).toBe("chat.err.RATE_LIMITED");
+    expect(chatErrorKey("SOMETHING_NEW")).toBe("room.chat.errorGeneric");
+    expect(chatErrorKey(undefined)).toBe("room.chat.errorGeneric");
   });
 });
 

@@ -185,6 +185,9 @@ describe("room chat repository", () => {
     }, log), clock);
     const message = await repository.sendMessage("room-1", "member-1", "今晚谁赢？");
     expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁赢？", createdAt: NOW, isPinned: false });
+    // The rate/duplicate gates are count-then-insert: a per-sender advisory
+    // lock serializes concurrent sends so the gates can't be raced past.
+    expect(log.queries[0]).toContain("pg_advisory_xact_lock");
     // FR59 / AC4: no chat query reaches into the prediction economy.
     for (const query of log.queries) {
       for (const forbidden of ["ledger.", "prediction.", "available_points", "DELETE FROM"]) expect(query).not.toContain(forbidden);

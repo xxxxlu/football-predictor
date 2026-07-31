@@ -11,7 +11,7 @@ const FORBIDDEN_KEY_PATTERN =
   /(room|ticket|ledger|balance|point|stake|odds|prediction|wallet|settle|invite|session|password|recovery|token)/i;
 
 export const FRIEND_LIST_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "online"] as const;
-export const FRIEND_REQUEST_PROJECTION_KEYS = ["requestId", "direction", "pulseId", "nickname", "createdAt"] as const;
+export const FRIEND_REQUEST_PROJECTION_KEYS = ["requestId", "direction", "userId", "pulseId", "nickname", "createdAt"] as const;
 export const BLOCK_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "createdAt"] as const;
 export const PRESENCE_PREFERENCES_PROJECTION_KEYS = ["showOnlineToFriends", "showLobbyToFriends", "showInLobbyDirectory"] as const;
 

@@ -15,7 +15,9 @@ import { assertSameOrigin } from "./request-origin";
  * block and names it under `failedSections`, instead of taking the page down.
  */
 
-const sendSchema = z.object({ body: z.string() }).strict();
+// 500 code points is the real bound (counted after normalization); the schema
+// cap just refuses megabyte bodies before they are trimmed and counted.
+const sendSchema = z.object({ body: z.string().max(4000) }).strict();
 // Same floor as every report form: ten code points of actual explanation.
 const reportSchema = z.object({ reason: governanceReason(10) }).strict();
 const uuidSchema = z.string().uuid();

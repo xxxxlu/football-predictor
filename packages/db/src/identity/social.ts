@@ -1,6 +1,8 @@
 import {
   assertMinimalFriendProjection,
   BLOCK_PROJECTION_KEYS,
+  BLOCKS_PER_DAY,
+  BLOCKS_PER_HOUR,
   canonicalPair,
   canRespondToRequest,
   decideFriendRequest,
@@ -13,6 +15,7 @@ import {
   type FriendshipStatus,
   type PresencePreferences,
   type RespondAction,
+  type SocialWriteKind,
 } from "@pulse/domain";
 import type postgres from "postgres";
 
@@ -27,9 +30,13 @@ import { OperationError } from "../operations/repository.js";
  * and every outgoing projection passes the minimal-disclosure guard.
  *
  * Anti-enumeration stance (AC2): a blocked requester gets the exact same
- * response as a successful one, an invalid or foreign request id is always
- * REQUEST_NOT_FOUND, and rate-limit events are recorded even for suppressed
- * requests so probing costs the same as asking.
+ * response — and the exact same persisted state — as a successful one. The
+ * request row IS written under a block; only the blocker's own views filter it
+ * (viewer-directional) and the respond path refuses it. Writing nothing was the
+ * original design and it leaked: the requester's own outbox and the pair-DELETE
+ * result both betrayed the missing row. Rate-limit events are recorded before
+ * the PULSE ID even resolves, so probing (hits, misses, blocked targets alike)
+ * costs exactly one quota unit per attempt on both the request and block paths.
  */
 export type SocialSql = postgres.Sql;
 
@@ -43,6 +50,8 @@ export interface FriendEntry {
 export interface FriendRequestEntry {
   requestId: string;
   direction: "INCOMING" | "OUTGOING";
+  /** The counterpart's id — what the requester-side withdrawal (DELETE /friends/{userId}) needs. */
+  userId: string;
   pulseId: string;
   nickname: string | null;
   createdAt: Date;
@@ -73,43 +82,60 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
     return rows.length > 0;
   }
 
+  /**
+   * Consumes one unit of the social-write quota BEFORE anything about the
+   * target is resolved: attempts are what get counted (hits, unknown PULSE IDs
+   * and blocked targets all cost the same unit), so neither endpoint is a free
+   * existence oracle. The per-requester advisory lock makes the
+   * count-then-insert atomic against parallel attempts from the same account.
+   *
+   * Must run in its OWN committed transaction, never inside the write it
+   * prices: a refused write (USER_NOT_FOUND, SELF_*) aborts its transaction,
+   * and an event row that rolls back with it would make exactly the failed
+   * probes free — the opposite of attempt pricing.
+   */
+  async function consumeSocialWriteQuota(
+    tx: postgres.ISql,
+    userId: string,
+    kind: SocialWriteKind,
+    perHour: number,
+    perDay: number,
+  ): Promise<void> {
+    const now = clock();
+    const nowIso = now.toISOString();
+    const hourAgoIso = new Date(now.getTime() - 3_600_000).toISOString();
+    const dayAgoIso = new Date(now.getTime() - 86_400_000).toISOString();
+    await tx`SELECT pg_advisory_xact_lock(hashtextextended('social-write:' || ${userId}, 0))`;
+    const [window] = await tx<Array<{ hourCount: string | number; dayCount: string | number }>>`
+      SELECT count(*) FILTER (WHERE occurred_at >= ${hourAgoIso}) AS "hourCount", count(*) AS "dayCount"
+      FROM identity.friend_request_events
+      WHERE requester_user_id = ${userId} AND kind = ${kind} AND occurred_at >= ${dayAgoIso}`;
+    if (Number(window?.hourCount ?? 0) >= perHour || Number(window?.dayCount ?? 0) >= perDay) {
+      throw new OperationError("RATE_LIMITED", 429);
+    }
+    await tx`INSERT INTO identity.friend_request_events (requester_user_id, kind, occurred_at)
+      VALUES (${userId}, ${kind}, ${nowIso})`;
+  }
+
   async function requestFriendOnce(requesterId: string, pulseId: string): Promise<{ status: FriendshipStatus }> {
     return await sql.begin(async (tx) => {
       const targetId = await resolveActiveUserByPulseId(tx, pulseId);
       if (targetId === requesterId) throw new OperationError("SELF_FRIEND_FORBIDDEN", 422);
 
-      const now = clock();
-      const nowIso = now.toISOString();
-      const hourAgoIso = new Date(now.getTime() - 3_600_000).toISOString();
-      const dayAgoIso = new Date(now.getTime() - 86_400_000).toISOString();
-      const [window] = await tx<Array<{ hourCount: string | number; dayCount: string | number }>>`
-        SELECT count(*) FILTER (WHERE occurred_at >= ${hourAgoIso}) AS "hourCount", count(*) AS "dayCount"
-        FROM identity.friend_request_events
-        WHERE requester_user_id = ${requesterId} AND occurred_at >= ${dayAgoIso}`;
-      if (
-        Number(window?.hourCount ?? 0) >= FRIEND_REQUESTS_PER_HOUR ||
-        Number(window?.dayCount ?? 0) >= FRIEND_REQUESTS_PER_DAY
-      ) {
-        throw new OperationError("RATE_LIMITED", 429);
-      }
-      // Suppressed (blocked) attempts consume quota too, so probing for blocks
-      // costs exactly as much as making real requests.
-      await tx`INSERT INTO identity.friend_request_events (requester_user_id, occurred_at)
-        VALUES (${requesterId}, ${nowIso})`;
-
+      const nowIso = clock().toISOString();
       const blocked = await pairIsBlocked(tx, requesterId, targetId);
       const pair = canonicalPair(requesterId, targetId);
-      const existing = blocked
-        ? null
-        : ((await tx<Array<{ status: FriendshipStatus; requestedBy: string }>>`
-            SELECT status, requested_by AS "requestedBy" FROM identity.friendships
-            WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId}
-            FOR UPDATE`)[0] ?? null);
+      // The existing row is read (and locked) on the blocked path too: the
+      // request must land or replay exactly as on the normal path, so the
+      // requester's own outbox never betrays the block (AC2).
+      const existing =
+        (await tx<Array<{ status: FriendshipStatus; requestedBy: string }>>`
+          SELECT status, requested_by AS "requestedBy" FROM identity.friendships
+          WHERE user_lo_id = ${pair.loUserId} AND user_hi_id = ${pair.hiUserId}
+          FOR UPDATE`)[0] ?? null;
 
       const decision = decideFriendRequest({ requesterId, targetId, existing, blocked });
       switch (decision.kind) {
-        case "SUPPRESS":
-          return { status: "PENDING" as const };
         case "CREATE":
           await tx`INSERT INTO identity.friendships (user_lo_id, user_hi_id, status, requested_by, created_at)
             VALUES (${pair.loUserId}, ${pair.hiUserId}, 'PENDING', ${requesterId}, ${nowIso})`;
@@ -132,6 +158,12 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
      * from the top, where it now sees the winner's row and ACCEPTs or NOOPs.
      */
     async requestFriend(requesterId: string, pulseId: string): Promise<{ status: FriendshipStatus }> {
+      // Quota commits on its own, before (and outside) the retried write: the
+      // attempt is priced even when the write itself is refused, and the
+      // unique-race retry does not charge a second unit.
+      await sql.begin(async (tx) => {
+        await consumeSocialWriteQuota(tx, requesterId, "FRIEND_REQUEST", FRIEND_REQUESTS_PER_HOUR, FRIEND_REQUESTS_PER_DAY);
+      });
       try {
         return await requestFriendOnce(requesterId, pulseId);
       } catch (error) {
@@ -202,10 +234,16 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
     },
 
     async listFriendRequests(userId: string): Promise<FriendRequestEntry[]> {
+      // Viewer-directional block filter, deliberately NOT bidirectional: the
+      // viewer's own blocks hide the counterpart, but a block AGAINST the
+      // viewer must not make their outgoing request vanish from their own
+      // outbox — that disappearance is exactly the "you are blocked" signal
+      // AC2 forbids. The counterpart still never sees it: their view is
+      // filtered by THEIR block, and the respond path re-checks the pair.
       const rows = await sql<FriendRequestEntry[]>`
         SELECT f.id AS "requestId",
           CASE WHEN f.requested_by = ${userId} THEN 'OUTGOING' ELSE 'INCOMING' END AS direction,
-          u.username_canonical AS "pulseId", u.nickname, f.created_at AS "createdAt"
+          u.id AS "userId", u.username_canonical AS "pulseId", u.nickname, f.created_at AS "createdAt"
         FROM identity.friendships f
         JOIN identity.users u
           ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
@@ -213,15 +251,26 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
           AND f.status = 'PENDING' AND u.status = 'ACTIVE'
           AND NOT EXISTS (
             SELECT 1 FROM identity.user_blocks b
-            WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
-               OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${userId}))
+            WHERE b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
         ORDER BY f.created_at DESC`;
       assertMinimalFriendProjection(rows, FRIEND_REQUEST_PROJECTION_KEYS);
       return rows;
     },
 
-    /** Blocking also severs any existing friendship/request in the same transaction. */
+    /**
+     * Blocking also severs any existing friendship/request in the same
+     * transaction. Deleting a PENDING row here is indistinguishable from a
+     * decline on the requester's side (both make the entry disappear
+     * silently), so it carries no block signal. Quota is consumed before the
+     * PULSE ID resolves — this endpoint resolves handles too, and unthrottled
+     * it would be a free existence oracle around the friend-request limit.
+     */
     async blockUser(blockerId: string, pulseId: string): Promise<{ blocked: true }> {
+      // Same shape as requestFriend: the attempt is priced in its own
+      // committed transaction so a refused block still costs a unit.
+      await sql.begin(async (tx) => {
+        await consumeSocialWriteQuota(tx, blockerId, "BLOCK", BLOCKS_PER_HOUR, BLOCKS_PER_DAY);
+      });
       return await sql.begin(async (tx) => {
         const targetId = await resolveActiveUserByPulseId(tx, pulseId);
         if (targetId === blockerId) throw new OperationError("SELF_BLOCK_FORBIDDEN", 422);
@@ -289,8 +338,10 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
      *
      * Story 12.4: a `lobby` surface additionally stamps `lobby_beat_at`, under
      * its own consent (either friend-facing lobby toggle or the directory
-     * toggle). Each column only ever carries a beat its own consent allows —
-     * COALESCE in the upsert keeps the other column's last value intact.
+     * toggle). Each column only ever carries a beat its OWN toggle allows —
+     * `online_beat_at` is written under `show_online_to_friends` alone, never
+     * under a sibling toggle's consent — and COALESCE in the upsert keeps the
+     * other column's last value intact.
      */
     async recordHeartbeat(userId: string, surface?: "lobby"): Promise<{ recorded: boolean }> {
       const nowIso = clock().toISOString();
@@ -298,13 +349,13 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
       const rows = await sql<Array<{ userId: string }>>`
         INSERT INTO identity.presence_signals (user_id, online_beat_at, lobby_beat_at, updated_at)
         SELECT u.id,
-          CASE WHEN u.show_online_to_friends OR u.show_lobby_to_friends THEN ${nowIso}::timestamptz END,
+          CASE WHEN u.show_online_to_friends THEN ${nowIso}::timestamptz END,
           CASE WHEN ${lobby} AND (u.show_lobby_to_friends OR u.show_in_lobby_directory) THEN ${nowIso}::timestamptz END,
           ${nowIso}
         FROM identity.users u
         WHERE u.id = ${userId} AND u.status = 'ACTIVE'
-          AND (u.show_online_to_friends OR u.show_lobby_to_friends
-            OR (${lobby} AND u.show_in_lobby_directory))
+          AND (u.show_online_to_friends
+            OR (${lobby} AND (u.show_lobby_to_friends OR u.show_in_lobby_directory)))
         ON CONFLICT (user_id) DO UPDATE SET
           online_beat_at = COALESCE(EXCLUDED.online_beat_at, identity.presence_signals.online_beat_at),
           lobby_beat_at = COALESCE(EXCLUDED.lobby_beat_at, identity.presence_signals.lobby_beat_at),

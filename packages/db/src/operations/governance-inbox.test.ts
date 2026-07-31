@@ -508,6 +508,12 @@ describe("filing a channel message report", () => {
     expect(insert).not.toContain("room.members");
     // room_id travels as an explicit NULL — the three-branch CHECK insists on it.
     expect(insert).toContain(",NULL,'CHANNEL_MESSAGE'");
+    // Filing is scoped to what the reporter can actually see: a HIDDEN message
+    // or one from a blocked pair files nothing — the same 404 as an unknown id,
+    // so the report path is not an existence oracle around the read filters.
+    expect(insert).toContain("channel_message_moderation");
+    expect(insert).toContain("'HIDDEN'");
+    expect(insert).toContain("identity.user_blocks");
   });
 });
 

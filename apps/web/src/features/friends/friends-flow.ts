@@ -14,6 +14,8 @@ export interface FriendEntry {
 export interface FriendRequestEntry {
   requestId: string;
   direction: "INCOMING" | "OUTGOING";
+  /** The counterpart's id — requester-side withdrawal is DELETE /friends/{userId}. */
+  userId: string;
   pulseId: string;
   nickname: string | null;
   createdAt: string;

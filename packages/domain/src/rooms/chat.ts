@@ -102,7 +102,11 @@ export function decodeChatCursor(raw: string): ChatCursor | null {
     if (!UUID_PATTERN.test(parsed.id)) return null;
     const instant = new Date(parsed.createdAt);
     if (Number.isNaN(instant.getTime())) return null;
-    return { createdAt: parsed.createdAt, id: parsed.id.toLowerCase() };
+    // Bind the normalized ISO string, never the raw value: JS accepts date
+    // grammars Postgres does not (e.g. "0"), and a raw pass-through turns a
+    // tampered cursor into a timestamptz cast error (500) instead of this
+    // decoder's refusal (422).
+    return { createdAt: instant.toISOString(), id: parsed.id.toLowerCase() };
   } catch {
     return null;
   }

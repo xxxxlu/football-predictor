@@ -135,15 +135,16 @@ describe("owner actions", () => {
     expect(subject.chat.muteMember).toHaveBeenCalledTimes(1);
   });
 
-  it("unmutes with a reason, and treats a malformed mute id as nothing to lift", async () => {
+  it("unmutes with a reason, folding a malformed mute id into the repository's uniform gate", async () => {
     const subject = setup();
     const response = await subject.handlers.unmute(mutate(`/api/v1/rooms/${ROOM_ID}/mutes/${MUTE_ID}`, "DELETE", { reason: "误禁，解除" }), ROOM_ID, MUTE_ID);
     expect(response.status).toBe(200);
     expect(subject.chat.unmuteMember).toHaveBeenCalledWith(ROOM_ID, "user-1", MUTE_ID, "误禁，解除");
-    const malformed = await subject.handlers.unmute(mutate(`/api/v1/rooms/${ROOM_ID}/mutes/xyz`, "DELETE", { reason: "误禁，解除" }), ROOM_ID, "xyz");
-    expect(malformed.status).toBe(409);
-    expect((await malformed.json()).error.code).toBe("MUTE_NOT_ACTIVE");
-    expect(subject.chat.unmuteMember).toHaveBeenCalledTimes(1);
+    // A malformed id becomes the nil uuid so the repository still runs its
+    // owner/room gate first: a non-owner probing with junk gets the uniform
+    // ROOM_NOT_FOUND, an owner gets MUTE_NOT_ACTIVE — never a pre-auth shape.
+    await subject.handlers.unmute(mutate(`/api/v1/rooms/${ROOM_ID}/mutes/xyz`, "DELETE", { reason: "误禁，解除" }), ROOM_ID, "xyz");
+    expect(subject.chat.unmuteMember).toHaveBeenLastCalledWith(ROOM_ID, "user-1", "00000000-0000-0000-0000-000000000000", "误禁，解除");
   });
 });
 

@@ -422,6 +422,14 @@ export class PostgresGovernanceInboxRepository {
         WHERE msg.id = ${input.messageId} AND msg.user_id <> ${input.reporterUserId}
           AND EXISTS (SELECT 1 FROM identity.rule_acceptances ra
             WHERE ra.user_id = ${input.reporterUserId} AND ra.rules_version = ${COMMUNITY_RULES_VERSION})
+          -- Only messages the reporter can actually see: a HIDDEN message or a
+          -- blocked-pair author 404s exactly like an unknown id, so this filing
+          -- path cannot be used to probe uuids the read model refuses to show.
+          AND NOT EXISTS (SELECT 1 FROM club.channel_message_moderation mm
+            WHERE mm.message_id = msg.id AND mm.state = 'HIDDEN')
+          AND NOT EXISTS (SELECT 1 FROM identity.user_blocks b
+            WHERE (b.blocker_user_id = ${input.reporterUserId} AND b.blocked_user_id = msg.user_id)
+               OR (b.blocker_user_id = msg.user_id AND b.blocked_user_id = ${input.reporterUserId}))
         ON CONFLICT DO NOTHING
         RETURNING id AS "reportId", status`;
       if (!inserted[0]) {
