@@ -79,14 +79,15 @@ describe("governance inbox reads", () => {
     expect(log.queries.every((query) => query.includes("identity.operator_role_grants"))).toBe(true);
   });
 
-  it("narrows the queue to the kind each duty owns", async () => {
-    for (const [authorization, kind] of [[AS_OPS_ADMIN, "ROOM"], [AS_MODERATOR, "MESSAGE"]] as const) {
+  it("narrows the queue to the kinds each duty owns", async () => {
+    // 12.4: the community duty now spans both message kinds; the room duty is unchanged.
+    for (const [authorization, kinds] of [[AS_OPS_ADMIN, ["ROOM"]], [AS_MODERATOR, ["MESSAGE", "CHANNEL_MESSAGE"]]] as const) {
       const log = { queries: [] as string[], values: [] as unknown[] };
       const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(authorization, { report: ROOM_REPORT }), log), clock);
       await repository.listReports("operator-1", { ...QUERY });
       const queue = log.queries.find((query) => query.includes("rp.kind = ANY"))!;
       expect(queue).toContain("rp.status = ANY");
-      expect(log.values).toContainEqual([kind]);
+      expect(log.values).toContainEqual([...kinds]);
       expect(log.values).toContainEqual(["OPEN", "ASSIGNED"]);
     }
   });
@@ -384,6 +385,129 @@ describe("filing a message report", () => {
     expect(insert).toContain("JOIN room.messages msg ON msg.room_id = r.id");
     expect(insert).toContain("msg.user_id <> ");
     expect(log.values.some((value) => value instanceof Date)).toBe(false);
+  });
+});
+
+describe("channel reports (Story 12.4)", () => {
+  const CHANNEL_REPORT = { ...ROOM_REPORT, reportId: "report-channel", kind: "CHANNEL_MESSAGE", subject: "阿强" };
+  const CHANNEL_TARGET = {
+    reportId: "report-channel", kind: "CHANNEL_MESSAGE", status: "OPEN", reporterUserId: "member-1", assignedTo: null,
+    roomId: null, roomName: null, roomStatus: null, roomOwnerId: null,
+    messageId: null, channelMessageId: "channel-message-1", subjectUserId: "author-1",
+  };
+
+  it("shows a moderator the reported channel message under the explicit scope label — never a NULL room name", async () => {
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
+      report: CHANNEL_REPORT,
+      extra: (query) => query.includes('rp.channel_message_id AS "messageId"')
+        ? [{ messageId: "channel-message-1", author: "阿强", body: "被举报的频道发言", sentAt: "2026-07-29T09:59:00.000Z", hidden: false, mutedUntil: null }]
+        : [],
+    })), clock);
+    const detail = await repository.getReport("mod-1", "report-channel");
+    expect(detail.room).toBeNull();
+    expect(detail.message).toMatchObject({ messageId: "channel-message-1", roomName: "PULSE CLUB", author: "阿强" });
+    expect(detail.availableDispositions).toEqual(["HIDE_MESSAGE", "RESTORE_MESSAGE", "MUTE_MEMBER", "DISMISS"]);
+    expect(() => assertMinimalReportContext(detail)).not.toThrow();
+
+    // An operations-admin has no community duty: the channel report does not exist for them.
+    const opsAdmin = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_OPS_ADMIN, { report: CHANNEL_REPORT })), clock);
+    await expect(opsAdmin.getReport("ops-1", "report-channel")).rejects.toMatchObject({ code: "REPORT_NOT_FOUND", status: 404 });
+  });
+
+  it("hides and restores a channel message in the club tables, with the shared audit vocabulary", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const hide = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, { target: CHANNEL_TARGET }), log), clock);
+    await expect(hide.resolveReport("mod-1", "report-channel", { disposition: "HIDE_MESSAGE", reason: "违规导流" }))
+      .resolves.toMatchObject({ status: "RESOLVED", notifiedUsers: 2 });
+    const hidden = log.queries.find((query) => query.includes("INSERT INTO club.channel_message_moderation"))!;
+    expect(hidden).toContain("ON CONFLICT (message_id) DO UPDATE");
+    expect(log.queries.some((query) => query.includes("INSERT INTO room.message_moderation"))).toBe(false);
+    // Zero new audit actions: the channel reuses MESSAGE_HIDDEN, filed under the author.
+    expect(log.values).toContain("MESSAGE_HIDDEN");
+    expect(log.values).toContain("author-1");
+    expect(log.values).toContain("channel-message-1");
+
+    const restoreLog = { queries: [] as string[], values: [] as unknown[] };
+    const restore = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
+      target: CHANNEL_TARGET,
+      extra: (query) => query.includes("UPDATE club.channel_message_moderation") ? [{ messageId: "channel-message-1" }] : [],
+    }), restoreLog), clock);
+    await expect(restore.resolveReport("mod-1", "report-channel", { disposition: "RESTORE_MESSAGE", reason: "复核后恢复" }))
+      .resolves.toMatchObject({ status: "RESOLVED" });
+    expect(restoreLog.values).toContain("MESSAGE_RESTORED");
+  });
+
+  it("mutes the author community-wide: the club mute table, keyed on the user alone, expired windows settled first", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, { target: CHANNEL_TARGET }), log), clock);
+    await expect(repository.resolveReport("mod-1", "report-channel", { disposition: "MUTE_MEMBER", reason: "连续辱骂", muteHours: 24 }))
+      .resolves.toMatchObject({ status: "RESOLVED", notifiedUsers: 2 });
+    const sweep = log.queries.findIndex((query) => query.includes("UPDATE club.channel_mutes SET lifted_at = muted_until"));
+    const insert = log.queries.findIndex((query) => query.includes("INSERT INTO club.channel_mutes"));
+    expect(sweep).toBeGreaterThanOrEqual(0);
+    expect(sweep).toBeLessThan(insert);
+    expect(log.queries[insert]).not.toContain("room_id");
+    expect(log.queries.some((query) => query.includes("room.member_mutes"))).toBe(false);
+    expect(log.values).toContain("MEMBER_MUTED");
+    expect(log.values).toContain("2026-07-31T10:00:00.000Z");
+  });
+
+  it("refuses a room disposition against a channel report", async () => {
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, { target: CHANNEL_TARGET })), clock);
+    await expect(repository.resolveReport("mod-1", "report-channel", { disposition: "CLOSE_ROOM", reason: "越权尝试" }))
+      .rejects.toMatchObject({ code: "INVALID_REQUEST", status: 422 });
+  });
+
+  it("lifts a community mute from the club table", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, {
+      target: CHANNEL_TARGET,
+      extra: (query) => query.includes("UPDATE club.channel_mutes SET lifted_by") ? [{ userId: "author-1" }] : [],
+    }), log), clock);
+    await expect(repository.liftMute("mod-1", "report-channel", "复核后解除禁言")).resolves.toMatchObject({ lifted: true });
+    expect(log.queries.some((query) => query.includes("UPDATE room.member_mutes"))).toBe(false);
+  });
+});
+
+describe("filing a channel message report", () => {
+  const filing = { messageId: "channel-message-1", reporterUserId: "member-9", reason: "违规导流拉人" };
+
+  it("requires a confirmed copy of the current community rules before anything else", async () => {
+    const repository = new PostgresGovernanceInboxRepository(fakeSql(() => []), clock);
+    await expect(repository.reportChannelMessage(filing)).rejects.toMatchObject({ code: "RULES_CONFIRMATION_REQUIRED", status: 403 });
+  });
+
+  it("names a self-report, a duplicate filing, and a missing message — in recovery order", async () => {
+    const confirmed = (extra: Respond): Respond => (query) => {
+      if (query.includes("INSERT INTO room.reports")) return [];
+      if (query.includes("identity.rule_acceptances")) return [{ present: 1 }];
+      return extra(query);
+    };
+    const self = new PostgresGovernanceInboxRepository(fakeSql(confirmed((query) =>
+      query.includes("SELECT id FROM club.channel_messages") ? [{ id: "channel-message-1" }] : [])), clock);
+    await expect(self.reportChannelMessage(filing)).rejects.toMatchObject({ code: "SELF_REPORT_FORBIDDEN", status: 422 });
+
+    const duplicate = new PostgresGovernanceInboxRepository(fakeSql(confirmed((query) =>
+      query.includes("SELECT id FROM room.reports") ? [{ id: "report-channel" }] : [])), clock);
+    await expect(duplicate.reportChannelMessage(filing)).rejects.toMatchObject({ code: "REPORT_ALREADY_OPEN", status: 409 });
+
+    const missing = new PostgresGovernanceInboxRepository(fakeSql(confirmed(() => [])), clock);
+    await expect(missing.reportChannelMessage(filing)).rejects.toMatchObject({ code: "MESSAGE_NOT_FOUND", status: 404 });
+  });
+
+  it("derives subject, excerpt and sent-at from the channel message row, with no room anywhere", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresGovernanceInboxRepository(fakeSql((query) =>
+      query.includes("INSERT INTO room.reports") ? [{ reportId: "report-channel", status: "OPEN" }] : [], log), clock);
+    await expect(repository.reportChannelMessage(filing)).resolves.toMatchObject({ status: "OPEN" });
+    const insert = log.queries.find((query) => query.includes("INSERT INTO room.reports"))!;
+    expect(insert).toContain("'CHANNEL_MESSAGE'");
+    expect(insert).toContain("msg.user_id,left(msg.body,2000),msg.created_at");
+    expect(insert).toContain("FROM club.channel_messages msg");
+    expect(insert).toContain("identity.rule_acceptances");
+    expect(insert).not.toContain("room.members");
+    // room_id travels as an explicit NULL — the three-branch CHECK insists on it.
+    expect(insert).toContain(",NULL,'CHANNEL_MESSAGE'");
   });
 });
 

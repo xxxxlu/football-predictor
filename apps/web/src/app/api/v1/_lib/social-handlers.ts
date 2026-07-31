@@ -16,9 +16,15 @@ const pulseIdSchema = z
   .strict();
 const respondSchema = z.object({ action: z.enum(RESPOND_ACTIONS) }).strict();
 const privacySchema = z
-  .object({ showOnlineToFriends: z.boolean().optional(), showLobbyToFriends: z.boolean().optional() })
+  .object({
+    showOnlineToFriends: z.boolean().optional(),
+    showLobbyToFriends: z.boolean().optional(),
+    showInLobbyDirectory: z.boolean().optional(),
+  })
   .strict()
-  .refine((patch) => patch.showOnlineToFriends !== undefined || patch.showLobbyToFriends !== undefined);
+  .refine((patch) => Object.values(patch).some((value) => value !== undefined));
+/** 12.4: a lobby page heartbeat declares its surface; anything else is a plain online beat. */
+const heartbeatSchema = z.object({ surface: z.literal("lobby").optional() }).strict();
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -36,7 +42,7 @@ interface Social {
   listBlocks(blockerId: string): Promise<unknown>;
   getPrivacyPreferences(userId: string): Promise<PresencePreferences>;
   updatePrivacyPreferences(userId: string, patch: Partial<PresencePreferences>): Promise<PresencePreferences>;
-  recordHeartbeat(userId: string): Promise<{ recorded: boolean }>;
+  recordHeartbeat(userId: string, surface?: "lobby"): Promise<{ recorded: boolean }>;
 }
 
 export function createSocialHandlers(identity: Identity, social: Social) {
@@ -109,7 +115,11 @@ export function createSocialHandlers(identity: Identity, social: Social) {
       execute(async () => {
         assertSameOrigin(request);
         const id = await user(request);
-        return json({ data: await social.recordHeartbeat(id) });
+        // The body is optional — the 12.1 clients send none. A present body
+        // must still parse strictly.
+        const raw = (await request.text()).trim();
+        const input = raw === "" ? {} : heartbeatSchema.parse(JSON.parse(raw));
+        return json({ data: await social.recordHeartbeat(id, input.surface) });
       }),
   };
 }

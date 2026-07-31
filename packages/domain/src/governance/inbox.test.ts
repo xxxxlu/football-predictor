@@ -28,8 +28,9 @@ const member = capabilitiesFor([]);
 describe("governance inbox scoping", () => {
   it("shows each duty only the report kind it is responsible for", () => {
     expect(visibleReportKinds(operationsAdmin)).toEqual(["ROOM"]);
-    expect(visibleReportKinds(moderator)).toEqual(["MESSAGE"]);
-    expect(visibleReportKinds(superAdmin)).toEqual(["ROOM", "MESSAGE"]);
+    // 12.4: the channel is community surface — a moderator sees both message kinds.
+    expect(visibleReportKinds(moderator)).toEqual(["MESSAGE", "CHANNEL_MESSAGE"]);
+    expect(visibleReportKinds(superAdmin)).toEqual(["ROOM", "MESSAGE", "CHANNEL_MESSAGE"]);
     expect(visibleReportKinds(member)).toEqual([]);
   });
 
@@ -43,7 +44,9 @@ describe("governance inbox scoping", () => {
     // not conclude that no room was ever reported.
     expect(() => resolveInboxKinds("ROOM", moderator)).toThrow(AuthError);
     expect(() => resolveInboxKinds("MESSAGE", operationsAdmin)).toThrow(AuthError);
+    expect(() => resolveInboxKinds("CHANNEL_MESSAGE", operationsAdmin)).toThrow(AuthError);
     expect(resolveInboxKinds("MESSAGE", moderator)).toEqual(["MESSAGE"]);
+    expect(resolveInboxKinds("CHANNEL_MESSAGE", moderator)).toEqual(["CHANNEL_MESSAGE"]);
     expect(resolveInboxKinds("ALL", operationsAdmin)).toEqual(["ROOM"]);
   });
 
@@ -51,6 +54,8 @@ describe("governance inbox scoping", () => {
     expect(availableDispositions("ROOM", operationsAdmin)).toEqual(["RESTRICT_ROOM", "CLOSE_ROOM", "RESTORE_ROOM", "DISMISS"]);
     expect(availableDispositions("MESSAGE", operationsAdmin)).toEqual([]);
     expect(availableDispositions("MESSAGE", moderator)).toEqual(["HIDE_MESSAGE", "RESTORE_MESSAGE", "MUTE_MEMBER", "DISMISS"]);
+    expect(availableDispositions("CHANNEL_MESSAGE", moderator)).toEqual(["HIDE_MESSAGE", "RESTORE_MESSAGE", "MUTE_MEMBER", "DISMISS"]);
+    expect(availableDispositions("CHANNEL_MESSAGE", operationsAdmin)).toEqual([]);
     expect(availableDispositions("ROOM", moderator)).toEqual([]);
   });
 
@@ -59,15 +64,19 @@ describe("governance inbox scoping", () => {
     expect(dispositionCapability("MESSAGE", "MUTE_MEMBER")).toBe("COMMUNITY_GOVERNANCE_WRITE");
     expect(dispositionCapability("ROOM", "DISMISS")).toBe("ROOM_GOVERNANCE_WRITE");
     expect(dispositionCapability("MESSAGE", "DISMISS")).toBe("COMMUNITY_GOVERNANCE_WRITE");
+    expect(dispositionCapability("CHANNEL_MESSAGE", "HIDE_MESSAGE")).toBe("COMMUNITY_GOVERNANCE_WRITE");
+    expect(dispositionCapability("CHANNEL_MESSAGE", "DISMISS")).toBe("COMMUNITY_GOVERNANCE_WRITE");
     expect(() => dispositionCapability("ROOM", "HIDE_MESSAGE")).toThrow(AuthError);
     expect(() => dispositionCapability("MESSAGE", "CLOSE_ROOM")).toThrow(AuthError);
+    expect(() => dispositionCapability("CHANNEL_MESSAGE", "RESTRICT_ROOM")).toThrow(AuthError);
   });
 
-  it("keeps every disposition assigned to exactly one kind, plus the shared dismissal", () => {
-    const assigned = [...KIND_DISPOSITIONS.ROOM, ...KIND_DISPOSITIONS.MESSAGE];
+  it("covers every disposition with at least one kind — the message vocabulary serves both message kinds", () => {
+    const assigned = new Set([...KIND_DISPOSITIONS.ROOM, ...KIND_DISPOSITIONS.MESSAGE, ...KIND_DISPOSITIONS.CHANNEL_MESSAGE]);
     for (const disposition of REPORT_DISPOSITIONS) expect(assigned).toContain(disposition);
-    expect(assigned.filter((item) => item === "DISMISS")).toHaveLength(2);
-    expect(new Set(assigned).size).toBe(REPORT_DISPOSITIONS.length);
+    // 12.4: CHANNEL_MESSAGE reuses the MESSAGE vocabulary verbatim — no new disposition.
+    expect(KIND_DISPOSITIONS.CHANNEL_MESSAGE).toEqual(KIND_DISPOSITIONS.MESSAGE);
+    expect(assigned.size).toBe(REPORT_DISPOSITIONS.length);
   });
 });
 
@@ -157,9 +166,19 @@ describe("minimal disclosure", () => {
     history: [],
   };
 
-  it("accepts the two intended shapes", () => {
+  const channelDetail = {
+    kind: "CHANNEL_MESSAGE" as const,
+    room: null,
+    // A channel report reuses the message context shape; roomName carries the
+    // explicit scope label, never a NULL room name (12.4).
+    message: { messageId: "c1", roomName: "PULSE CLUB", author: "阿明", body: "被举报的频道发言", sentAt: new Date(), hidden: false, mutedUntil: null },
+    history: [],
+  };
+
+  it("accepts the three intended shapes", () => {
     expect(() => assertMinimalReportContext(roomDetail)).not.toThrow();
     expect(() => assertMinimalReportContext(messageDetail)).not.toThrow();
+    expect(() => assertMinimalReportContext(channelDetail)).not.toThrow();
   });
 
   it("refuses to hand a room report's chat content to a room moderator, or room context to a message moderator", () => {
@@ -171,6 +190,9 @@ describe("minimal disclosure", () => {
     expect(() => assertMinimalReportContext({ ...messageDetail, message: { ...messageDetail.message, roomId: "r1" } })).toThrow(/must not expose "roomId"/);
     expect(() => assertMinimalReportContext({ ...messageDetail, message: [messageDetail.message] })).toThrow(/exactly one reported message/);
     expect(() => assertMinimalReportContext({ ...messageDetail, message: null })).toThrow(/exactly one reported message/);
+    // The channel kind is held to the same shape.
+    expect(() => assertMinimalReportContext({ ...channelDetail, room: roomDetail.room })).toThrow(/must not carry room governance context/);
+    expect(() => assertMinimalReportContext({ ...channelDetail, message: null })).toThrow(/exactly one reported message/);
   });
 
   it("refuses a browsable feed smuggled in as context", () => {

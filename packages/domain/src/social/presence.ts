@@ -18,11 +18,18 @@ export const PRESENCE_TTL_MS = 90_000;
 export interface PresencePreferences {
   showOnlineToFriends: boolean;
   showLobbyToFriends: boolean;
+  /**
+   * Story 12.4: the lobby directory shows the member to *every* lobby visitor,
+   * not just friends — a different consent scope, so it is a third independent
+   * toggle rather than a reuse of either friend-facing switch.
+   */
+  showInLobbyDirectory: boolean;
 }
 
 export const DEFAULT_PRESENCE_PREFERENCES: PresencePreferences = {
   showOnlineToFriends: false,
   showLobbyToFriends: false,
+  showInLobbyDirectory: false,
 };
 
 export function isPresenceFresh(beatAt: Date | null | undefined, now: Date, ttlMs: number = PRESENCE_TTL_MS): boolean {

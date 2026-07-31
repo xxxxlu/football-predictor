@@ -297,15 +297,18 @@ describe("blocks and privacy writes", () => {
   it("updates privacy toggles partially via COALESCE and returns the stored state", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = createSocialRepository(
-      fakeSql(() => [{ showOnlineToFriends: true, showLobbyToFriends: false }], log),
+      fakeSql(() => [{ showOnlineToFriends: true, showLobbyToFriends: false, showInLobbyDirectory: false }], log),
       clock,
     );
     await expect(repository.updatePrivacyPreferences(REQUESTER, { showOnlineToFriends: true })).resolves.toEqual({
       showOnlineToFriends: true,
       showLobbyToFriends: false,
+      showInLobbyDirectory: false,
     });
     expect(log.queries[0]).toContain("COALESCE( $ , show_online_to_friends)");
-    // The untouched toggle travels as null so COALESCE keeps the stored value.
+    // The third toggle (12.4 lobby directory) patches the same way.
+    expect(log.queries[0]).toContain("COALESCE( $ , show_in_lobby_directory)");
+    // The untouched toggles travel as null so COALESCE keeps the stored value.
     expect(log.values).toContain(null);
   });
 });
@@ -316,9 +319,25 @@ describe("recordHeartbeat", () => {
     const recorded = createSocialRepository(fakeSql(() => [{ userId: REQUESTER }], log), clock);
     await expect(recorded.recordHeartbeat(REQUESTER)).resolves.toEqual({ recorded: true });
     expect(log.queries[0]).toContain("u.status = 'ACTIVE'");
-    expect(log.queries[0]).toContain("(u.show_online_to_friends OR u.show_lobby_to_friends)");
+    // Each beat column is gated by its own consent, in SQL (12.1 + 12.4).
+    expect(log.queries[0]).toContain("CASE WHEN u.show_online_to_friends OR u.show_lobby_to_friends THEN");
+    expect(log.queries[0]).toContain("(u.show_lobby_to_friends OR u.show_in_lobby_directory) THEN");
     const gated = createSocialRepository(fakeSql(() => []), clock);
     await expect(gated.recordHeartbeat(REQUESTER)).resolves.toEqual({ recorded: false });
+  });
+
+  it("stamps the lobby beat only for a lobby-surface heartbeat, keeping the other column's value", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = createSocialRepository(fakeSql(() => [{ userId: REQUESTER }], log), clock);
+    await repository.recordHeartbeat(REQUESTER, "lobby");
+    expect(log.values).toContain(true);
+    // A missed surface must not blank the other beat: the upsert COALESCEs.
+    expect(log.queries[0]).toContain("online_beat_at = COALESCE(EXCLUDED.online_beat_at");
+    expect(log.queries[0]).toContain("lobby_beat_at = COALESCE(EXCLUDED.lobby_beat_at");
+    const plain = { queries: [] as string[], values: [] as unknown[] };
+    const online = createSocialRepository(fakeSql(() => [{ userId: REQUESTER }], plain), clock);
+    await online.recordHeartbeat(REQUESTER);
+    expect(plain.values).toContain(false);
   });
 });
 

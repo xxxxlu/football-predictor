@@ -3,6 +3,8 @@ import {
   assertMinimalReportContext,
   availableDispositions,
   canTransitionReport,
+  CHANNEL_REPORT_SCOPE,
+  COMMUNITY_RULES_VERSION,
   dispositionCapability,
   DISPOSITION_NOTICE_KIND,
   isMuteActive,
@@ -27,6 +29,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 import { readOperatorAuthorization, type OperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
+import { closeExpiredChannelMuteWindows } from "../club/channel.js";
 import { closeExpiredMuteWindows } from "../rooms/mutes.js";
 import { normalizeAuditEvent, type GovernanceAuditRow, type ModeratedRoomStatus } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
@@ -41,8 +44,9 @@ type ReportRow = {
 
 type ReportTargetRow = {
   reportId: string; kind: ReportKind; status: ReportStatus; reporterUserId: string; assignedTo: string | null;
-  roomId: string; roomName: string; roomStatus: ModeratedRoomStatus; roomOwnerId: string;
-  messageId: string | null; subjectUserId: string | null;
+  // All four are null for a CHANNEL_MESSAGE report — the lobby has no room.
+  roomId: string | null; roomName: string | null; roomStatus: ModeratedRoomStatus | null; roomOwnerId: string | null;
+  messageId: string | null; channelMessageId: string | null; subjectUserId: string | null;
 };
 
 /**
@@ -108,7 +112,11 @@ export class PostgresGovernanceInboxRepository {
     const detail: ReportDetail = {
       ...this.toSummary(row, actorUserId),
       room: row.kind === "ROOM" ? await this.roomContext(reportId) : null,
-      message: row.kind === "MESSAGE" ? await this.messageContext(reportId) : null,
+      message: row.kind === "MESSAGE"
+        ? await this.messageContext(reportId)
+        : row.kind === "CHANNEL_MESSAGE"
+          ? await this.channelMessageContext(reportId)
+          : null,
       history: await this.history(reportId),
       availableDispositions: availableDispositions(row.kind, authorization.capabilities),
     };
@@ -214,40 +222,56 @@ export class PostgresGovernanceInboxRepository {
           await this.audit(tx, {
             auditId: roomAuditId, actorUserId, targetType: "ROOM",
             action: `ROOM_${input.disposition.replace("_ROOM", "")}`,
-            targetId: target.roomId, occurredAt: now,
+            // A ROOM report always carries its room (the three-branch CHECK).
+            targetId: target.roomId!, occurredAt: now,
             metadata: { reportId, roomStatus, reason: input.reason, resolutionAuditId: auditId },
           });
           details = { roomStatus, resolvedReports: siblings.length, roomAuditId };
           break;
         }
         case "HIDE_MESSAGE": {
-          await tx`INSERT INTO room.message_moderation (message_id,room_id,state,report_id,reason,hidden_by,hidden_at)
-            VALUES (${target.messageId},${target.roomId},'HIDDEN',${reportId},${input.reason},${actorUserId},${now})
-            ON CONFLICT (message_id) DO UPDATE SET state='HIDDEN',report_id=${reportId},reason=${input.reason},
-              hidden_by=${actorUserId},hidden_at=${now},restored_by=NULL,restored_at=NULL`;
+          // Same reversible state, two homes: the room table for a room chat
+          // message, the club table for a channel message (Story 12.4).
+          if (target.kind === "CHANNEL_MESSAGE") {
+            await tx`INSERT INTO club.channel_message_moderation (message_id,state,report_id,reason,hidden_by,hidden_at)
+              VALUES (${target.channelMessageId},'HIDDEN',${reportId},${input.reason},${actorUserId},${now})
+              ON CONFLICT (message_id) DO UPDATE SET state='HIDDEN',report_id=${reportId},reason=${input.reason},
+                hidden_by=${actorUserId},hidden_at=${now},restored_by=NULL,restored_at=NULL`;
+          } else {
+            await tx`INSERT INTO room.message_moderation (message_id,room_id,state,report_id,reason,hidden_by,hidden_at)
+              VALUES (${target.messageId},${target.roomId},'HIDDEN',${reportId},${input.reason},${actorUserId},${now})
+              ON CONFLICT (message_id) DO UPDATE SET state='HIDDEN',report_id=${reportId},reason=${input.reason},
+                hidden_by=${actorUserId},hidden_at=${now},restored_by=NULL,restored_at=NULL`;
+          }
           // Member-side companion (Story 12.3): the sanction is findable by the
           // author it landed on, not only by the report it came from. No roomId
           // in the metadata — this row surfaces in the report timeline, which a
-          // community moderator reads without any duty over the room.
+          // community moderator reads without any duty over the room. Channel
+          // dispositions reuse the same action vocabulary — zero new audit
+          // actions (12.4 red line).
           const memberAuditId = randomUUID();
           await this.audit(tx, {
             auditId: memberAuditId, actorUserId, action: "MESSAGE_HIDDEN", targetType: "USER",
             targetId: target.subjectUserId!, occurredAt: now,
-            metadata: { reportId, messageId: target.messageId, reason: input.reason, resolutionAuditId: auditId },
+            metadata: { reportId, messageId: target.messageId ?? target.channelMessageId, reason: input.reason, resolutionAuditId: auditId },
           });
           details = { messageHidden: true, memberAuditId };
           break;
         }
         case "RESTORE_MESSAGE": {
-          const restored = await tx<Array<{ messageId: string }>>`
-            UPDATE room.message_moderation SET state='RESTORED',restored_by=${actorUserId},restored_at=${now}
-            WHERE message_id = ${target.messageId} AND state = 'HIDDEN' RETURNING message_id AS "messageId"`;
+          const restored = target.kind === "CHANNEL_MESSAGE"
+            ? await tx<Array<{ messageId: string }>>`
+                UPDATE club.channel_message_moderation SET state='RESTORED',restored_by=${actorUserId},restored_at=${now}
+                WHERE message_id = ${target.channelMessageId} AND state = 'HIDDEN' RETURNING message_id AS "messageId"`
+            : await tx<Array<{ messageId: string }>>`
+                UPDATE room.message_moderation SET state='RESTORED',restored_by=${actorUserId},restored_at=${now}
+                WHERE message_id = ${target.messageId} AND state = 'HIDDEN' RETURNING message_id AS "messageId"`;
           if (!restored[0]) throw new OperationError("MESSAGE_NOT_HIDDEN", 409);
           const memberAuditId = randomUUID();
           await this.audit(tx, {
             auditId: memberAuditId, actorUserId, action: "MESSAGE_RESTORED", targetType: "USER",
             targetId: target.subjectUserId!, occurredAt: now,
-            metadata: { reportId, messageId: target.messageId, reason: input.reason, resolutionAuditId: auditId },
+            metadata: { reportId, messageId: target.messageId ?? target.channelMessageId, reason: input.reason, resolutionAuditId: auditId },
           });
           details = { messageHidden: false, memberAuditId };
           break;
@@ -256,12 +280,19 @@ export class PostgresGovernanceInboxRepository {
           if (!input.muteHours) throw new OperationError("MUTE_DURATION_REQUIRED", 422);
           // Close out a window that has already run out, so the "one live mute"
           // index cannot block a legitimate mute months later (shared with the
-          // room-owner mute path — deferred-work gap ③).
-          await closeExpiredMuteWindows(tx, target.roomId, target.subjectUserId!, now);
+          // room-owner mute path — deferred-work gap ③). The community mute is
+          // its own table: one channel, so it keys on the user alone.
           const mutedUntil = muteExpiresAt(nowDate, input.muteHours).toISOString();
           try {
-            await tx`INSERT INTO room.member_mutes (id,room_id,user_id,report_id,reason,muted_by,muted_at,muted_until)
-              VALUES (${randomUUID()},${target.roomId},${target.subjectUserId},${reportId},${input.reason},${actorUserId},${now},${mutedUntil})`;
+            if (target.kind === "CHANNEL_MESSAGE") {
+              await closeExpiredChannelMuteWindows(tx, target.subjectUserId!, now);
+              await tx`INSERT INTO club.channel_mutes (id,user_id,report_id,reason,muted_by,muted_at,muted_until)
+                VALUES (${randomUUID()},${target.subjectUserId},${reportId},${input.reason},${actorUserId},${now},${mutedUntil})`;
+            } else {
+              await closeExpiredMuteWindows(tx, target.roomId!, target.subjectUserId!, now);
+              await tx`INSERT INTO room.member_mutes (id,room_id,user_id,report_id,reason,muted_by,muted_at,muted_until)
+                VALUES (${randomUUID()},${target.roomId},${target.subjectUserId},${reportId},${input.reason},${actorUserId},${now},${mutedUntil})`;
+            }
           } catch (error) {
             if (isUniqueViolation(error)) throw new OperationError("MUTE_ALREADY_ACTIVE", 409);
             throw error;
@@ -310,10 +341,15 @@ export class PostgresGovernanceInboxRepository {
         const required = dispositionCapability(kind, "MUTE_MEMBER");
         if (!authorization.capabilities.includes(required)) throw new OperationError("FORBIDDEN", 403);
       });
-      const lifted = await tx<Array<{ userId: string }>>`
-        UPDATE room.member_mutes SET lifted_by = ${actorUserId}, lifted_at = ${now}
-        WHERE report_id = ${reportId} AND lifted_at IS NULL AND muted_until > ${now}
-        RETURNING user_id AS "userId"`;
+      const lifted = target.kind === "CHANNEL_MESSAGE"
+        ? await tx<Array<{ userId: string }>>`
+            UPDATE club.channel_mutes SET lifted_by = ${actorUserId}, lifted_at = ${now}
+            WHERE report_id = ${reportId} AND lifted_at IS NULL AND muted_until > ${now}
+            RETURNING user_id AS "userId"`
+        : await tx<Array<{ userId: string }>>`
+            UPDATE room.member_mutes SET lifted_by = ${actorUserId}, lifted_at = ${now}
+            WHERE report_id = ${reportId} AND lifted_at IS NULL AND muted_until > ${now}
+            RETURNING user_id AS "userId"`;
       if (!lifted[0]) throw new OperationError("MUTE_NOT_ACTIVE", 409);
       const affected = new Map<string, NoticeAudienceRole>([[lifted[0].userId, "SUBJECT"]]);
       if (!affected.has(target.reporterUserId)) affected.set(target.reporterUserId, "REPORTER");
@@ -368,6 +404,48 @@ export class PostgresGovernanceInboxRepository {
     });
   }
 
+  /**
+   * Files a report against a channel message (Story 12.4) — the reportMessage
+   * principle, one surface over: subject, excerpt snapshot and sent-at are
+   * derived server-side from the club.channel_messages row inside the same
+   * statement, so nothing about the report can be fabricated. The reporter
+   * needs no membership (the channel has none) — only a session and a
+   * confirmed copy of the current community rules.
+   */
+  async reportChannelMessage(input: { messageId: string; reporterUserId: string; reason: string }) {
+    const reportId = randomUUID(); const auditId = randomUUID(); const now = this.clock.now().toISOString();
+    return this.sql.begin(async (tx) => {
+      const inserted = await tx<Array<{ reportId: string; status: ReportStatus }>>`
+        INSERT INTO room.reports (id,room_id,kind,channel_message_id,subject_user_id,reported_excerpt,message_sent_at,reporter_user_id,reason,status,severity,created_at,updated_at)
+        SELECT ${reportId},NULL,'CHANNEL_MESSAGE',msg.id,msg.user_id,left(msg.body,2000),msg.created_at,${input.reporterUserId},${input.reason},'OPEN','NORMAL',${now},${now}
+        FROM club.channel_messages msg
+        WHERE msg.id = ${input.messageId} AND msg.user_id <> ${input.reporterUserId}
+          AND EXISTS (SELECT 1 FROM identity.rule_acceptances ra
+            WHERE ra.user_id = ${input.reporterUserId} AND ra.rules_version = ${COMMUNITY_RULES_VERSION})
+        ON CONFLICT DO NOTHING
+        RETURNING id AS "reportId", status`;
+      if (!inserted[0]) {
+        // Refusals in recovery order, never silent successes (the 12.3 shape).
+        const [confirmed] = await tx<Array<{ present: number }>>`
+          SELECT 1 AS present FROM identity.rule_acceptances
+          WHERE user_id = ${input.reporterUserId} AND rules_version = ${COMMUNITY_RULES_VERSION} LIMIT 1`;
+        if (!confirmed) throw new OperationError("RULES_CONFIRMATION_REQUIRED", 403);
+        const [selfAuthored] = await tx<Array<{ id: string }>>`
+          SELECT id FROM club.channel_messages
+          WHERE id = ${input.messageId} AND user_id = ${input.reporterUserId} LIMIT 1`;
+        if (selfAuthored) throw new OperationError("SELF_REPORT_FORBIDDEN", 422);
+        const [existing] = await tx<Array<{ id: string }>>`
+          SELECT id FROM room.reports WHERE kind='CHANNEL_MESSAGE' AND channel_message_id=${input.messageId}
+            AND reporter_user_id=${input.reporterUserId} AND status IN ('OPEN','ASSIGNED') LIMIT 1`;
+        throw existing ? new OperationError("REPORT_ALREADY_OPEN", 409) : new OperationError("MESSAGE_NOT_FOUND", 404);
+      }
+      // Unlike a room-message filing there is no room to target, so the filing
+      // is audited under the report itself; the timeline picks it up either way.
+      await this.audit(tx, { auditId, actorUserId: input.reporterUserId, action: "MESSAGE_REPORTED", targetId: reportId, occurredAt: now, metadata: { reportId, channelMessageId: input.messageId } });
+      return inserted[0];
+    });
+  }
+
   /** An account's own governance notices — the explanations owed to them (AC4). */
   async listNotices(userId: string) {
     const rows = await this.sql<Array<{ id: string; kind: GovernanceNoticeKind; reason: string; createdAt: DbTimestamp; readAt: DbTimestamp | null }>>`
@@ -404,8 +482,9 @@ export class PostgresGovernanceInboxRepository {
       SELECT rp.id AS "reportId", rp.kind, rp.status, rp.reporter_user_id AS "reporterUserId",
         rp.assigned_to AS "assignedTo",
         rp.room_id AS "roomId", r.name AS "roomName", r.status AS "roomStatus", r.created_by AS "roomOwnerId",
-        rp.message_id AS "messageId", rp.subject_user_id AS "subjectUserId"
-      FROM room.reports rp JOIN room.rooms r ON r.id = rp.room_id
+        rp.message_id AS "messageId", rp.channel_message_id AS "channelMessageId",
+        rp.subject_user_id AS "subjectUserId"
+      FROM room.reports rp LEFT JOIN room.rooms r ON r.id = rp.room_id
       WHERE rp.id = ${reportId} FOR UPDATE OF rp`;
     if (!row || !visible.includes(row.kind)) throw new OperationError("REPORT_NOT_FOUND", 404);
     authorize(row.kind, authorization);
@@ -444,10 +523,10 @@ export class PostgresGovernanceInboxRepository {
         COALESCE(reporter.nickname, reporter.username_canonical) AS reporter,
         rp.assigned_to AS "assignedTo",
         COALESCE(assignee.nickname, assignee.username_canonical) AS assignee,
-        CASE WHEN rp.kind = 'MESSAGE' THEN COALESCE(subject.nickname, subject.username_canonical) ELSE r.name END AS subject,
+        CASE WHEN rp.kind = 'ROOM' THEN r.name ELSE COALESCE(subject.nickname, subject.username_canonical) END AS subject,
         rp.created_at AS "createdAt", rp.updated_at AS "updatedAt"
       FROM room.reports rp
-      JOIN room.rooms r ON r.id = rp.room_id
+      LEFT JOIN room.rooms r ON r.id = rp.room_id
       JOIN identity.users reporter ON reporter.id = rp.reporter_user_id
       LEFT JOIN identity.users assignee ON assignee.id = rp.assigned_to
       LEFT JOIN identity.users subject ON subject.id = rp.subject_user_id`;
@@ -487,6 +566,38 @@ export class PostgresGovernanceInboxRepository {
     return {
       messageId: row.messageId,
       roomName: row.roomName,
+      author: row.author,
+      body: row.body,
+      sentAt: timestampDate(row.sentAt),
+      hidden: row.hidden,
+      mutedUntil: isMuteActive(mutedUntil, now) ? mutedUntil : null,
+    };
+  }
+
+  /**
+   * The reported channel message and nothing around it — the messageContext
+   * principle applied to the lobby (Story 12.4). The scope label is an explicit
+   * constant: with the room join gone LEFT, a NULL room name must never reach
+   * the projection.
+   */
+  private async channelMessageContext(reportId: string) {
+    const now = this.clock.now();
+    const [row] = await this.sql<Array<{ messageId: string; author: string; body: string; sentAt: DbTimestamp; hidden: boolean; mutedUntil: DbTimestamp | null }>>`
+      SELECT rp.channel_message_id AS "messageId",
+        COALESCE(subject.nickname, subject.username_canonical) AS author,
+        rp.reported_excerpt AS body, rp.message_sent_at AS "sentAt",
+        COALESCE(mm.state = 'HIDDEN', false) AS hidden,
+        (SELECT MAX(mu.muted_until) FROM club.channel_mutes mu
+          WHERE mu.user_id = rp.subject_user_id AND mu.lifted_at IS NULL) AS "mutedUntil"
+      FROM room.reports rp
+      JOIN identity.users subject ON subject.id = rp.subject_user_id
+      LEFT JOIN club.channel_message_moderation mm ON mm.message_id = rp.channel_message_id
+      WHERE rp.id = ${reportId} LIMIT 1`;
+    if (!row) throw new OperationError("REPORT_NOT_FOUND", 404);
+    const mutedUntil = row.mutedUntil ? timestampDate(row.mutedUntil) : null;
+    return {
+      messageId: row.messageId,
+      roomName: CHANNEL_REPORT_SCOPE,
       author: row.author,
       body: row.body,
       sentAt: timestampDate(row.sentAt),

@@ -3,3 +3,4 @@ export * from "./challenge.js";
 export * from "./fortune.js";
 export * from "./badges.js";
 export * from "./projection.js";
+export * from "./channel.js";

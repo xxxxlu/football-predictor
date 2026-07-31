@@ -13,7 +13,7 @@ const FORBIDDEN_KEY_PATTERN =
 export const FRIEND_LIST_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "online"] as const;
 export const FRIEND_REQUEST_PROJECTION_KEYS = ["requestId", "direction", "pulseId", "nickname", "createdAt"] as const;
 export const BLOCK_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "createdAt"] as const;
-export const PRESENCE_PREFERENCES_PROJECTION_KEYS = ["showOnlineToFriends", "showLobbyToFriends"] as const;
+export const PRESENCE_PREFERENCES_PROJECTION_KEYS = ["showOnlineToFriends", "showLobbyToFriends", "showInLobbyDirectory"] as const;
 
 /**
  * Walks a projection (object or array of objects) and throws when any key is

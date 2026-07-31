@@ -157,6 +157,20 @@ describe("privacy and presence", () => {
     const response = await subject.handlers.heartbeat(mutate("/api/v1/presence/heartbeat", "POST"));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ data: { recorded: false } });
-    expect(subject.social.recordHeartbeat).toHaveBeenCalledWith("user-1");
+    expect(subject.social.recordHeartbeat).toHaveBeenCalledWith("user-1", undefined);
+  });
+
+  it("accepts the third toggle and the lobby heartbeat surface (12.4), strictly", async () => {
+    const subject = setup();
+    await subject.handlers.privacyPatch(mutate("/api/v1/account/privacy", "PATCH", { showInLobbyDirectory: true }));
+    expect(subject.social.updatePrivacyPreferences).toHaveBeenCalledWith("user-1", { showInLobbyDirectory: true });
+
+    const lobby = await subject.handlers.heartbeat(mutate("/api/v1/presence/heartbeat", "POST", { surface: "lobby" }));
+    expect(lobby.status).toBe(200);
+    expect(subject.social.recordHeartbeat).toHaveBeenCalledWith("user-1", "lobby");
+    // An unknown surface or extra field is refused, never silently ignored.
+    for (const body of [{ surface: "everywhere" }, { surface: "lobby", extra: 1 }]) {
+      expect((await subject.handlers.heartbeat(mutate("/api/v1/presence/heartbeat", "POST", body))).status).toBe(422);
+    }
   });
 });

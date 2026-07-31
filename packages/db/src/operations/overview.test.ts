@@ -112,7 +112,8 @@ describe("operations overview", () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const { repository } = overviewFor(AS_MODERATOR, undefined, log);
     await repository.overview("mod-1");
-    expect(log.values).toContainEqual(["MESSAGE"]);
+    // 12.4: the community duty spans both message kinds.
+    expect(log.values).toContainEqual(["MESSAGE", "CHANNEL_MESSAGE"]);
     const ops = { queries: [] as string[], values: [] as unknown[] };
     await overviewFor(AS_OPS_ADMIN, undefined, ops).repository.overview("ops-1");
     expect(ops.values).toContainEqual(["ROOM"]);

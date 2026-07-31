@@ -10,7 +10,7 @@
  * A disposition names a report and nothing else. There is deliberately no way to
  * address a room, a message or a member directly from here.
  */
-export type ReportKind = "ROOM" | "MESSAGE";
+export type ReportKind = "ROOM" | "MESSAGE" | "CHANNEL_MESSAGE";
 export type ReportSeverity = "LOW" | "NORMAL" | "HIGH";
 export type ReportStatus = "OPEN" | "ASSIGNED" | "RESOLVED" | "DISMISSED";
 export type ReportDisposition = "RESTRICT_ROOM" | "CLOSE_ROOM" | "RESTORE_ROOM" | "HIDE_MESSAGE" | "RESTORE_MESSAGE" | "MUTE_MEMBER" | "DISMISS";
@@ -46,7 +46,7 @@ export const MIN_REASON_LENGTH = 5;
 export const MAX_REASON_LENGTH = 500;
 export const MUTE_HOUR_OPTIONS: readonly MuteHours[] = [1, 24, 72, 168];
 
-export const KIND_FILTER_LABELS: Record<InboxFilters["kind"], string> = { ALL: "全部举报", ROOM: "房间举报", MESSAGE: "消息举报" };
+export const KIND_FILTER_LABELS: Record<InboxFilters["kind"], string> = { ALL: "全部举报", ROOM: "房间举报", MESSAGE: "消息举报", CHANNEL_MESSAGE: "频道举报" };
 export const STATUS_FILTER_LABELS: Record<InboxFilters["status"], string> = {
   PENDING: "待处理", ALL: "全部状态", OPEN: "未认领", ASSIGNED: "已认领", RESOLVED: "已处置", DISMISSED: "已驳回",
 };
@@ -54,7 +54,7 @@ export const SEVERITY_FILTER_LABELS: Record<InboxFilters["severity"], string> = 
 export const ASSIGNEE_FILTER_LABELS: Record<InboxFilters["assignee"], string> = { ALL: "全部处理人", ME: "我认领的", UNASSIGNED: "无人认领", OTHERS: "他人认领" };
 export const SEVERITY_LABELS: Record<ReportSeverity, string> = { HIGH: "高", NORMAL: "中", LOW: "低" };
 export const STATUS_LABELS: Record<ReportStatus, string> = { OPEN: "未认领", ASSIGNED: "已认领", RESOLVED: "已处置", DISMISSED: "已驳回" };
-export const KIND_LABELS: Record<ReportKind, string> = { ROOM: "房间举报", MESSAGE: "消息举报" };
+export const KIND_LABELS: Record<ReportKind, string> = { ROOM: "房间举报", MESSAGE: "消息举报", CHANNEL_MESSAGE: "频道举报" };
 export const MUTE_LABELS: Record<MuteHours, string> = { 1: "1 小时", 24: "24 小时", 72: "3 天", 168: "7 天" };
 
 /** What each disposition is called, and the verb the confirmation button uses. */

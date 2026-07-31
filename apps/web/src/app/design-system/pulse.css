@@ -322,7 +322,7 @@
 
 .pd-bottom-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  display: none; grid-template-columns: repeat(5, 1fr);
+  display: none; grid-template-columns: repeat(6, 1fr);
   background: var(--pulse-carbon); border-top: 1px solid var(--pulse-line-dark);
   padding: 0.4rem 0 calc(0.4rem + env(safe-area-inset-bottom));
 }

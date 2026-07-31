@@ -35,6 +35,43 @@ export const engagementProfiles = clubSchema.table("engagement_profiles", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * The one public channel (Story 12.4). Immutable rows — no edit/delete columns;
+ * visibility lives in channel_message_moderation. report_id columns below are
+ * plain uuids on purpose: the governance queue sits in the room schema and AC1
+ * forbids any club→room foreign key.
+ */
+export const channelMessages = clubSchema.table("channel_messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("club_channel_messages_keyset_idx").on(table.createdAt, table.id)]);
+
+export const channelMessageModeration = clubSchema.table("channel_message_moderation", {
+  messageId: uuid("message_id").primaryKey().references(() => channelMessages.id, { onDelete: "restrict" }),
+  state: text("state").notNull(),
+  reportId: uuid("report_id"),
+  reason: text("reason").notNull(),
+  hiddenBy: uuid("hidden_by").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  hiddenAt: timestamp("hidden_at", { withTimezone: true }).notNull(),
+  restoredBy: uuid("restored_by").references(() => identityUsers.id, { onDelete: "restrict" }),
+  restoredAt: timestamp("restored_at", { withTimezone: true }),
+});
+
+/** Community-level mutes: one shared channel, so the live-mute key is the user alone. */
+export const channelMutes = clubSchema.table("channel_mutes", {
+  id: uuid("id").primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  reportId: uuid("report_id"),
+  reason: text("reason").notNull(),
+  mutedBy: uuid("muted_by").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  mutedAt: timestamp("muted_at", { withTimezone: true }).notNull(),
+  mutedUntil: timestamp("muted_until", { withTimezone: true }).notNull(),
+  liftedBy: uuid("lifted_by").references(() => identityUsers.id, { onDelete: "restrict" }),
+  liftedAt: timestamp("lifted_at", { withTimezone: true }),
+}, (table) => [index("club_channel_mutes_user_idx").on(table.userId, table.mutedUntil)]);
+
 export const badgeAwards = clubSchema.table("badge_awards", {
   userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
   badgeKey: text("badge_key").notNull(),

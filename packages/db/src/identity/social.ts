@@ -256,7 +256,8 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
 
     async getPrivacyPreferences(userId: string): Promise<PresencePreferences> {
       const [row] = await sql<PresencePreferences[]>`
-        SELECT show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends"
+        SELECT show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends",
+          show_in_lobby_directory AS "showInLobbyDirectory"
         FROM identity.users WHERE id = ${userId} LIMIT 1`;
       if (!row) throw new OperationError("USER_NOT_FOUND", 404);
       assertMinimalFriendProjection(row, PRESENCE_PREFERENCES_PROJECTION_KEYS);
@@ -271,28 +272,43 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
         UPDATE identity.users SET
           show_online_to_friends = COALESCE(${patch.showOnlineToFriends ?? null}, show_online_to_friends),
           show_lobby_to_friends = COALESCE(${patch.showLobbyToFriends ?? null}, show_lobby_to_friends),
+          show_in_lobby_directory = COALESCE(${patch.showInLobbyDirectory ?? null}, show_in_lobby_directory),
           updated_at = ${clock().toISOString()}
         WHERE id = ${userId}
-        RETURNING show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends"`;
+        RETURNING show_online_to_friends AS "showOnlineToFriends", show_lobby_to_friends AS "showLobbyToFriends",
+          show_in_lobby_directory AS "showInLobbyDirectory"`;
       if (!row) throw new OperationError("USER_NOT_FOUND", 404);
       assertMinimalFriendProjection(row, PRESENCE_PREFERENCES_PROJECTION_KEYS);
       return row;
     },
 
     /**
-     * Records an online heartbeat, gated in SQL on account status and consent:
-     * with both toggles off, no row is ever written no matter what the client
-     * sends — the server, not the UI, enforces the opt-in (FR85).
+     * Records a heartbeat, gated in SQL on account status and consent: with
+     * every toggle off, no row is ever written no matter what the client sends
+     * — the server, not the UI, enforces the opt-in (FR85).
+     *
+     * Story 12.4: a `lobby` surface additionally stamps `lobby_beat_at`, under
+     * its own consent (either friend-facing lobby toggle or the directory
+     * toggle). Each column only ever carries a beat its own consent allows —
+     * COALESCE in the upsert keeps the other column's last value intact.
      */
-    async recordHeartbeat(userId: string): Promise<{ recorded: boolean }> {
+    async recordHeartbeat(userId: string, surface?: "lobby"): Promise<{ recorded: boolean }> {
       const nowIso = clock().toISOString();
+      const lobby = surface === "lobby";
       const rows = await sql<Array<{ userId: string }>>`
-        INSERT INTO identity.presence_signals (user_id, online_beat_at, updated_at)
-        SELECT u.id, ${nowIso}, ${nowIso} FROM identity.users u
+        INSERT INTO identity.presence_signals (user_id, online_beat_at, lobby_beat_at, updated_at)
+        SELECT u.id,
+          CASE WHEN u.show_online_to_friends OR u.show_lobby_to_friends THEN ${nowIso}::timestamptz END,
+          CASE WHEN ${lobby} AND (u.show_lobby_to_friends OR u.show_in_lobby_directory) THEN ${nowIso}::timestamptz END,
+          ${nowIso}
+        FROM identity.users u
         WHERE u.id = ${userId} AND u.status = 'ACTIVE'
-          AND (u.show_online_to_friends OR u.show_lobby_to_friends)
-        ON CONFLICT (user_id) DO UPDATE
-          SET online_beat_at = EXCLUDED.online_beat_at, updated_at = EXCLUDED.updated_at
+          AND (u.show_online_to_friends OR u.show_lobby_to_friends
+            OR (${lobby} AND u.show_in_lobby_directory))
+        ON CONFLICT (user_id) DO UPDATE SET
+          online_beat_at = COALESCE(EXCLUDED.online_beat_at, identity.presence_signals.online_beat_at),
+          lobby_beat_at = COALESCE(EXCLUDED.lobby_beat_at, identity.presence_signals.lobby_beat_at),
+          updated_at = EXCLUDED.updated_at
         RETURNING user_id AS "userId"`;
       return { recorded: rows.length > 0 };
     },

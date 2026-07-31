@@ -7,7 +7,8 @@ import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
 import { TeamCrest } from "@/components/football";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
-import { buildInvitePath, createRoomRequest, publicRoomJoinRequest, ROOM_SPORT_LABELS, type PublicRoomSummaryRecord, type RoomSport, type RoomSummaryRecord, type RoomTier, type RoomVisibility } from "./room-flow";
+import { PublicRoomsSection } from "./public-rooms-section";
+import { buildInvitePath, createRoomRequest, ROOM_SPORT_LABELS, type RoomSport, type RoomSummaryRecord, type RoomTier, type RoomVisibility } from "./room-flow";
 
 type CreatedRoom = RoomSummaryRecord & { inviteToken?: string };
 
@@ -16,31 +17,22 @@ export function RoomListView() {
   const nameId = useId();
   const rulesId = useId();
   const [rooms, setRooms] = useState<RoomSummaryRecord[]>([]);
-  const [publicRooms, setPublicRooms] = useState<PublicRoomSummaryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [created, setCreated] = useState<CreatedRoom>();
   const [copied, setCopied] = useState(false);
-  const [joiningRoomId, setJoiningRoomId] = useState("");
-  const [joinError, setJoinError] = useState("");
   const [sportChoice, setSportChoice] = useState<RoomSport>("FOOTBALL");
 
   useEffect(() => {
     const controller = new AbortController();
     void (async () => {
       try {
-        const [mineResponse, publicResponse] = await Promise.all([
-          fetch("/api/v1/rooms", { credentials: "same-origin", signal: controller.signal }),
-          fetch("/api/v1/rooms/public", { credentials: "same-origin", signal: controller.signal }),
-        ]);
+        const mineResponse = await fetch("/api/v1/rooms", { credentials: "same-origin", signal: controller.signal });
         const mine = await mineResponse.json().catch(() => ({})) as ApiEnvelope<RoomSummaryRecord[]> & ApiFailure;
-        const lobby = await publicResponse.json().catch(() => ({})) as ApiEnvelope<PublicRoomSummaryRecord[]> & ApiFailure;
         if (!mineResponse.ok) throw new Error(mine.error?.message || "无法加载房间");
-        if (!publicResponse.ok) throw new Error(lobby.error?.message || "无法加载公开大厅");
         setRooms(Array.isArray(mine.data) ? mine.data : []);
-        setPublicRooms(Array.isArray(lobby.data) ? lobby.data : []);
       } catch (reason) {
         if ((reason as Error).name !== "AbortError") setLoadError((reason as Error).message || "无法加载房间");
       } finally {
@@ -76,32 +68,12 @@ export function RoomListView() {
     }
   }
 
-  async function joinPublic(roomId: string) {
-    if (!window.confirm("加入前请确认：积分不可购买、转让或兑换。确认加入这个公开房间吗？")) return;
-    setJoiningRoomId(roomId); setJoinError("");
-    const request = publicRoomJoinRequest(roomId);
-    try {
-      const response = await fetch(request.url, request.init);
-      const result = await response.json().catch(() => ({})) as ApiEnvelope<{ roomId: string }> & ApiFailure;
-      if (!response.ok) throw new Error(roomError(result.error?.code, result.error?.message));
-      router.push(`/rooms/${encodeURIComponent(result.data.roomId)}`);
-    } catch (reason) {
-      setJoinError((reason as Error).message || "暂时无法加入公开房间");
-    } finally {
-      setJoiningRoomId("");
-    }
-  }
-
   const invitePath = created?.inviteToken ? buildInvitePath(created.inviteToken) : "";
   const inviteUrl = invitePath && typeof window !== "undefined" ? `${window.location.origin}${invitePath}` : invitePath;
 
   return <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,.72fr)]">
     <div className="space-y-10">
-    <section aria-labelledby="public-rooms-title">
-      <div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--field)]">公开大厅</p><h2 id="public-rooms-title" className="kinetic mt-1 text-3xl">发现公开房间</h2></div><span className="league-pill shrink-0">{publicRooms.length} 个</span></div>
-      {joinError && <div className="mb-4"><StatusMessage tone="error" title="未能加入">{joinError}</StatusMessage></div>}
-      {loading ? <DataStatePanel state="loading" title="正在加载公开大厅" description=""/> : publicRooms.length ? <ul className="grid gap-4 sm:grid-cols-2">{publicRooms.map((room) => <li key={room.id} className="surface rounded-xl p-5"><div className="flex items-start justify-between gap-3"><TeamCrest name={room.name} className="size-12 text-base"/><span className="league-pill">{ROOM_SPORT_LABELS[room.sport ?? "FOOTBALL"]} · 公开</span></div><strong className="mt-4 block text-lg font-black">{room.name}</strong><p className="mt-1 text-xs text-[var(--muted)]">房主 {room.ownerName} · {room.memberCount} 人</p>{room.joined ? <Link href={`/rooms/${encodeURIComponent(room.id)}`} className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white no-underline">进入房间</Link> : <button type="button" disabled={joiningRoomId === room.id} onClick={() => joinPublic(room.id)} className="mt-4 min-h-10 w-full rounded-full bg-[var(--ink)] px-4 text-sm font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-55">{joiningRoomId === room.id ? "正在加入…" : "确认规则并加入"}</button>}</li>)}</ul> : <DataStatePanel state="empty" title="还没有公开房间" description="创建第一个公开房间，其他注册用户就能在这里加入。"/>}
-    </section>
+    <PublicRoomsSection />
     <section aria-labelledby="my-rooms-title">
       <div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-xs font-extrabold uppercase tracking-[0.16em] text-[var(--field)]">我的房间</p><h2 id="my-rooms-title" className="kinetic mt-1 text-3xl">我的房间</h2></div><span className="league-pill shrink-0">{rooms.length} 个</span></div>
       {loading ? <DataStatePanel state="loading" title="正在加载房间" description=""/> : loadError ? <DataStatePanel state="error" title="房间加载失败" description={loadError} action={<button type="button" onClick={() => window.location.reload()} className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white">重新加载</button>}/> : rooms.length ? <ul className="grid gap-4 sm:grid-cols-2">{rooms.map((room) => <li key={room.id}><Link href={`/rooms/${encodeURIComponent(room.id)}`} className="group surface relative flex min-h-36 flex-col justify-between overflow-hidden rounded-xl p-5 no-underline transition duration-200 hover:-translate-y-1 hover:border-[var(--field)] hover:shadow-[0_16px_40px_rgb(15_80_57/16%)]"><div className="flex items-start justify-between gap-3"><TeamCrest name={room.name} className="size-12 text-base"/><span className="league-pill shrink-0">{ROOM_SPORT_LABELS[room.sport ?? "FOOTBALL"]} · {room.visibility === "PUBLIC" ? "公开" : "私人"}{room.tier === "ADVANCED" && room.sport !== "FORMULA_1" ? " · 高级" : ""} · {room.role === "room_owner" ? "房主" : "成员"}</span></div><div className="mt-4"><strong className="block text-lg font-black leading-tight">{room.name}</strong><span className="mt-1 block text-xs text-[var(--muted)]">{room.memberCount === undefined ? "独立积分" : `${room.memberCount} 人 · 独立 10,000 积分`}</span></div><span aria-hidden="true" className="link-arrow pointer-events-none absolute bottom-5 right-5 text-xl text-[var(--field)] opacity-0 transition group-hover:opacity-100">→</span></Link></li>)}</ul> : <DataStatePanel state="empty" title="还没有房间" description="创建公开或私人房间，也可以从公开大厅加入。"/>}

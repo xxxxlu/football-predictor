@@ -12,10 +12,11 @@ const FRESH = new Date(NOW.getTime() - 30_000);
 const STALE = new Date(NOW.getTime() - PRESENCE_TTL_MS - 1);
 
 describe("presence defaults", () => {
-  it("keeps both display toggles off by default (privacy-first)", () => {
+  it("keeps every display toggle off by default (privacy-first)", () => {
     expect(DEFAULT_PRESENCE_PREFERENCES).toEqual({
       showOnlineToFriends: false,
       showLobbyToFriends: false,
+      showInLobbyDirectory: false,
     });
   });
 });

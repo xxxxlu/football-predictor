@@ -10,8 +10,9 @@ import { assertSafeUserSecurityPayload } from "../identity/user-security.js";
  * scale, a state machine and an audit shape so triage does not fork per surface,
  * while *what an operator may see and do* is decided per kind by capability:
  *
- *   ROOM    reads with ROOM_GOVERNANCE_READ,      acts with ROOM_GOVERNANCE_WRITE
- *   MESSAGE reads with COMMUNITY_GOVERNANCE_READ, acts with COMMUNITY_GOVERNANCE_WRITE
+ *   ROOM            reads with ROOM_GOVERNANCE_READ,      acts with ROOM_GOVERNANCE_WRITE
+ *   MESSAGE         reads with COMMUNITY_GOVERNANCE_READ, acts with COMMUNITY_GOVERNANCE_WRITE
+ *   CHANNEL_MESSAGE reads with COMMUNITY_GOVERNANCE_READ, acts with COMMUNITY_GOVERNANCE_WRITE
  *
  * With the Story 11.1 role matrix that resolves exactly as the product wants:
  * an OPERATIONS_ADMIN sees room reports only, a COMMUNITY_MODERATOR sees message
@@ -26,7 +27,7 @@ import { assertSafeUserSecurityPayload } from "../identity/user-security.js";
  * testable without a database.
  */
 
-export const REPORT_KINDS = ["ROOM", "MESSAGE"] as const;
+export const REPORT_KINDS = ["ROOM", "MESSAGE", "CHANNEL_MESSAGE"] as const;
 export type ReportKind = (typeof REPORT_KINDS)[number];
 
 /** Triage priority. Reporters never set this — an operator assigns it (FR90). */
@@ -82,6 +83,9 @@ export type ReportDisposition = (typeof REPORT_DISPOSITIONS)[number];
 export const KIND_DISPOSITIONS: Record<ReportKind, readonly ReportDisposition[]> = {
   ROOM: ["RESTRICT_ROOM", "CLOSE_ROOM", "RESTORE_ROOM", "DISMISS"],
   MESSAGE: ["HIDE_MESSAGE", "RESTORE_MESSAGE", "MUTE_MEMBER", "DISMISS"],
+  // Story 12.4: a channel report is moderated with the message vocabulary —
+  // hide, restore, mute — against the club tables. No new disposition exists.
+  CHANNEL_MESSAGE: ["HIDE_MESSAGE", "RESTORE_MESSAGE", "MUTE_MEMBER", "DISMISS"],
 };
 
 /** Reading the queue at all. Both restricted duties hold this; it is the shared entry point. */
@@ -90,11 +94,15 @@ export const INBOX_CAPABILITY = "ROOM_REPORT_READ" as const satisfies Capability
 export const KIND_READ_CAPABILITY: Record<ReportKind, Capability> = {
   ROOM: "ROOM_GOVERNANCE_READ",
   MESSAGE: "COMMUNITY_GOVERNANCE_READ",
+  // The channel is community surface: the 13-capability closed set does not
+  // grow for it (Story 12.4 red line). A COMMUNITY_MODERATOR sees both.
+  CHANNEL_MESSAGE: "COMMUNITY_GOVERNANCE_READ",
 };
 
 export const KIND_WRITE_CAPABILITY: Record<ReportKind, Capability> = {
   ROOM: "ROOM_GOVERNANCE_WRITE",
   MESSAGE: "COMMUNITY_GOVERNANCE_WRITE",
+  CHANNEL_MESSAGE: "COMMUNITY_GOVERNANCE_WRITE",
 };
 
 /** Room status a room disposition puts the room into. Same vocabulary as the room list's RESTRICT/CLOSE/RESTORE. */
@@ -102,15 +110,21 @@ export function roomStatusForDisposition(disposition: "RESTRICT_ROOM" | "CLOSE_R
   return disposition === "RESTRICT_ROOM" ? "RESTRICTED" : disposition === "CLOSE_ROOM" ? "CLOSED" : "ACTIVE";
 }
 
-export function reportKindOfDisposition(disposition: ReportDisposition): ReportKind | null {
-  if (disposition === "DISMISS") return null;
-  return KIND_DISPOSITIONS.ROOM.includes(disposition) ? "ROOM" : "MESSAGE";
+/**
+ * The kinds a disposition can settle. Since 12.4 the message vocabulary serves
+ * two kinds (MESSAGE and CHANNEL_MESSAGE), so ownership is a set, not a single
+ * kind — which is why validation goes through KIND_DISPOSITIONS, never a
+ * disposition→kind reverse lookup.
+ */
+export function reportKindsOfDisposition(disposition: ReportDisposition): ReportKind[] {
+  return REPORT_KINDS.filter((kind) => KIND_DISPOSITIONS[kind].includes(disposition));
 }
 
 /** The capability a disposition costs. `DISMISS` costs the write capability of the report's own kind. */
 export function dispositionCapability(kind: ReportKind, disposition: ReportDisposition): Capability {
-  const owner = reportKindOfDisposition(disposition);
-  if (owner && owner !== kind) throw new AuthError("INVALID_REQUEST", 422, "That action does not apply to this report.");
+  if (!KIND_DISPOSITIONS[kind].includes(disposition)) {
+    throw new AuthError("INVALID_REQUEST", 422, "That action does not apply to this report.");
+  }
   return KIND_WRITE_CAPABILITY[kind];
 }
 

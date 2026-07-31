@@ -17,6 +17,7 @@ export const identityUsers = identitySchema.table("users", {
   mustChangePassword: boolean("must_change_password").notNull().default(false),
   showOnlineToFriends: boolean("show_online_to_friends").notNull().default(false),
   showLobbyToFriends: boolean("show_lobby_to_friends").notNull().default(false),
+  showInLobbyDirectory: boolean("show_in_lobby_directory").notNull().default(false),
   status: accountStatus("status").notNull().default("ACTIVE"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

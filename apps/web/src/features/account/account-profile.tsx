@@ -7,7 +7,7 @@ import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { purgePrivateCaches } from "@/features/pwa/private-cache";
 
 type Profile = { id: string; username: string; nickname: string; roles?: string[]; operatorRoles?: string[]; capabilities?: string[] };
-type PrivacyPreferences = { showOnlineToFriends: boolean; showLobbyToFriends: boolean };
+type PrivacyPreferences = { showOnlineToFriends: boolean; showLobbyToFriends: boolean; showInLobbyDirectory: boolean };
 
 /**
  * Back-office entries the account page offers, each behind the capability its
@@ -90,7 +90,11 @@ export function AccountProfile() {
             </label>
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
               <input type="checkbox" checked={privacy.showLobbyToFriends} disabled={privacySaving} onChange={event => void togglePrivacy("showLobbyToFriends", event.target.checked)} className="h-5 w-5"/>
-              <span><b>向好友展示「正在大厅」</b><span className="block text-xs text-[var(--muted)]">大厅上线后生效；现在开启即代表提前同意。</span></span>
+              <span><b>向好友展示「正在大厅」</b><span className="block text-xs text-[var(--muted)]">开启后，互为好友的成员能看到你正在 PULSE CLUB 大厅。</span></span>
+            </label>
+            <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">
+              <input type="checkbox" checked={privacy.showInLobbyDirectory} disabled={privacySaving} onChange={event => void togglePrivacy("showInLobbyDirectory", event.target.checked)} className="h-5 w-5"/>
+              <span><b>进入大厅在场名录</b><span className="block text-xs text-[var(--muted)]">面向所有大厅访客展示你的会员号与昵称，与上面两个好友向开关相互独立。</span></span>
             </label>
             {privacyError && <p className="text-xs font-bold text-[var(--coral)]">{privacyError}</p>}
           </div>}
