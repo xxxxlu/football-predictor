@@ -21,12 +21,28 @@ export const rooms = roomSchema.table("rooms", {
   postMatchTicketVisible: boolean("post_match_ticket_visible").notNull().default(true),
   inviteTokenHash: text("invite_token_hash"),
   createdBy: uuid("created_by").notNull().references(() => identityUsers.id),
+  // One pinned chat message per room (Story 12.3); FK added in 0025.
+  pinnedMessageId: uuid("pinned_message_id"),
+  pinnedBy: uuid("pinned_by"),
+  pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
   unique("room_invite_token_hash_unique").on(table.inviteTokenHash),
   index("room_public_discovery_idx").on(table.visibility, table.status, table.createdAt),
 ]);
+
+/**
+ * Immutable public chat messages (Story 12.3, FR88): no edit or delete columns
+ * by design — visibility changes go through room.message_moderation.
+ */
+export const roomMessages = roomSchema.table("messages", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "restrict" }),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("room_messages_keyset_idx").on(table.roomId, table.createdAt, table.id)]);
 
 export const roomMembers = roomSchema.table("members", {
   roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),

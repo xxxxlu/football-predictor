@@ -27,6 +27,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 import { readOperatorAuthorization, type OperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
+import { closeExpiredMuteWindows } from "../rooms/mutes.js";
 import { normalizeAuditEvent, type GovernanceAuditRow, type ModeratedRoomStatus } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
 
@@ -224,7 +225,17 @@ export class PostgresGovernanceInboxRepository {
             VALUES (${target.messageId},${target.roomId},'HIDDEN',${reportId},${input.reason},${actorUserId},${now})
             ON CONFLICT (message_id) DO UPDATE SET state='HIDDEN',report_id=${reportId},reason=${input.reason},
               hidden_by=${actorUserId},hidden_at=${now},restored_by=NULL,restored_at=NULL`;
-          details = { messageHidden: true };
+          // Member-side companion (Story 12.3): the sanction is findable by the
+          // author it landed on, not only by the report it came from. No roomId
+          // in the metadata — this row surfaces in the report timeline, which a
+          // community moderator reads without any duty over the room.
+          const memberAuditId = randomUUID();
+          await this.audit(tx, {
+            auditId: memberAuditId, actorUserId, action: "MESSAGE_HIDDEN", targetType: "USER",
+            targetId: target.subjectUserId!, occurredAt: now,
+            metadata: { reportId, messageId: target.messageId, reason: input.reason, resolutionAuditId: auditId },
+          });
+          details = { messageHidden: true, memberAuditId };
           break;
         }
         case "RESTORE_MESSAGE": {
@@ -232,15 +243,21 @@ export class PostgresGovernanceInboxRepository {
             UPDATE room.message_moderation SET state='RESTORED',restored_by=${actorUserId},restored_at=${now}
             WHERE message_id = ${target.messageId} AND state = 'HIDDEN' RETURNING message_id AS "messageId"`;
           if (!restored[0]) throw new OperationError("MESSAGE_NOT_HIDDEN", 409);
-          details = { messageHidden: false };
+          const memberAuditId = randomUUID();
+          await this.audit(tx, {
+            auditId: memberAuditId, actorUserId, action: "MESSAGE_RESTORED", targetType: "USER",
+            targetId: target.subjectUserId!, occurredAt: now,
+            metadata: { reportId, messageId: target.messageId, reason: input.reason, resolutionAuditId: auditId },
+          });
+          details = { messageHidden: false, memberAuditId };
           break;
         }
         case "MUTE_MEMBER": {
           if (!input.muteHours) throw new OperationError("MUTE_DURATION_REQUIRED", 422);
           // Close out a window that has already run out, so the "one live mute"
-          // index cannot block a legitimate mute months later.
-          await tx`UPDATE room.member_mutes SET lifted_at = muted_until
-            WHERE room_id = ${target.roomId} AND user_id = ${target.subjectUserId} AND lifted_at IS NULL AND muted_until <= ${now}`;
+          // index cannot block a legitimate mute months later (shared with the
+          // room-owner mute path — deferred-work gap ③).
+          await closeExpiredMuteWindows(tx, target.roomId, target.subjectUserId!, now);
           const mutedUntil = muteExpiresAt(nowDate, input.muteHours).toISOString();
           try {
             await tx`INSERT INTO room.member_mutes (id,room_id,user_id,report_id,reason,muted_by,muted_at,muted_until)
@@ -249,7 +266,16 @@ export class PostgresGovernanceInboxRepository {
             if (isUniqueViolation(error)) throw new OperationError("MUTE_ALREADY_ACTIVE", 409);
             throw error;
           }
-          details = { mutedUntil, muteHours: input.muteHours };
+          // High-risk member-side companion (deferred-work gap ②): a 7-day mute
+          // must be visible to a targetType=USER search and to the high-risk
+          // feed, not read as an ordinary REPORT_RESOLVED.
+          const memberAuditId = randomUUID();
+          await this.audit(tx, {
+            auditId: memberAuditId, actorUserId, action: "MEMBER_MUTED", targetType: "USER",
+            targetId: target.subjectUserId!, occurredAt: now,
+            metadata: { reportId, reason: input.reason, mutedUntil, muteHours: input.muteHours, resolutionAuditId: auditId },
+          });
+          details = { mutedUntil, muteHours: input.muteHours, memberAuditId };
           break;
         }
         case "DISMISS":
@@ -298,23 +324,34 @@ export class PostgresGovernanceInboxRepository {
   }
 
   /**
-   * Files a report against a single chat message. The reporter must be a member
-   * of the room the message was sent in; the chat surface that offers this action
-   * arrives with Story 12.3, and this is the write path it will call.
+   * Files a report against a single chat message (Story 12.3 opens the first
+   * public route to this). The subject, excerpt snapshot and sent-at are all
+   * derived server-side from the message row inside the same statement —
+   * deferred-work gap ①: a reporter must not be able to fabricate a quote or
+   * pin the report on an account the message does not belong to. The reporter
+   * must be a member of the room the message was actually sent in.
    */
-  async reportMessage(input: { messageId: string; roomId: string; reporterUserId: string; subjectUserId: string; reason: string; excerpt: string; sentAt: Date }) {
+  async reportMessage(input: { messageId: string; roomId: string; reporterUserId: string; reason: string }) {
     const reportId = randomUUID(); const auditId = randomUUID(); const now = this.clock.now().toISOString();
     return this.sql.begin(async (tx) => {
       const inserted = await tx<Array<{ reportId: string; status: ReportStatus }>>`
         INSERT INTO room.reports (id,room_id,kind,message_id,subject_user_id,reported_excerpt,message_sent_at,reporter_user_id,reason,status,severity,created_at,updated_at)
-        SELECT ${reportId},r.id,'MESSAGE',${input.messageId},${input.subjectUserId},${input.excerpt},${input.sentAt.toISOString()},${input.reporterUserId},${input.reason},'OPEN','NORMAL',${now},${now}
-        FROM room.rooms r JOIN room.members m ON m.room_id = r.id
-        WHERE r.id = ${input.roomId} AND m.user_id = ${input.reporterUserId}
+        SELECT ${reportId},r.id,'MESSAGE',msg.id,msg.user_id,left(msg.body,2000),msg.created_at,${input.reporterUserId},${input.reason},'OPEN','NORMAL',${now},${now}
+        FROM room.rooms r
+        JOIN room.members m ON m.room_id = r.id AND m.user_id = ${input.reporterUserId}
+        JOIN room.messages msg ON msg.room_id = r.id AND msg.id = ${input.messageId}
+        WHERE r.id = ${input.roomId} AND msg.user_id <> ${input.reporterUserId}
         ON CONFLICT DO NOTHING
         RETURNING id AS "reportId", status`;
       if (!inserted[0]) {
-        // Either the reporter is not in that room, or they already have this
-        // message open in the queue. Both are refusals, not silent successes.
+        // Refusals, never silent successes — and self-reports are named rather
+        // than shaped as 404: the reporter can already see their own message.
+        const [selfAuthored] = await tx<Array<{ id: string }>>`
+          SELECT msg.id FROM room.messages msg
+          JOIN room.members m ON m.room_id = msg.room_id AND m.user_id = ${input.reporterUserId}
+          WHERE msg.id = ${input.messageId} AND msg.room_id = ${input.roomId}
+            AND msg.user_id = ${input.reporterUserId} LIMIT 1`;
+        if (selfAuthored) throw new OperationError("SELF_REPORT_FORBIDDEN", 422);
         const [existing] = await tx<Array<{ id: string }>>`
           SELECT id FROM room.reports WHERE kind='MESSAGE' AND message_id=${input.messageId}
             AND reporter_user_id=${input.reporterUserId} AND status IN ('OPEN','ASSIGNED') LIMIT 1`;
@@ -388,7 +425,7 @@ export class PostgresGovernanceInboxRepository {
     return notified;
   }
 
-  private async audit(tx: OperatorSql, input: { auditId: string; actorUserId: string; action: string; targetId: string; occurredAt: string; metadata: Record<string, unknown>; targetType?: "REPORT" | "ROOM" }) {
+  private async audit(tx: OperatorSql, input: { auditId: string; actorUserId: string; action: string; targetId: string; occurredAt: string; metadata: Record<string, unknown>; targetType?: "REPORT" | "ROOM" | "USER" }) {
     // `::text::jsonb`, never a bare `::jsonb`: postgres.js would encode the JSON
     // a second time and store a jsonb *string*, breaking metadata->>'reportId'.
     await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)

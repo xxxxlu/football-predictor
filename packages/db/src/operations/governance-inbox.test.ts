@@ -221,7 +221,17 @@ describe("governance inbox dispositions", () => {
     const hidden = log.queries.find((query) => query.includes("INSERT INTO room.message_moderation"))!;
     expect(hidden).toContain("ON CONFLICT (message_id) DO UPDATE");
     expect(log.queries.every((query) => !query.includes("DELETE FROM"))).toBe(true);
+    // Deferred-work gap ②: beside the decision entry (filed under the report), a
+    // member-side entry filed under the author's account, each pointing at the
+    // other — a search by user now surfaces what happened to their message.
     expect(log.values).toContain("MESSAGE_HIDDEN");
+    expect(log.values).toContain("USER");
+    expect(log.values).toContain("author-1");
+    const hideMetadata = log.values.filter((value): value is string => typeof value === "string" && value.startsWith("{")).map((value) => JSON.parse(value) as Record<string, unknown>);
+    const memberSide = hideMetadata.find((entry) => entry.resolutionAuditId !== undefined)!;
+    expect(memberSide).toMatchObject({ reportId: "report-message", messageId: "message-1", reason: "人身攻击" });
+    const decisionSide = hideMetadata.find((entry) => entry.memberAuditId !== undefined)!;
+    expect(decisionSide.memberAuditId).toEqual(expect.any(String));
 
     // Restoring something that is not hidden is a conflict, not a silent success.
     const missing = new PostgresGovernanceInboxRepository(fakeSql(responder(AS_MODERATOR, { target: { ...MESSAGE_TARGET, status: "OPEN" } })), clock);
@@ -342,9 +352,10 @@ describe("governance inbox dispositions", () => {
 });
 
 describe("filing a message report", () => {
+  const filing = { messageId: "message-1", roomId: "room-1", reporterUserId: "member-9", reason: "人身攻击" };
+
   it("only accepts a reporter who is in the room, and refuses a second open filing", async () => {
     const outsider = new PostgresGovernanceInboxRepository(fakeSql(() => []), clock);
-    const filing = { messageId: "message-1", roomId: "room-1", reporterUserId: "member-9", subjectUserId: "author-1", reason: "人身攻击", excerpt: "被举报的原话", sentAt: new Date("2026-07-29T09:59:00.000Z") };
     await expect(outsider.reportMessage(filing)).rejects.toMatchObject({ code: "ROOM_NOT_FOUND", status: 404 });
 
     const duplicate = new PostgresGovernanceInboxRepository(fakeSql((query) =>
@@ -352,16 +363,26 @@ describe("filing a message report", () => {
     await expect(duplicate.reportMessage(filing)).rejects.toMatchObject({ code: "REPORT_ALREADY_OPEN", status: 409 });
   });
 
-  it("snapshots the reported message so the decision does not depend on the live conversation", async () => {
+  it("names a self-report instead of disguising it as not-found", async () => {
+    const repository = new PostgresGovernanceInboxRepository(fakeSql((query) =>
+      query.includes("SELECT msg.id FROM room.messages msg") ? [{ id: "message-1" }] : []), clock);
+    await expect(repository.reportMessage(filing)).rejects.toMatchObject({ code: "SELF_REPORT_FORBIDDEN", status: 422 });
+  });
+
+  it("derives the subject, excerpt and sent-at from the message row, never from the reporter", async () => {
     const log = { queries: [] as string[], values: [] as unknown[] };
     const repository = new PostgresGovernanceInboxRepository(fakeSql((query) =>
       query.includes("INSERT INTO room.reports") ? [{ reportId: "report-message", status: "OPEN" }] : [], log), clock);
-    await expect(repository.reportMessage({ messageId: "message-1", roomId: "room-1", reporterUserId: "member-1", subjectUserId: "author-1", reason: "人身攻击", excerpt: "被举报的原话", sentAt: new Date("2026-07-29T09:59:00.000Z") }))
+    await expect(repository.reportMessage({ ...filing, reporterUserId: "member-1" }))
       .resolves.toMatchObject({ status: "OPEN" });
     const insert = log.queries.find((query) => query.includes("INSERT INTO room.reports"))!;
-    expect(insert).toContain("reported_excerpt");
+    // Subject account, excerpt snapshot and timestamp all come off the joined
+    // message row inside the statement (deferred-work gap ①) — the caller has
+    // no parameter to fabricate any of them through.
+    expect(insert).toContain("msg.user_id,left(msg.body,2000),msg.created_at");
     expect(insert).toContain("JOIN room.members m ON m.room_id = r.id");
-    expect(log.values).toContain("被举报的原话");
+    expect(insert).toContain("JOIN room.messages msg ON msg.room_id = r.id");
+    expect(insert).toContain("msg.user_id <> ");
     expect(log.values.some((value) => value instanceof Date)).toBe(false);
   });
 });

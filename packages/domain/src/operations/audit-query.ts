@@ -70,7 +70,14 @@ export const AUDIT_ACTION_GROUPS = [
   {
     group: "COMMUNITY",
     label: "社区治理",
-    actions: ["ROOM_REPORTED", "MESSAGE_REPORTED", "REPORT_TRIAGED", "REPORT_RESOLVED", "REPORT_DISMISSED", "MEMBER_UNMUTED"],
+    actions: [
+      "ROOM_REPORTED", "MESSAGE_REPORTED", "REPORT_TRIAGED", "REPORT_RESOLVED", "REPORT_DISMISSED",
+      // Member-side companions (Story 12.3): the same sanction, findable by the
+      // person it landed on, not only by the report it came from.
+      "MEMBER_MUTED", "MEMBER_UNMUTED", "MESSAGE_HIDDEN", "MESSAGE_RESTORED",
+      // Owner chat governance (pin is room-targeted but community-grouped).
+      "MESSAGE_PINNED", "MESSAGE_UNPINNED",
+    ],
   },
   {
     group: "TASK",
@@ -115,6 +122,9 @@ export const HIGH_RISK_AUDIT_ACTIONS: readonly string[] = [
   "ACCOUNT_DISABLED",
   "ROOM_CLOSE",
   "JOB_RETRY_REQUESTED",
+  // A mute ends someone's participation for its whole window — the member-side
+  // twin of ROOM_CLOSE that deferred-work flagged as missing (Story 12.3).
+  "MEMBER_MUTED",
 ];
 
 export function isHighRiskAuditAction(action: string): boolean {

@@ -27,12 +27,16 @@ describe("audit action vocabulary", () => {
       "ROOM_RESTRICT", "ROOM_CLOSE", "ROOM_RESTORE", "ROOM_PRE_MATCH_STAKE_VISIBILITY_UPDATED",
       "ROOM_REPORTED", "MESSAGE_REPORTED", "REPORT_TRIAGED", "REPORT_RESOLVED", "REPORT_DISMISSED",
       "MEMBER_UNMUTED", "ROOM_CREATED", "ROOM_JOINED", "INVITE_RESET", "JOB_RETRY_REQUESTED",
+      // Story 12.3: member-side sanction companions + owner chat governance.
+      "MEMBER_MUTED", "MESSAGE_HIDDEN", "MESSAGE_RESTORED", "MESSAGE_PINNED", "MESSAGE_UNPINNED",
     ]) expect(AUDIT_ACTIONS).toContain(action);
   });
 
   it("marks the irreversible decisions as high risk", () => {
     expect(isHighRiskAuditAction("OPERATOR_ROLE_GRANTED")).toBe(true);
     expect(isHighRiskAuditAction("ACCOUNT_ANONYMIZED")).toBe(true);
+    // A mute ends participation for its window — the member-side twin of ROOM_CLOSE.
+    expect(isHighRiskAuditAction("MEMBER_MUTED")).toBe(true);
     expect(isHighRiskAuditAction("ROOM_JOINED")).toBe(false);
     for (const action of HIGH_RISK_AUDIT_ACTIONS) expect(AUDIT_ACTIONS).toContain(action);
   });

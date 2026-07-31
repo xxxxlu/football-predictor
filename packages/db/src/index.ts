@@ -9,6 +9,8 @@ export * from "./club/repository.js";
 export * from "./rooms/schema.js";
 export * from "./rooms/repository.js";
 export * from "./rooms/settlement-close.js";
+export * from "./rooms/chat.js";
+export * from "./rooms/mutes.js";
 export * from "./supplier/budget.js";
 export * from "./supplier/repository.js";
 export * from "./supplier/connection.js";

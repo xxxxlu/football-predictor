@@ -9,6 +9,7 @@ export * from "./governance/index.js";
 export * from "./operations/index.js";
 export * from "./rooms/service.js";
 export * from "./rooms/submission-status.js";
+export * from "./rooms/chat.js";
 export * from "./predictions/markets.js";
 export * from "./predictions/ticket-submission.js";
 export * from "./settlement/settlement.js";
