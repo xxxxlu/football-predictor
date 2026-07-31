@@ -81,6 +81,7 @@ export function AccountProfile() {
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">好友通过你的 PULSE ID（会员号）添加。在线与在大厅的展示默认关闭，只有你主动开启后，互为好友的成员才能看到。</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <Link href="/friends" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">好友列表与申请</Link>
+            <Link href="/club/daily" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">每日挑战</Link>
           </div>
           {privacy && <div className="mt-4 space-y-3">
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">

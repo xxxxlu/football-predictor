@@ -4,6 +4,7 @@ export * from "./identity/capabilities.js";
 export * from "./identity/service.js";
 export * from "./identity/user-security.js";
 export * from "./social/index.js";
+export * from "./club/index.js";
 export * from "./governance/index.js";
 export * from "./operations/index.js";
 export * from "./rooms/service.js";
