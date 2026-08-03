@@ -309,8 +309,12 @@ export function ClubLobbyView() {
           </form>}
 
           {/* role="log" (implicit polite live region, additions-only): a bare
-              aria-live list re-announces history on every poll reconciliation. */}
-          <ul className="mt-4 divide-y divide-[var(--line)]" role="log" aria-label={t("club.lobby.channelTitle")}>
+              aria-live list re-announces history on every poll reconciliation.
+              It lives on a wrapper so the <ul> keeps its list role —
+              role="log" directly on the <ul> orphans the <li> children
+              (axe: listitem). */}
+          <div role="log" aria-label={t("club.lobby.channelTitle")}>
+          <ul className="mt-4 divide-y divide-[var(--line)]">
             {channel.messages.length === 0 && pending.length === 0 && <li className="py-3 text-sm text-[var(--muted)]">{t("club.lobby.channelEmpty")}</li>}
             {pending.slice().reverse().map((entry) => <li key={entry.localId} className="py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -336,6 +340,7 @@ export function ClubLobbyView() {
               <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
             </li>)}
           </ul>
+          </div>
 
           {!channel.rulesConfirmed
             ? <div className="mt-4 rounded-lg border-2 border-[var(--ink)] p-4">

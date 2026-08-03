@@ -260,8 +260,11 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
 
     {/* role="log" (implicit polite live region with additions-only semantics):
         a bare aria-live list re-announces swaths of history on every poll
-        reconciliation instead of just the new entries. */}
-    <ul className="mt-4 divide-y divide-[var(--line)]" role="log" aria-label={t("room.chat.title")}>
+        reconciliation instead of just the new entries. It lives on a wrapper
+        so the <ul> keeps its list role — role="log" directly on the <ul>
+        orphans the <li> children (axe: listitem). */}
+    <div role="log" aria-label={t("room.chat.title")}>
+    <ul className="mt-4 divide-y divide-[var(--line)]">
       {page.messages.length === 0 && pending.length === 0 && <li className="py-3 text-sm text-[var(--muted)]">{t("room.chat.empty")}</li>}
       {pending.slice().reverse().map((entry) => <li key={entry.localId} className="py-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -276,6 +279,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       </li>)}
       {page.messages.map((message) => renderMessage(message))}
     </ul>
+    </div>
 
     {muted && page.mutedUntil
       ? <p className="mt-4 rounded-lg border border-[var(--line)] px-4 py-3 text-sm" role="status">{t("room.chat.mutedUntil")} {new Date(page.mutedUntil).toLocaleString()}</p>

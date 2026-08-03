@@ -187,7 +187,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
         <Stat label="可预测" value={summary.open}/>
         <Stat label="已结束" value={summary.finished}/>
         <Stat label="最后有效快照" value={summary.stale} tone={summary.stale ? "text-[var(--amber)]" : undefined}/>
-        <div className="basis-full text-xs text-[var(--muted)] sm:ml-auto sm:basis-auto">数据截至 {newestDataAsOf ? new Date(newestDataAsOf).toLocaleString("zh-CN") : "未知"}</div>
+        <div className="basis-full text-xs text-[var(--muted)] sm:ml-auto sm:basis-auto"><dt className="inline">数据截至</dt> <dd className="inline">{newestDataAsOf ? new Date(newestDataAsOf).toLocaleString("zh-CN") : "未知"}</dd></div>
       </dl>
     </section>
 
