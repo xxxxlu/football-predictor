@@ -56,9 +56,13 @@ test.describe("Club lobby accessibility", () => {
     const composer = page.getByLabel("发送消息");
     await expect(composer).toBeVisible();
     // Submit via keyboard: the whole flow must work without a pointer (NFR25).
-    await composer.fill("大厅无障碍扫描消息");
+    // Unique body per run: the site-wide channel keeps residue from earlier
+    // runs — a constant string could match an old message (false pass) and
+    // trips the consecutive-duplicate guard on reruns (order-dependent).
+    const scanMessage = `大厅无障碍扫描消息 ${Date.now()}`;
+    await composer.fill(scanMessage);
     await composer.press("Enter");
-    await expect(page.getByText("大厅无障碍扫描消息")).toBeVisible();
+    await expect(page.getByText(scanMessage)).toBeVisible();
     // The per-message report action is a focusable control, not hover-only.
     await expect(page.getByRole("button", { name: "举报", exact: true }).first()).toBeVisible();
     await page.waitForTimeout(400);

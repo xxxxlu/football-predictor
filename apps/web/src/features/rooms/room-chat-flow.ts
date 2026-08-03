@@ -195,9 +195,24 @@ export function reconcileMessages<T extends KeyedMessage>(current: T[], incoming
  * while the POST is still in flight, the same text would otherwise render
  * twice (confirmed row + "sending…" row). Failed entries stay — they hold the
  * retry/discard controls.
+ *
+ * Matching requires the author, not just the body: another member posting the
+ * identical text while ours is in flight must not retire our "sending…" row —
+ * our own POST may still fail, and the message would be lost without a retry
+ * state. While the viewer's PULSE ID is still unknown (nothing sent yet this
+ * mount), nothing is dropped; the POST resolution cleans up via removePending.
  */
-export function dropDeliveredPending(pending: PendingMessage[], messages: Array<{ body: string }>): PendingMessage[] {
-  return pending.filter((entry) => !(entry.status === "sending" && messages.some((message) => message.body === entry.body)));
+export function dropDeliveredPending(
+  pending: PendingMessage[],
+  messages: Array<{ body: string; authorPulseId: string }>,
+  viewerPulseId: string | null,
+): PendingMessage[] {
+  if (!viewerPulseId) return pending;
+  return pending.filter(
+    (entry) =>
+      !(entry.status === "sending" &&
+        messages.some((message) => message.authorPulseId === viewerPulseId && message.body === entry.body)),
+  );
 }
 
 /** True while the caller's mute window is still running. */

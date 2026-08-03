@@ -15,6 +15,9 @@ export function PresenceHeartbeat() {
     const controller = new AbortController();
     let timer: number | undefined;
     const beat = () => {
+      // A backgrounded tab must not keep the user "online" indefinitely —
+      // same visibility gate as every other interval in the app.
+      if (document.visibilityState === "hidden") return;
       void fetch("/api/v1/presence/heartbeat", {
         method: "POST", credentials: "same-origin", signal: controller.signal,
       }).catch(() => {});

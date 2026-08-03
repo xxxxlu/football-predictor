@@ -28,6 +28,9 @@ export function messageBodyLength(body: string): number {
 /** Trims and bounds a candidate body; null means "refuse with 422". */
 export function normalizeMessageBody(raw: string): string | null {
   const trimmed = raw.trim();
+  // Postgres text columns reject NUL outright — refuse it here as the 422 it
+  // is, instead of letting the insert surface a 500.
+  if (trimmed.includes("\u0000")) return null;
   const length = messageBodyLength(trimmed);
   return length >= MESSAGE_MIN_LENGTH && length <= MESSAGE_MAX_LENGTH ? trimmed : null;
 }

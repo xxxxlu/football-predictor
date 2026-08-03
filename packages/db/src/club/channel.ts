@@ -80,14 +80,17 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
      * Confirms the current community rules. Idempotent by the
      * (user_id, rules_version) primary key; `is_adult_confirmed` carries the
      * account's existing confirmation forward — this path never introduces a
-     * second adulthood semantics (12.4 dev note).
+     * second adulthood semantics (12.4 dev note). Registration always writes an
+     * acceptance row, so the COALESCE fallback is for rows created outside that
+     * flow — and it must default to false: absence of a confirmation is never a
+     * confirmation.
      */
     async acceptCommunityRules(userId: string) {
       const nowIso = clock().toISOString();
       await sql`
         INSERT INTO identity.rule_acceptances (user_id, rules_version, is_adult_confirmed, accepted_at)
         SELECT u.id, ${COMMUNITY_RULES_VERSION},
-          COALESCE((SELECT bool_or(ra.is_adult_confirmed) FROM identity.rule_acceptances ra WHERE ra.user_id = u.id), true),
+          COALESCE((SELECT bool_or(ra.is_adult_confirmed) FROM identity.rule_acceptances ra WHERE ra.user_id = u.id), false),
           ${nowIso}
         FROM identity.users u WHERE u.id = ${userId} AND u.status = 'ACTIVE'
         ON CONFLICT (user_id, rules_version) DO NOTHING`;

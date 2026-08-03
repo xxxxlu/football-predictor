@@ -66,7 +66,7 @@ describe("room chat repository", () => {
     // not confirm their own existence to someone who cannot use them.
     const asMember = createRoomChatRepository(fakeSql((q) => (isContext(q) ? MEMBER : NO_MUTE)), clock);
     await expect(asMember.pinMessage("room-1", "member-1", uuid(1))).rejects.toMatchObject(notFound);
-    await expect(asMember.unpinMessage("room-1", "member-1")).rejects.toMatchObject(notFound);
+    await expect(asMember.unpinMessage("room-1", "member-1", uuid(1))).rejects.toMatchObject(notFound);
     await expect(asMember.muteMember("room-1", "member-1", { memberUserId: "member-2", muteHours: 1, reason: "刷屏广告" })).rejects.toMatchObject(notFound);
     await expect(asMember.unmuteMember("room-1", "member-1", uuid(9), "误禁")).rejects.toMatchObject(notFound);
   });
@@ -212,14 +212,17 @@ describe("room chat repository", () => {
     expect(log.values).toContain("MESSAGE_PINNED");
   });
 
-  it("unpinning an empty slot is a conflict, not a silent success", async () => {
+  it("unpinning an empty slot or the WRONG message is a conflict, not a silent success", async () => {
     const empty = createRoomChatRepository(fakeSql((q) => (isContext(q) ? OWNER : [])), clock);
-    await expect(empty.unpinMessage("room-1", "owner-1")).rejects.toMatchObject({ code: "MESSAGE_NOT_PINNED", status: 409 });
+    await expect(empty.unpinMessage("room-1", "owner-1", uuid(1))).rejects.toMatchObject({ code: "MESSAGE_NOT_PINNED", status: 409 });
 
     const log = { queries: [] as string[], values: [] as unknown[] };
     const pinnedRoom = [{ roomStatus: "ACTIVE", role: "OWNER", pinnedMessageId: uuid(1) }];
     const repository = createRoomChatRepository(fakeSql((q) => (isContext(q) ? pinnedRoom : []), log), clock);
-    await expect(repository.unpinMessage("room-1", "owner-1")).resolves.toMatchObject({ pinned: false });
+    // A DELETE aimed at a message that is not the current pin must not undo a
+    // concurrent repin — the URL's messageId is checked against the slot.
+    await expect(repository.unpinMessage("room-1", "owner-1", uuid(2))).rejects.toMatchObject({ code: "MESSAGE_NOT_PINNED", status: 409 });
+    await expect(repository.unpinMessage("room-1", "owner-1", uuid(1))).resolves.toMatchObject({ pinned: false });
     expect(log.values).toContain("MESSAGE_UNPINNED");
   });
 

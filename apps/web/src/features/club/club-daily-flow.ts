@@ -86,6 +86,7 @@ export function clubErrorKey(code: string | undefined): MessageKey {
     case "UNAUTHENTICATED": return "club.daily.errorUnauthenticated";
     case "INVALID_REQUEST": return "club.daily.errorInvalid";
     case "ROOM_NOT_FOUND": return "club.daily.errorRoomNotFound";
+    case "DAY_ROLLED_OVER": return "club.daily.errorDayRolled";
     default: return "club.daily.errorGeneric";
   }
 }

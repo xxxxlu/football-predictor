@@ -60,9 +60,11 @@ export function ClubDailyView() {
   const [newBadges, setNewBadges] = useState<string[]>([]);
   const [fortuneRevealed, setFortuneRevealed] = useState(false);
   const [shareState, setShareState] = useState<"idle" | "copied" | "failed">("idle");
+  const [resultsError, setResultsError] = useState(false);
 
   const loadResults = useCallback(async (signal?: AbortSignal) => {
     setResults(await api<DailyResultsPayload>("/api/v1/club/daily/results", { signal }));
+    setResultsError(false);
   }, []);
 
   useEffect(() => {
@@ -71,7 +73,11 @@ export function ClubDailyView() {
       try {
         const payload = await api<DailyPayload>("/api/v1/club/daily", { signal: controller.signal });
         setDaily(payload);
-        await loadResults(controller.signal);
+        // A failed results fetch must not read as "answer first to unlock" —
+        // it gets its own error state (with retry), separate from the lock.
+        await loadResults(controller.signal).catch((reason) => {
+          if ((reason as Error).name !== "AbortError") setResultsError(true);
+        });
       } catch (reason) {
         if ((reason as Error).name !== "AbortError") setLoadError(t(clubErrorKey((reason as { code?: string }).code)));
       } finally {
@@ -91,11 +97,13 @@ export function ClubDailyView() {
     try {
       const result = await api<{ attempt: DailyAttemptPayload; profile: EngagementPayload; newBadges: string[] }>(
         "/api/v1/club/daily/attempt",
-        { method: "POST", body: JSON.stringify({ answer: selected }) },
+        // questionKey lets a submit that straddled the UTC rollover be refused
+        // (DAY_ROLLED_OVER) instead of silently scored against the new day.
+        { method: "POST", body: JSON.stringify({ answer: selected, questionKey: daily.question.key }) },
       );
       setDaily({ ...daily, attempt: result.attempt, profile: result.profile, badges: [...new Set([...daily.badges, ...result.newBadges])] });
       setNewBadges(result.newBadges);
-      await loadResults().catch(() => {});
+      await loadResults().catch(() => setResultsError(true));
     } catch (reason) {
       setActionError(t(clubErrorKey((reason as { code?: string }).code)));
     } finally {
@@ -160,7 +168,15 @@ export function ClubDailyView() {
         <section className="surface p-5 sm:p-7" aria-label={t("club.daily.resultsTitle")}>
           <p className="eyebrow">RESULTS</p>
           <h2 className="display mt-1 text-2xl font-bold">{t("club.daily.resultsTitle")}</h2>
-          {!results || results.locked
+          {resultsError && !results
+            ? <div className="mt-4">
+                <StatusMessage tone="error" title={t("club.daily.resultsUnavailable")} />
+                <button type="button" onClick={() => void loadResults().catch(() => setResultsError(true))}
+                  className="mt-3 min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold transition hover:border-[var(--ink)]">
+                  {t("club.daily.resultsRetry")}
+                </button>
+              </div>
+            : !results || results.locked
             ? <p className="mt-4 text-sm leading-6 text-[var(--muted)]">{t("club.daily.resultsLocked")}</p>
             : results.friends.length === 0 && (!results.room || results.room.length === 0)
               ? <p className="mt-4 text-sm text-[var(--muted)]">{t("club.daily.resultsEmpty")}</p>
@@ -175,20 +191,24 @@ export function ClubDailyView() {
         <section className="surface p-5 sm:p-7" aria-label={t("club.daily.fortuneTitle")}>
           <p className="eyebrow">FORTUNE</p>
           <h2 className="display mt-1 text-2xl font-bold">{t("club.daily.fortuneTitle")}</h2>
-          {!fortuneRevealed
-            ? <button type="button" onClick={() => setFortuneRevealed(true)}
-                className="mt-5 flex min-h-36 w-full items-center justify-center rounded-2xl border-2 border-dashed border-[var(--line)] font-bold transition hover:border-[var(--ink)]">
-                {t("club.daily.fortuneReveal")}
+          {!fortuneRevealed && <button type="button" onClick={() => setFortuneRevealed(true)}
+            className="mt-5 flex min-h-36 w-full items-center justify-center rounded-2xl border-2 border-dashed border-[var(--line)] font-bold transition hover:border-[var(--ink)]">
+            {t("club.daily.fortuneReveal")}
+          </button>}
+          {/* The live region exists from mount — a region inserted together with
+              its content is routinely not announced at all. The card is injected
+              INTO it on reveal, so the reveal is actually read out. */}
+          <div aria-live="polite">
+            {fortuneRevealed && <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-5">
+              <p className="display text-xl font-bold">{localizeText(daily.fortune.title, locale)}</p>
+              <p className="mt-3 text-sm leading-7">{localizeText(daily.fortune.text, locale)}</p>
+              <button type="button" onClick={() => void copyFortune()}
+                className="mt-5 min-h-11 w-full rounded-full border-2 border-[var(--ink)] px-4 font-bold transition hover:bg-[var(--ink)] hover:text-white">
+                {shareState === "copied" ? t("club.daily.fortuneShared") : t("club.daily.fortuneShare")}
               </button>
-            : <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-5" aria-live="polite">
-                <p className="display text-xl font-bold">{localizeText(daily.fortune.title, locale)}</p>
-                <p className="mt-3 text-sm leading-7">{localizeText(daily.fortune.text, locale)}</p>
-                <button type="button" onClick={() => void copyFortune()}
-                  className="mt-5 min-h-11 w-full rounded-full border-2 border-[var(--ink)] px-4 font-bold transition hover:bg-[var(--ink)] hover:text-white">
-                  {shareState === "copied" ? t("club.daily.fortuneShared") : t("club.daily.fortuneShare")}
-                </button>
-                {shareState === "failed" && <p className="mt-2 text-xs font-bold text-[var(--coral)]">{t("club.daily.fortuneShareFailed")}</p>}
-              </div>}
+              {shareState === "failed" && <p className="mt-2 text-xs font-bold text-[var(--coral)]">{t("club.daily.fortuneShareFailed")}</p>}
+            </div>}
+          </div>
           <p className="mt-4 text-xs leading-5 text-[var(--muted)]">{t("club.daily.fortuneDisclaimer")}</p>
         </section>
 

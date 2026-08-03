@@ -83,6 +83,11 @@ export function createClubRepository(sql: ClubSql) {
 
   async function submitOnce(userId: string, day: string, answer: ChallengeOptionKey) {
     return await sql.begin(async (tx) => {
+      // Serialize submits per user: the profile FOR UPDATE below locks nothing
+      // when no profile row exists yet, so two first-ever submits straddling a
+      // day boundary would both read an empty streak snapshot. Same recipe as
+      // the chat send and the 0027 social-quota lock — transaction-scoped.
+      await tx`SELECT pg_advisory_xact_lock(hashtextextended('club-daily:' || ${userId}, 0))`;
       // Replay-first: the natural key (user, product day) makes retries and
       // cross-device repeats return the recorded attempt without re-awarding.
       const existing = await readAttempt(tx, userId, day);

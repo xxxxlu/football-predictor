@@ -45,6 +45,14 @@ describe("room public chat schema (Story 12.3)", () => {
     // can ever be reached for. Visibility changes live in room.message_moderation.
     expect(columnNames.sort()).toEqual(["body", "created_at", "id", "room_id", "user_id"]);
     expect(messages.indexes.map((idx) => idx.config.name)).toContain("room_messages_keyset_idx");
+    // 0028: the duplicate probe and rate window filter by user too.
+    expect(messages.indexes.map((idx) => idx.config.name)).toContain("room_messages_user_keyset_idx");
+  });
+
+  it("migration 0028 gives the send gates a user-scoped keyset index", async () => {
+    const migration = await readFile(new URL("../../migrations/0028_epic12_review_closeout.sql", import.meta.url), "utf8");
+    expect(migration).toContain('"room_messages_user_keyset_idx"');
+    expect(migration).toContain('"room_id", "user_id", "created_at" DESC, "id" DESC');
   });
 
   it("holds one pinned message per room on the room row itself", () => {

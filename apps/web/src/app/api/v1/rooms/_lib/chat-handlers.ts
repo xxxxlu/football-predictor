@@ -20,7 +20,10 @@ import { assertSameOrigin } from "../../_lib/request-origin";
 // code-point-counted (500 astral code points = 1000 UTF-16 units, plus slack).
 const sendSchema = z.object({ body: z.string().max(4000) }).strict();
 const muteSchema = z.object({
-  memberUserId: z.string().uuid(),
+  // Lowercased before any comparison: zod's uuid() admits uppercase, while the
+  // self-mute guard compares against a lowercase session id — an uppercased
+  // own id must not slip past it into the member lookup.
+  memberUserId: z.string().uuid().transform((value) => value.toLowerCase()),
   muteHours: z.union(MUTE_DURATION_HOURS.map((hours) => z.literal(hours)) as [z.ZodLiteral<1>, z.ZodLiteral<24>, z.ZodLiteral<72>, z.ZodLiteral<168>]),
   reason: governanceReason(),
 }).strict();
@@ -34,7 +37,7 @@ interface RoomChat {
   listMessages(roomId: string, userId: string, options: { cursor?: string }): Promise<{ cursor: string | null } & Record<string, unknown>>;
   sendMessage(roomId: string, userId: string, body: string): Promise<unknown>;
   pinMessage(roomId: string, ownerId: string, messageId: string): Promise<unknown>;
-  unpinMessage(roomId: string, ownerId: string): Promise<unknown>;
+  unpinMessage(roomId: string, ownerId: string, messageId: string): Promise<unknown>;
   muteMember(roomId: string, ownerId: string, input: { memberUserId: string; muteHours: MuteDurationHours; reason: string }): Promise<unknown>;
   unmuteMember(roomId: string, ownerId: string, muteId: string, reason: string): Promise<unknown>;
 }
@@ -82,10 +85,10 @@ export function createRoomChatHandlers(identity: ChatIdentity, chat: RoomChat, r
       const accountId = await userId(request);
       return json({ data: await chat.pinMessage(room(roomId), accountId, message(messageId)) });
     }),
-    unpin: (request: Request, roomId: string) => execute(async () => {
+    unpin: (request: Request, roomId: string, messageId: string) => execute(async () => {
       assertSameOrigin(request);
       const accountId = await userId(request);
-      return json({ data: await chat.unpinMessage(room(roomId), accountId) });
+      return json({ data: await chat.unpinMessage(room(roomId), accountId, message(messageId)) });
     }),
     mute: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request);
@@ -140,12 +143,15 @@ async function execute(operation: () => Promise<Response>) {
   try { return await operation(); }
   catch (error) {
     if (error instanceof AuthError) return failure(error.code, error.status, error.action);
-    if (error instanceof OperationError) return failure(error.code, error.status);
+    if (error instanceof OperationError) return failure(error.code, error.status, undefined, error.details);
     if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422);
     console.error("room chat handler failed", error);
     return failure("INTERNAL_ERROR", 500);
   }
 }
-function failure(code: string, status: number, action?: string) {
-  return Response.json({ error: { code, message: action ?? MESSAGES[code] ?? "The request could not be completed." } }, { status, headers: noStore });
+function failure(code: string, status: number, action?: string, details?: Record<string, unknown>) {
+  // `details` carries caller-owned facts a refusal may legitimately disclose
+  // (today: the caller's own mutedUntil on a MUTED send). Spread first so the
+  // code/message contract can never be overwritten by a repository payload.
+  return Response.json({ error: { ...(details ?? {}), code, message: action ?? MESSAGES[code] ?? "The request could not be completed." } }, { status, headers: noStore });
 }

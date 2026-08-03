@@ -3,7 +3,7 @@ import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow 
 import { readOperatorAuthorization } from "../identity/operator-roles.js";
 
 export class OperationError extends Error {
-  constructor(readonly code: string, readonly status: number) { super(code); this.name = "OperationError"; }
+  constructor(readonly code: string, readonly status: number, readonly details?: Record<string, unknown>) { super(code); this.name = "OperationError"; }
 }
 
 type DbTimestamp = Date | string;

@@ -377,6 +377,8 @@ export class PostgresGovernanceInboxRepository {
         JOIN room.members m ON m.room_id = r.id AND m.user_id = ${input.reporterUserId}
         JOIN room.messages msg ON msg.room_id = r.id AND msg.id = ${input.messageId}
         WHERE r.id = ${input.roomId} AND msg.user_id <> ${input.reporterUserId}
+          AND NOT EXISTS (SELECT 1 FROM room.message_moderation mm
+            WHERE mm.message_id = msg.id AND mm.state = 'HIDDEN')
         ON CONFLICT DO NOTHING
         RETURNING id AS "reportId", status`;
       if (!inserted[0]) {

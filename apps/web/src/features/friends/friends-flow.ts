@@ -4,6 +4,8 @@
  * vitest root config does not pick up .test.tsx files.
  */
 
+import type { MessageKey } from "@/lib/i18n/messages";
+
 export interface FriendEntry {
   userId: string;
   pulseId: string;
@@ -56,20 +58,24 @@ export function splitRequests(requests: FriendRequestEntry[]): {
  * reachable or has blocked the caller: the server answers PENDING for both,
  * and the wording promises nothing about the other side (AC2).
  */
-export function requestOutcomeMessage(status: "PENDING" | "ACCEPTED"): string {
-  return status === "ACCEPTED" ? "对方也向你发过申请，你们已互为好友。" : "申请已发送。对方接受后会出现在你的好友列表。";
+export function requestOutcomeKey(status: "PENDING" | "ACCEPTED"): MessageKey {
+  return status === "ACCEPTED" ? "friends.outcomeAccepted" : "friends.outcomePending";
 }
 
-export function friendErrorMessage(code: string | undefined): string {
+/**
+ * Business rejections arrive as stable error codes; the UI renders them
+ * through i18n, never hardcoded copy — the same discipline as chatErrorKey.
+ */
+export function friendErrorKey(code: string | undefined): MessageKey {
   switch (code) {
-    case "USER_NOT_FOUND": return "没有找到这个 PULSE ID 对应的成员。";
-    case "SELF_FRIEND_FORBIDDEN": return "不能添加自己为好友。";
-    case "SELF_BLOCK_FORBIDDEN": return "不能屏蔽自己。";
-    case "RATE_LIMITED": return "好友申请发送过于频繁，请稍后再试。";
-    case "REQUEST_NOT_FOUND": return "这条好友申请不存在或已被处理。";
-    case "INVALID_REQUEST": return "请检查输入后重试。";
-    case "UNAUTHENTICATED": return "请先登录。";
-    default: return "操作未能完成，请稍后重试。";
+    case "USER_NOT_FOUND": return "friends.err.USER_NOT_FOUND";
+    case "SELF_FRIEND_FORBIDDEN": return "friends.err.SELF_FRIEND_FORBIDDEN";
+    case "SELF_BLOCK_FORBIDDEN": return "friends.err.SELF_BLOCK_FORBIDDEN";
+    case "RATE_LIMITED": return "friends.err.RATE_LIMITED";
+    case "REQUEST_NOT_FOUND": return "friends.err.REQUEST_NOT_FOUND";
+    case "INVALID_REQUEST": return "friends.err.INVALID_REQUEST";
+    case "UNAUTHENTICATED": return "friends.err.UNAUTHENTICATED";
+    default: return "friends.err.generic";
   }
 }
 

@@ -87,14 +87,25 @@ describe("optimistic send bookkeeping", () => {
     expect(reconcileMessages(current, hiddenB).map((entry) => entry.id)).toEqual(["confirmed"]);
   });
 
-  it("retires a sending entry the poll already confirmed, but never a failed one", () => {
+  it("retires a sending entry the poll confirmed as OURS, but never a failed one", () => {
     const pending: PendingMessage[] = [
       { localId: "l1", body: "已被确认的话", createdAt: "2026-07-31T12:00:00.000Z", status: "sending" },
       { localId: "l2", body: "还在路上的话", createdAt: "2026-07-31T12:00:01.000Z", status: "sending" },
       { localId: "l3", body: "已被确认的话", createdAt: "2026-07-31T12:00:02.000Z", status: "failed", error: "x" },
     ];
     const polled = [{ ...message("m1"), body: "已被确认的话" }];
-    expect(dropDeliveredPending(pending, polled).map((entry) => entry.localId)).toEqual(["l2", "l3"]);
+    expect(dropDeliveredPending(pending, polled, "pulse_one").map((entry) => entry.localId)).toEqual(["l2", "l3"]);
+  });
+
+  it("never retires a sending entry for a STRANGER's identical text, nor before the viewer is known", () => {
+    const pending: PendingMessage[] = [
+      { localId: "l1", body: "同一句话", createdAt: "2026-07-31T12:00:00.000Z", status: "sending" },
+    ];
+    const polled = [{ ...message("m1"), body: "同一句话" }];
+    // Another member posted the same text — our POST may still fail; keep the row.
+    expect(dropDeliveredPending(pending, polled, "pulse_two").map((entry) => entry.localId)).toEqual(["l1"]);
+    // Viewer identity unknown (nothing sent yet this mount) — drop nothing.
+    expect(dropDeliveredPending(pending, polled, null).map((entry) => entry.localId)).toEqual(["l1"]);
   });
 });
 

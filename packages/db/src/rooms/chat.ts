@@ -161,7 +161,11 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
         const now = clock();
         const nowIso = now.toISOString();
         // Gap ③: trust only the time window, never `lifted_at IS NULL` alone.
-        if (await activeMuteUntil(tx, roomId, userId, nowIso)) throw new OperationError("MUTED", 403);
+        // The refusal carries the caller's own mute end — telling someone when
+        // their own mute lifts is not a disclosure, and the send response is
+        // where they hit the wall (the list read also reports it).
+        const mutedUntil = await activeMuteUntil(tx, roomId, userId, nowIso);
+        if (mutedUntil) throw new OperationError("MUTED", 403, { mutedUntil });
 
         const windowStartIso = new Date(now.getTime() - MESSAGE_WINDOW_SECONDS * 1000).toISOString();
         const [window] = await tx<Array<{ recent: string | number }>>`
@@ -213,11 +217,16 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
       });
     },
 
-    async unpinMessage(roomId: string, ownerId: string) {
+    async unpinMessage(roomId: string, ownerId: string, messageId: string) {
       const auditId = randomUUID();
       return await sql.begin(async (tx) => {
         const context = await ownerContext(tx, roomId, ownerId);
-        if (!context.pinnedMessageId) throw new OperationError("MESSAGE_NOT_PINNED", 409);
+        // The URL names a message; unpinning must only act when that message is
+        // the one currently pinned — otherwise a concurrent repin would be
+        // silently undone by a DELETE aimed at its predecessor.
+        if (!context.pinnedMessageId || context.pinnedMessageId !== messageId) {
+          throw new OperationError("MESSAGE_NOT_PINNED", 409);
+        }
         const nowIso = clock().toISOString();
         await tx`UPDATE room.rooms SET pinned_message_id = NULL, pinned_by = NULL, pinned_at = NULL, updated_at = ${nowIso}
           WHERE id = ${roomId}`;

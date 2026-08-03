@@ -35,7 +35,10 @@ export function PublicRoomsSection({ headingId = "public-rooms-title" }: { headi
         if (!response.ok) throw new Error(t("rooms.public.loadFailed"));
         setPublicRooms(Array.isArray(lobby.data) ? lobby.data : []);
       } catch (reason) {
-        if ((reason as Error).name !== "AbortError") setLoadError((reason as Error).message || t("rooms.public.loadFailed"));
+        if ((reason as Error).name !== "AbortError") {
+          // A network TypeError carries browser English — fold to the localized generic.
+          setLoadError(reason instanceof TypeError ? t("rooms.public.loadFailed") : (reason as Error).message || t("rooms.public.loadFailed"));
+        }
       } finally {
         setLoading(false);
       }

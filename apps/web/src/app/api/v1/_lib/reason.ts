@@ -12,6 +12,9 @@ import { z } from "zod";
 export function governanceReason(min: number = GOVERNANCE_REASON_MIN, max: number = GOVERNANCE_REASON_MAX) {
   return z.string().trim().refine(
     (value) => {
+      // NUL never survives a Postgres text insert — refuse it as a 422 here
+      // rather than letting the constraint layer answer with a 500.
+      if (value.includes("\u0000")) return false;
       const length = governanceReasonLength(value);
       return length >= min && length <= max;
     },

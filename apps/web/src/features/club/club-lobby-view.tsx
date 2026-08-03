@@ -56,6 +56,10 @@ export function ClubLobbyView() {
   const [confirmingRules, setConfirmingRules] = useState(false);
   const [busy, setBusy] = useState(false);
   const localSeq = useRef(0);
+  // Learned from the first confirmed send this mount — used so a poll only
+  // retires optimistic rows for OUR confirmed message, never a stranger's
+  // identical text (their row appearing must not eat our in-flight send).
+  const viewerPulseId = useRef<string | null>(null);
   const reportReasonRef = useRef<HTMLTextAreaElement>(null);
 
   // The report panel renders above the message list; move focus into it so a
@@ -67,7 +71,8 @@ export function ClubLobbyView() {
     const { url, init } = lobbyRequest();
     const response = await fetch(url, { ...init, signal });
     const result = await response.json().catch(() => ({})) as ApiEnvelope<LobbyData> & ApiFailure;
-    if (!response.ok) throw new Error(result.error?.message || t("club.lobby.unavailable"));
+    // Localized generic only — the server's error message is English-only.
+    if (!response.ok) throw new Error(t("club.lobby.unavailable"));
     return result.data;
   }, [t]);
 
@@ -75,7 +80,7 @@ export function ClubLobbyView() {
     const { url, init } = listChannelRequest();
     const response = await fetch(url, { ...init, signal });
     const result = await response.json().catch(() => ({})) as ApiEnvelope<ChannelPageRecord> & ApiFailure;
-    if (!response.ok) throw new Error(result.error?.message || t("club.lobby.sectionUnavailable"));
+    if (!response.ok) throw new Error(t("club.lobby.sectionUnavailable"));
     return result.data;
   }, [t]);
 
@@ -113,7 +118,7 @@ export function ClubLobbyView() {
                 rulesConfirmed: data.rulesConfirmed || current.rulesConfirmed,
               }
             : data);
-          setPending((current) => dropDeliveredPending(current, data.messages));
+          setPending((current) => dropDeliveredPending(current, data.messages, viewerPulseId.current));
         }
       } catch { /* keep stale channel data */ }
       finally { controllers.delete(controller); }
@@ -127,17 +132,19 @@ export function ClubLobbyView() {
   // so). Refresh them on a slow cadence; the channel state stays owned by the
   // channel poll above.
   useEffect(() => {
+    let disposed = false;
     const interval = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
       void loadLobby()
         .then((data) => {
+          if (disposed) return;
           setLobby((current) => current
             ? { ...current, directory: data.directory, friends: data.friends, failedSections: data.failedSections }
             : data);
         })
         .catch(() => { /* keep stale sections; the next tick retries */ });
     }, LOBBY_SECTIONS_REFRESH_MS);
-    return () => window.clearInterval(interval);
+    return () => { disposed = true; window.clearInterval(interval); };
   }, [loadLobby]);
 
   // Lobby presence heartbeat: fire-and-forget, consent enforced server-side —
@@ -160,10 +167,13 @@ export function ClubLobbyView() {
       const result = await response.json().catch(() => ({})) as ApiEnvelope<ChannelMessageRecord> & ApiFailure;
       // Render by error CODE through i18n — the server message is English-only.
       if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("room.chat.sendFailed"));
+      viewerPulseId.current = result.data.authorPulseId;
       setPending((current) => removePending(current, localId));
       setChannel((current) => current ? { ...current, messages: mergeConfirmedChannelMessage(current.messages, result.data) } : current);
     } catch (reason) {
-      setPending((current) => failPending(current, localId, (reason as Error).message || t("room.chat.sendFailed")));
+      // Network-level TypeError carries browser English — fold to the localized generic.
+      const text = reason instanceof TypeError ? t("room.chat.sendFailed") : (reason as Error).message || t("room.chat.sendFailed");
+      setPending((current) => failPending(current, localId, text));
     }
   }, [t]);
 
@@ -192,7 +202,8 @@ export function ClubLobbyView() {
       setNotice({ tone: "success", text: t("room.chat.reportDone") });
       setReportTarget(null); setReportReason("");
     } catch (reason) {
-      setNotice({ tone: "error", text: (reason as Error).message || t("room.chat.errorGeneric") });
+      const text = reason instanceof TypeError ? t("room.chat.errorGeneric") : (reason as Error).message || t("room.chat.errorGeneric");
+      setNotice({ tone: "error", text });
     } finally {
       setBusy(false);
     }
@@ -209,7 +220,8 @@ export function ClubLobbyView() {
       setChannel((current) => current ? { ...current, rulesConfirmed: true } : current);
       setNotice({ tone: "success", text: t("club.lobby.rulesDone") });
     } catch (reason) {
-      setNotice({ tone: "error", text: (reason as Error).message || t("club.lobby.rulesFailed") });
+      const text = reason instanceof TypeError ? t("club.lobby.rulesFailed") : (reason as Error).message || t("club.lobby.rulesFailed");
+      setNotice({ tone: "error", text });
     } finally {
       setConfirmingRules(false);
     }
@@ -296,8 +308,9 @@ export function ClubLobbyView() {
             </div>
           </form>}
 
-          {/* aria-live announces newly polled messages politely without stealing focus. */}
-          <ul className="mt-4 divide-y divide-[var(--line)]" aria-live="polite" aria-label={t("club.lobby.channelTitle")}>
+          {/* role="log" (implicit polite live region, additions-only): a bare
+              aria-live list re-announces history on every poll reconciliation. */}
+          <ul className="mt-4 divide-y divide-[var(--line)]" role="log" aria-label={t("club.lobby.channelTitle")}>
             {channel.messages.length === 0 && pending.length === 0 && <li className="py-3 text-sm text-[var(--muted)]">{t("club.lobby.channelEmpty")}</li>}
             {pending.slice().reverse().map((entry) => <li key={entry.localId} className="py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">

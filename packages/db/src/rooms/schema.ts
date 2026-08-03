@@ -42,7 +42,11 @@ export const roomMessages = roomSchema.table("messages", {
   userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "restrict" }),
   body: text("body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("room_messages_keyset_idx").on(table.roomId, table.createdAt, table.id)]);
+}, (table) => [
+  index("room_messages_keyset_idx").on(table.roomId, table.createdAt, table.id),
+  // 0028: serves the per-send duplicate probe and the persisted rate window.
+  index("room_messages_user_keyset_idx").on(table.roomId, table.userId, table.createdAt, table.id),
+]);
 
 export const roomMembers = roomSchema.table("members", {
   roomId: uuid("room_id").notNull().references(() => rooms.id, { onDelete: "cascade" }),

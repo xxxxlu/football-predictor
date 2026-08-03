@@ -56,6 +56,10 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
   const [unmuteReason, setUnmuteReason] = useState("");
   const [busy, setBusy] = useState(false);
   const localSeq = useRef(0);
+  // Learned from the first confirmed send this mount: the send response's
+  // authorPulseId IS the viewer. Used to retire optimistic rows only when the
+  // poll shows OUR message — never a stranger's identical text.
+  const viewerPulseId = useRef<string | null>(null);
   const reportReasonRef = useRef<HTMLTextAreaElement>(null);
   const muteReasonRef = useRef<HTMLTextAreaElement>(null);
   const unmuteReasonRef = useRef<HTMLTextAreaElement>(null);
@@ -90,11 +94,13 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
           // Reconcile, don't replace: a stale snapshot must not erase a
           // just-confirmed send; a landed poll retires its "sending…" row.
           setPage((current) => current ? { ...data, messages: reconcileMessages(current.messages, data.messages) } : data);
-          setPending((current) => dropDeliveredPending(current, data.messages));
+          setPending((current) => dropDeliveredPending(current, data.messages, viewerPulseId.current));
           setError("");
         }
       } catch (reason) {
-        if (!disposed && (reason as Error).name !== "AbortError") setError((reason as Error).message);
+        if (!disposed && (reason as Error).name !== "AbortError") {
+          setError(reason instanceof TypeError ? t("room.chat.unavailable") : (reason as Error).message);
+        }
       } finally {
         controllers.delete(controller);
         if (!disposed) setLoading(false);
@@ -103,7 +109,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
     void refresh();
     const interval = window.setInterval(() => { void refresh(); }, CHAT_POLL_INTERVAL_MS);
     return () => { disposed = true; window.clearInterval(interval); for (const controller of controllers) controller.abort(); };
-  }, [load]);
+  }, [load, t]);
 
   const send = useCallback(async (body: string, localId: string) => {
     const { url, init } = sendChatRequest(roomId, body);
@@ -111,10 +117,14 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       const response = await fetch(url, init);
       const result = await response.json().catch(() => ({})) as ApiEnvelope<ChatMessageRecord> & ApiFailure;
       if (!response.ok) throw new Error(result.error?.code ? t(chatErrorKey(result.error.code)) : t("room.chat.sendFailed"));
+      viewerPulseId.current = result.data.authorPulseId;
       setPending((current) => removePending(current, localId));
       setPage((current) => current ? { ...current, messages: mergeConfirmed(current.messages, result.data) } : current);
     } catch (reason) {
-      setPending((current) => failPending(current, localId, (reason as Error).message || t("room.chat.sendFailed")));
+      // A network-level TypeError carries browser English ("Failed to fetch") —
+      // fold it to the localized generic instead of leaking it into the row.
+      const text = reason instanceof TypeError ? t("room.chat.sendFailed") : (reason as Error).message || t("room.chat.sendFailed");
+      setPending((current) => failPending(current, localId, text));
     }
   }, [roomId, t]);
 
@@ -142,10 +152,14 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       setReportTarget(null); setReportReason("");
       setMuteTarget(null); setMuteReason("");
       setUnmuteTarget(null); setUnmuteReason("");
+      // Same reconciliation as the poll path: a raw replace here would erase a
+      // send confirmed while this moderation action was in flight.
       const data = await load();
-      setPage(data);
+      setPage((current) => current ? { ...data, messages: reconcileMessages(current.messages, data.messages) } : data);
+      setPending((current) => dropDeliveredPending(current, data.messages, viewerPulseId.current));
     } catch (reason) {
-      setNotice({ tone: "error", text: (reason as Error).message || t("room.chat.errorGeneric") });
+      const text = reason instanceof TypeError ? t("room.chat.errorGeneric") : (reason as Error).message || t("room.chat.errorGeneric");
+      setNotice({ tone: "error", text });
     } finally {
       setBusy(false);
     }
@@ -238,14 +252,16 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       <h3 className="text-sm font-bold">{t("room.chat.muteList")}</h3>
       <ul className="mt-2 divide-y divide-[var(--line)]">
         {page.mutes.map((mute) => <li key={mute.muteId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-          <span><b>{mute.nickname || mute.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">{t("room.chat.mutedUntil")} {new Date(mute.mutedUntil).toLocaleString()}</span></span>
+          <span><b>{mute.nickname || mute.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">{t("room.chat.muteListUntil")} {new Date(mute.mutedUntil).toLocaleString()}</span></span>
           <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => { setUnmuteTarget({ muteId: mute.muteId, pulseId: mute.pulseId }); setUnmuteReason(""); setNotice(null); }}>{t("room.chat.unmute")}</button>
         </li>)}
       </ul>
     </div>}
 
-    {/* aria-live announces newly polled messages politely without stealing focus. */}
-    <ul className="mt-4 divide-y divide-[var(--line)]" aria-live="polite" aria-label={t("room.chat.title")}>
+    {/* role="log" (implicit polite live region with additions-only semantics):
+        a bare aria-live list re-announces swaths of history on every poll
+        reconciliation instead of just the new entries. */}
+    <ul className="mt-4 divide-y divide-[var(--line)]" role="log" aria-label={t("room.chat.title")}>
       {page.messages.length === 0 && pending.length === 0 && <li className="py-3 text-sm text-[var(--muted)]">{t("room.chat.empty")}</li>}
       {pending.slice().reverse().map((entry) => <li key={entry.localId} className="py-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">

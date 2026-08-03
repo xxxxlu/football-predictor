@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  friendErrorMessage,
+  friendErrorKey,
   FRIENDS_POLL_INTERVAL_MS,
   normalizePulseIdInput,
-  requestOutcomeMessage,
+  requestOutcomeKey,
   shouldSendHeartbeat,
   splitRequests,
   type FriendRequestEntry,
@@ -32,17 +32,17 @@ describe("splitRequests", () => {
 });
 
 describe("copy", () => {
-  it("keeps the pending message identical for reachable and blocked targets", () => {
+  it("keeps the pending outcome identical for reachable and blocked targets", () => {
     // Both cases answer PENDING server-side; a distinct message would leak the block.
-    expect(requestOutcomeMessage("PENDING")).toBe("申请已发送。对方接受后会出现在你的好友列表。");
-    expect(requestOutcomeMessage("ACCEPTED")).toContain("互为好友");
+    expect(requestOutcomeKey("PENDING")).toBe("friends.outcomePending");
+    expect(requestOutcomeKey("ACCEPTED")).toBe("friends.outcomeAccepted");
   });
 
-  it("has words for every API error the feature can produce, plus a fallback", () => {
+  it("has a key for every API error the feature can produce, plus a fallback", () => {
     for (const code of ["USER_NOT_FOUND", "SELF_FRIEND_FORBIDDEN", "SELF_BLOCK_FORBIDDEN", "RATE_LIMITED", "REQUEST_NOT_FOUND", "INVALID_REQUEST", "UNAUTHENTICATED"]) {
-      expect(friendErrorMessage(code)).not.toBe(friendErrorMessage(undefined));
+      expect(friendErrorKey(code)).not.toBe(friendErrorKey(undefined));
     }
-    expect(friendErrorMessage("SOMETHING_ELSE")).toBe(friendErrorMessage(undefined));
+    expect(friendErrorKey("SOMETHING_ELSE")).toBe(friendErrorKey(undefined));
   });
 });
 

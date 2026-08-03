@@ -19,7 +19,11 @@ import { assertSameOrigin } from "./request-origin";
  * (AC1) — and the question leaves this layer exclusively through
  * toPublicQuestion, whose type has no correct-answer field (AC2).
  */
-const attemptSchema = z.object({ answer: z.enum(CHALLENGE_OPTION_KEYS) }).strict();
+// `questionKey` is the client echoing which question it displayed. It never
+// selects the question (the server day does, AC1) — it only lets a submit that
+// straddled the UTC rollover be refused instead of silently scored against the
+// new day's question. Optional: the 12.2 clients did not send it.
+const attemptSchema = z.object({ answer: z.enum(CHALLENGE_OPTION_KEYS), questionKey: z.string().min(1).max(64).optional() }).strict();
 
 const DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 // Shape alone admits calendar-invalid days ("2026-02-31" sorts before today,
@@ -57,12 +61,15 @@ export function createClubHandlers(identity: Identity, club: Club, now: () => Da
         const id = await user(request);
         const day = productDay(now());
         const state = await club.getDailyState(id, day);
+        // Spread first: the repository payload is typed `unknown`, and the
+        // sanitized projections (question without its answer key, above all)
+        // must always win over whatever keys the repository grows later.
         return json({
           data: {
+            ...state,
             day,
             question: toPublicQuestion(questionForProductDay(day)),
             fortune: fortuneFor(id, day),
-            ...state,
           },
         });
       }),
@@ -73,6 +80,9 @@ export function createClubHandlers(identity: Identity, club: Club, now: () => Da
         const id = await user(request);
         const input = attemptSchema.parse(await request.json());
         const day = productDay(now());
+        if (input.questionKey !== undefined && input.questionKey !== questionForProductDay(day).key) {
+          return failure("DAY_ROLLED_OVER", 409);
+        }
         return json({ data: await club.submitAttempt(id, day, input.answer) });
       }),
 
@@ -120,6 +130,7 @@ function failure(code: string, status: number) {
   const message =
     code === "UNAUTHENTICATED" ? "Log in to continue."
     : code === "ROOM_NOT_FOUND" ? "The requested room was not found."
+    : code === "DAY_ROLLED_OVER" ? "A new challenge day has started. Reload for today's question."
     : code === "INVALID_REQUEST" ? "Check the submitted fields and try again."
     : code === "INVALID_ORIGIN" ? "Reload this page and try again."
     : "The request could not be completed.";

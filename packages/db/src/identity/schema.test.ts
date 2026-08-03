@@ -82,10 +82,23 @@ describe("identity database schema", () => {
     expect(signals.columns.map((column) => column.name)).toEqual(
       expect.arrayContaining(["user_id", "online_beat_at", "lobby_beat_at", "updated_at"]),
     );
-    // Rate limiting is persisted counting, never an in-memory counter.
+    // Rate limiting is persisted counting, never an in-memory counter — and
+    // since 0027 the same ledger carries a kind so blocks are throttled too.
     expect(getTableConfig(friendRequestEvents).columns.map((column) => column.name)).toEqual(
-      expect.arrayContaining(["requester_user_id", "occurred_at"]),
+      expect.arrayContaining(["requester_user_id", "kind", "occurred_at"]),
     );
+    expect(getTableConfig(friendRequestEvents).indexes.map((idx) => idx.config.name)).toContain(
+      "friend_request_events_requester_kind_time_idx",
+    );
+  });
+
+  it("migration 0027 splits the quota ledger by kind and 0028 retires the superseded index", async () => {
+    const hardening = await readFile(new URL("../../migrations/0027_social_hardening.sql", import.meta.url), "utf8");
+    expect(hardening).toContain('ADD COLUMN IF NOT EXISTS "kind" text NOT NULL DEFAULT \'FRIEND_REQUEST\'');
+    expect(hardening).toContain("CHECK (\"kind\" IN ('FRIEND_REQUEST', 'BLOCK'))");
+    expect(hardening).toContain('"friend_request_events_requester_kind_time_idx"');
+    const closeout = await readFile(new URL("../../migrations/0028_epic12_review_closeout.sql", import.meta.url), "utf8");
+    expect(closeout).toContain('DROP INDEX IF EXISTS "identity"."friend_request_events_requester_time_idx"');
   });
 
   it("keeps migration 0023 idempotent with pair canonicalisation enforced by the database", async () => {

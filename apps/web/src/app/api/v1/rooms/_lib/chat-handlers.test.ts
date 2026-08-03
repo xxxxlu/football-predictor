@@ -37,7 +37,7 @@ describe("room chat API authentication", () => {
       subject.handlers.list(get(`/api/v1/rooms/${ROOM_ID}/messages`), ROOM_ID),
       subject.handlers.send(mutate(`/api/v1/rooms/${ROOM_ID}/messages`, "POST", { body: "你好" }), ROOM_ID),
       subject.handlers.pin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "POST"), ROOM_ID, MESSAGE_ID),
-      subject.handlers.unpin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "DELETE"), ROOM_ID),
+      subject.handlers.unpin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "DELETE"), ROOM_ID, MESSAGE_ID),
       subject.handlers.mute(mutate(`/api/v1/rooms/${ROOM_ID}/mutes`, "POST", { memberUserId: MEMBER_ID, muteHours: 24, reason: "连续刷屏广告" }), ROOM_ID),
       subject.handlers.unmute(mutate(`/api/v1/rooms/${ROOM_ID}/mutes/${MUTE_ID}`, "DELETE", { reason: "误禁，解除" }), ROOM_ID, MUTE_ID),
       subject.handlers.report(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/reports`, "POST", { reason: "人身攻击，需要尽快处理" }), ROOM_ID, MESSAGE_ID),
@@ -114,9 +114,9 @@ describe("owner actions", () => {
     const pin = await subject.handlers.pin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "POST"), ROOM_ID, MESSAGE_ID);
     expect(pin.status).toBe(200);
     expect(subject.chat.pinMessage).toHaveBeenCalledWith(ROOM_ID, "user-1", MESSAGE_ID);
-    const unpin = await subject.handlers.unpin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "DELETE"), ROOM_ID);
+    const unpin = await subject.handlers.unpin(mutate(`/api/v1/rooms/${ROOM_ID}/messages/${MESSAGE_ID}/pin`, "DELETE"), ROOM_ID, MESSAGE_ID);
     expect(unpin.status).toBe(200);
-    expect(subject.chat.unpinMessage).toHaveBeenCalledWith(ROOM_ID, "user-1");
+    expect(subject.chat.unpinMessage).toHaveBeenCalledWith(ROOM_ID, "user-1", MESSAGE_ID);
   });
 
   it("mutes only with a listed duration and a written reason", async () => {

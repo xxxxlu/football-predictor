@@ -1,5 +1,5 @@
 import { OperationError } from "@pulse/db";
-import { AuthError, RESPOND_ACTIONS, type PresencePreferences, type RespondAction } from "@pulse/domain";
+import { AuthError, canonicalUsername, RESPOND_ACTIONS, type PresencePreferences, type RespondAction } from "@pulse/domain";
 import { z } from "zod";
 import { readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";
@@ -11,8 +11,19 @@ import { assertSameOrigin } from "./request-origin";
  * rules (blocked = same shape as pending, unknown id = REQUEST_NOT_FOUND) are
  * enforced below the transport, so nothing here needs a special "blocked" path.
  */
+// PULSE ID rules live in exactly one place — canonicalUsername. Re-stating the
+// pattern here is how the two features drift onto different rules.
 const pulseIdSchema = z
-  .object({ pulseId: z.string().trim().toLowerCase().regex(/^[a-z0-9_]{3,32}$/) })
+  .object({
+    pulseId: z.string().transform((value, ctx) => {
+      const canonical = canonicalUsername(value);
+      if (!canonical) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Not a valid PULSE ID." });
+        return z.NEVER;
+      }
+      return canonical;
+    }),
+  })
   .strict();
 const respondSchema = z.object({ action: z.enum(RESPOND_ACTIONS) }).strict();
 const privacySchema = z
@@ -83,8 +94,12 @@ export function createSocialHandlers(identity: Identity, social: Social) {
       execute(async () => {
         assertSameOrigin(request);
         const id = await user(request);
-        if (!UUID_PATTERN.test(userId) || userId === id) return json({ data: { removed: false } });
-        return json({ data: await social.removeFriend(id, userId) });
+        // Lowercase before the self-check: the pattern admits uppercase hex,
+        // and an uppercased own id must fold to "removed: false" here — not
+        // reach canonicalPair, which refuses a self-pair with a plain throw.
+        const target = userId.toLowerCase();
+        if (!UUID_PATTERN.test(target) || target === id) return json({ data: { removed: false } });
+        return json({ data: await social.removeFriend(id, target) });
       }),
 
     blockCreate: (request: Request) =>
@@ -99,8 +114,9 @@ export function createSocialHandlers(identity: Identity, social: Social) {
       execute(async () => {
         assertSameOrigin(request);
         const id = await user(request);
-        if (!UUID_PATTERN.test(userId)) return json({ data: { unblocked: false } });
-        return json({ data: await social.unblockUser(id, userId) });
+        const target = userId.toLowerCase();
+        if (!UUID_PATTERN.test(target)) return json({ data: { unblocked: false } });
+        return json({ data: await social.unblockUser(id, target) });
       }),
 
     privacyPatch: (request: Request) =>

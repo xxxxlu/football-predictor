@@ -136,8 +136,10 @@ export const presenceSignals = identitySchema.table("presence_signals", {
 export const friendRequestEvents = identitySchema.table("friend_request_events", {
   id: uuid("id").defaultRandom().primaryKey(),
   requesterUserId: uuid("requester_user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  // 0027: the same ledger throttles blocks too; existing rows backfill as FRIEND_REQUEST.
+  kind: text("kind").notNull().default("FRIEND_REQUEST"),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("friend_request_events_requester_time_idx").on(table.requesterUserId, table.occurredAt)]);
+}, (table) => [index("friend_request_events_requester_kind_time_idx").on(table.requesterUserId, table.kind, table.occurredAt)]);
 
 export const accessEvents = identitySchema.table("access_events", {
   id: uuid("id").defaultRandom().primaryKey(),
