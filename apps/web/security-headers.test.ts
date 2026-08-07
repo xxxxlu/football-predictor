@@ -10,6 +10,9 @@ describe("production security headers", () => {
     expect(headers["Content-Security-Policy"]).toContain("img-src 'self' data: blob: https://media.api-sports.io");
     expect(headers["Content-Security-Policy"]).toContain("default-src 'self'");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
+    expect(headers["Permissions-Policy"]).toContain("camera=(self)");
+    expect(headers["Permissions-Policy"]).toContain("geolocation=(self)");
+    expect(headers["Permissions-Policy"]).toContain("microphone=()");
     expect(headers["Permissions-Policy"]).toContain("payment=()");
     expect(headers["Strict-Transport-Security"]).toContain("max-age=31536000");
   });

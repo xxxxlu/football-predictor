@@ -32,3 +32,5 @@ export * from "./f1/settlement.js";
 export * from "./f1/session-lock.js";
 export * from "./f1/results-sync.js";
 export * from "./f1/read-model-refresh.js";
+export * from "./privacy/schema.js";
+export * from "./privacy/repository.js";

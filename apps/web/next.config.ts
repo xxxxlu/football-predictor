@@ -32,7 +32,7 @@ export function securityHeaders(production: boolean): Header[] {
     { key: "Content-Security-Policy", value: csp },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-    { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()" },
+    { key: "Permissions-Policy", value: "camera=(self), microphone=(), geolocation=(self), payment=(), usb=(), interest-cohort=()" },
     { key: "X-Frame-Options", value: "DENY" },
   ];
   if (production) headers.push({ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" });
@@ -48,7 +48,7 @@ const nextConfig: NextConfig = {
     const privateHeaders = [{ key: "X-Robots-Tag", value: "noindex, nofollow, noarchive" }];
     return [
       { source: "/:path*", headers: securityHeaders(process.env.NODE_ENV === "production") },
-      ...["/rooms/:path*", "/matches", "/history", "/ledger", "/leaderboard", "/account", "/admin/:path*", "/invite/:path*"].map((source) => ({ source, headers: privateHeaders })),
+      ...["/rooms/:path*", "/matches", "/history", "/ledger", "/leaderboard", "/account", "/privacy", "/admin/:path*", "/invite/:path*"].map((source) => ({ source, headers: privateHeaders })),
     ];
   },
 };

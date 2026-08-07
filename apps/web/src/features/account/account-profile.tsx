@@ -27,6 +27,7 @@ const OPERATOR_ENTRIES: Array<{ href: string; label: string; capability: string;
   // they already reach directly above.
   { href: "/admin/status", label: "运营总览", capability: "OPERATIONS_HEALTH_READ" },
   { href: "/admin/operators", label: "运营职责", capability: "OPERATOR_ROLE_MANAGE" },
+  { href: "/admin/privacy", label: "隐私数据管理", capability: "USER_SECURITY_READ" },
 ];
 const ROLE_LABELS: Record<string, string> = { SUPER_ADMIN: "超级管理员", OPERATIONS_ADMIN: "运营管理员", COMMUNITY_MODERATOR: "社区协管员" };
 
@@ -99,7 +100,15 @@ export function AccountProfile() {
             {privacyError && <p className="text-xs font-bold text-[var(--coral)]">{privacyError}</p>}
           </div>}
         </div>
-        {isOperator && <div className="mt-8 border-t border-[var(--line)] pt-6">
+        <div className="mt-8 border-t border-[var(--line)] pt-6">
+	          <p className="eyebrow">PRIVACY</p>
+	          <h3 className="mt-1 font-bold">隐私与数据授权</h3>
+	          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">管理你的数据收集授权，包括相册、位置、设备信息和偏好设置。你可以随时开启或关闭授权。</p>
+	          <div className="mt-4 flex flex-wrap gap-3">
+	            <Link href="/privacy" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">隐私与授权中心</Link>
+	          </div>
+	        </div>
+	        {isOperator && <div className="mt-8 border-t border-[var(--line)] pt-6">
           <p className="eyebrow">OPERATIONS</p>
           <h3 className="mt-1 font-bold">运营入口</h3>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">这里只列出你已获授权的入口，每个接口仍会在服务端逐请求校验权限。为保证账本不可篡改，任何职责都不能覆盖用户余额、改动预测或账本流水。</p>

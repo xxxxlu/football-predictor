@@ -3,6 +3,8 @@ import { z } from "zod";
 import { assertSameOrigin } from "../../_lib/request-origin";
 import { accessContext, sourceKey } from "./runtime";
 import type { AccessContext } from "@pulse/domain";
+import { readCookie } from "./session-token";
+export { readReauthProof, readSessionToken } from "./session-token";
 
 const registerSchema = z.object({
   username: z.string(),
@@ -118,17 +120,3 @@ function clearSessionCookie(secure: boolean) {
 function reauthCookie(token: string, expiresAt: Date, secure: boolean) {
   return `fp_reauth=${encodeURIComponent(token)}; Path=/api/v1/admin; HttpOnly; SameSite=Strict; Expires=${expiresAt.toUTCString()}${secure ? "; Secure" : ""}`;
 }
-
-function readCookie(header: string | null, name: string) {
-  for (const pair of header?.split(";") ?? []) {
-    const [key, ...parts] = pair.trim().split("=");
-    if (key === name) return decodeURIComponent(parts.join("="));
-  }
-  return null;
-}
-
-export function readSessionToken(request: Request) {
-  return readCookie(request.headers.get("cookie"), "fp_session");
-}
-
-export function readReauthProof(request: Request) { return readCookie(request.headers.get("cookie"), "fp_reauth"); }
