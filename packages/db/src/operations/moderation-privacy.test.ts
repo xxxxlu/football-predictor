@@ -1,5 +1,6 @@
+import type postgres from "postgres";
 import { describe, expect, it } from "vitest";
-import { anonymousDisplayName, normalizeAuditEvent, redactAuditMetadata, roomAllowsMemberRead, roomAllowsPredictions, roomTransition } from "./moderation-privacy.js";
+import { anonymizeAccountWithin, anonymousDisplayName, normalizeAuditEvent, redactAuditMetadata, roomAllowsMemberRead, roomAllowsPredictions, roomTransition } from "./moderation-privacy.js";
 
 describe("moderation and privacy rules", () => {
   it("blocks predictions as soon as a room is restricted or closed", () => {
@@ -19,6 +20,69 @@ describe("moderation and privacy rules", () => {
     expect(roomTransition("CLOSE")).toBe("CLOSED");
     expect(roomTransition("RESTORE")).toBe("ACTIVE");
     expect(anonymousDisplayName("12345678-abcd-0000-0000-000000000000")).toBe("已删除用户-12345678");
+  });
+});
+
+/**
+ * Story 12.6: an account that is anonymized must lose its photo from object
+ * storage too. Deleting only the database reference would leave the member's face
+ * readable at its object key forever, which is the failure this asserts against.
+ */
+describe("account anonymization clears the avatar", () => {
+  type Row = Record<string, unknown>;
+
+  function fakeTx(respond: (query: string) => Row[], log: string[]) {
+    const run = async (strings: readonly string[], values: readonly unknown[]) => {
+      const text = strings.reduce((acc, chunk, index) => acc + chunk + (index < values.length ? " $ " : ""), "").replace(/\s+/g, " ").trim();
+      log.push(text);
+      return respond(text);
+    };
+    const tx = (strings: TemplateStringsArray, ...values: unknown[]) => ({
+      then: (resolve?: (rows: Row[]) => unknown, reject?: (reason: unknown) => unknown) => run(strings, values).then(resolve, reject),
+    });
+    return tx as unknown as postgres.Sql;
+  }
+
+  const AVATAR_ROW = { objectKey: "avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/4.webp", fileId: "cloud://env/x" };
+
+  it("deletes the avatar row and books its object in the same transaction", async () => {
+    const log: string[] = [];
+    const tx = fakeTx((query) => {
+      if (query.includes("SELECT is_super_admin")) return [{ superAdmin: false, username: "alice" }];
+      if (query.includes("DELETE FROM identity.user_avatars")) return [AVATAR_ROW];
+      return [];
+    }, log);
+
+    await anonymizeAccountWithin(tx, {
+      userId: "12345678-abcd-0000-0000-000000000000",
+      actorUserId: "ops-1",
+      auditId: "audit-1",
+      privacyRequestId: "request-1",
+      occurredAt: "2026-08-07T10:00:00.000Z",
+    });
+
+    expect(log.some((query) => query.includes("DELETE FROM identity.user_avatars"))).toBe(true);
+    expect(log.some((query) => query.includes("INSERT INTO identity.avatar_object_deletions"))).toBe(true);
+    // The delete has to land before the audit row closes the transaction out.
+    const deleteIndex = log.findIndex((query) => query.includes("DELETE FROM identity.user_avatars"));
+    const auditIndex = log.findIndex((query) => query.includes("'ACCOUNT_ANONYMIZED'"));
+    expect(deleteIndex).toBeGreaterThan(-1);
+    expect(deleteIndex).toBeLessThan(auditIndex);
+  });
+
+  it("still completes for an account that never had an avatar", async () => {
+    const log: string[] = [];
+    const tx = fakeTx((query) => (query.includes("SELECT is_super_admin") ? [{ superAdmin: false, username: "alice" }] : []), log);
+    await expect(
+      anonymizeAccountWithin(tx, {
+        userId: "12345678-abcd-0000-0000-000000000000",
+        actorUserId: "ops-1",
+        auditId: "audit-1",
+        privacyRequestId: "request-1",
+        occurredAt: "2026-08-07T10:00:00.000Z",
+      }),
+    ).resolves.toMatchObject({ anonymizedName: "已删除用户-12345678" });
+    expect(log.some((query) => query.includes("INSERT INTO identity.avatar_object_deletions"))).toBe(false);
   });
 });
 

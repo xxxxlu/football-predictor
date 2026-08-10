@@ -6,14 +6,20 @@
 
 import type { MessageKey } from "@/lib/i18n/messages";
 
-export interface FriendEntry {
+/** Story 12.6: every friend-facing row carries the same optional avatar pair. */
+export interface AvatarFields {
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
+}
+
+export interface FriendEntry extends AvatarFields {
   userId: string;
   pulseId: string;
   nickname: string | null;
   online: boolean;
 }
 
-export interface FriendRequestEntry {
+export interface FriendRequestEntry extends AvatarFields {
   requestId: string;
   direction: "INCOMING" | "OUTGOING";
   /** The counterpart's id — requester-side withdrawal is DELETE /friends/{userId}. */
@@ -23,7 +29,11 @@ export interface FriendRequestEntry {
   createdAt: string;
 }
 
-export interface BlockEntry {
+/**
+ * A blocked account's row never carries a photo — the server sends nulls, and the
+ * list renders the muted initials fallback instead.
+ */
+export interface BlockEntry extends AvatarFields {
   userId: string;
   pulseId: string;
   nickname: string | null;

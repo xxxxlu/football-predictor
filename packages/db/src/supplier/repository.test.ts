@@ -132,7 +132,7 @@ describe("supplier cache persistence helpers", () => {
     });
   });
 
-  it("bounds the list read model fixtures query to the kickoff window while detail reads stay unbounded", async () => {
+  it("bounds every list read-model query to the kickoff window while detail reads stay unbounded", async () => {
     const statements: string[] = [];
     const sql = ((strings: TemplateStringsArray) => {
       statements.push(strings.join("$"));
@@ -141,8 +141,16 @@ describe("supplier cache persistence helpers", () => {
     const repository = new PostgresMatchSnapshotRepository(sql);
 
     await repository.listViewData();
-    const fixturesQuery = statements.find((statement) => statement.includes("FROM supplier.fixtures"));
-    expect(fixturesQuery).toContain("kickoff_at BETWEEN now() - make_interval(days => $) AND now() + make_interval(days => $)");
+    const window = "kickoff_at BETWEEN now() - make_interval(days => $) AND now() + make_interval(days => $)";
+    // Fixtures plus four companions (odds, live, lineups, sync state). An
+    // unbounded companion ships the whole season back for the join to discard.
+    expect(statements).toHaveLength(5);
+    for (const statement of statements) expect(statement).toContain(window);
+    expect(statements.some((statement) => statement.includes("FROM supplier.live_snapshots"))).toBe(true);
+    expect(statements.some((statement) => statement.includes("FROM supplier.lineup_snapshots"))).toBe(true);
+    // The newest-per-market pick belongs in the database, not in a JS dedup over
+    // every bookmaker row the table holds.
+    expect(statements.some((statement) => statement.includes("DISTINCT ON (m.fixture_id,m.supplier_market_id)"))).toBe(true);
 
     statements.length = 0;
     await repository.getFixture("openligadb:7001");

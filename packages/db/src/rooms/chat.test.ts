@@ -184,7 +184,9 @@ describe("room chat repository", () => {
       return [];
     }, log), clock);
     const message = await repository.sendMessage("room-1", "member-1", "今晚谁赢？");
-    expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁赢？", createdAt: NOW, isPinned: false });
+    // Story 12.6 added the author's avatar pair and nothing else; a sender with
+    // no avatar reads back as nulls so the client renders initials.
+    expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁赢？", createdAt: NOW, isPinned: false, authorAvatarUrl: null, authorAvatarVersion: null });
     // The rate/duplicate gates are count-then-insert: a per-sender advisory
     // lock serializes concurrent sends so the gates can't be raced past.
     expect(log.queries[0]).toContain("pg_advisory_xact_lock");

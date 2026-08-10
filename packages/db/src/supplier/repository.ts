@@ -342,32 +342,54 @@ export class PostgresMatchSnapshotRepository {
    * five database round trips per fixture, which turned the 228-match history
    * into a request timeout on the production function. Keep detail reads
    * unchanged, but make the list path bounded to a handful of queries.
+   *
+   * Every companion query carries the *same* kickoff window as the fixtures
+   * read. Without it they scanned their whole table on every request — for a
+   * full German season roughly three quarters of the odds, lineup and live rows
+   * came back only to be dropped on the floor by the join below, and a lineup
+   * row carries two jsonb squads. The window predicate is spelled out per query
+   * rather than shared as a fragment so each statement stays readable on its own
+   * and rides `supplier_fixtures_kickoff_idx` directly. Joining on the fixtures
+   * primary key can never duplicate a companion row.
    */
   async listViewData() {
+    const past = PostgresMatchSnapshotRepository.LIST_WINDOW_PAST_DAYS;
+    const future = PostgresMatchSnapshotRepository.LIST_WINDOW_FUTURE_DAYS;
     const [fixtures, marketRows, liveRows, lineupRows, syncRows] = await Promise.all([
       this.listFixturesInListWindow(),
-      this.sql<OddsRow[]>`SELECT id AS "productMarketId",fixture_id AS "fixtureId",supplier,supplier_fixture_id AS "supplierFixtureId",
-        bookmaker_id AS "bookmakerId",bookmaker_name AS "bookmakerName",supplier_market_id AS "supplierMarketId",market_name AS "marketName",
-        current_version AS "currentVersion",data_as_of AS "dataAsOf",captured_at AS "capturedAt",outcomes
-        FROM supplier.markets
-        WHERE supplier_market_id=${ONE_X_TWO_SUPPLIER_MARKET_ID} OR supplier_market_id=${CORRECT_SCORE_SUPPLIER_MARKET_ID}
-        ORDER BY fixture_id,supplier_market_id,captured_at DESC`,
-      this.sql<LiveRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",home_score AS "homeScore",
-        away_score AS "awayScore",minute,data_as_of AS "dataAsOf",captured_at AS "capturedAt",markets
-        FROM supplier.live_snapshots`,
-      this.sql<LineupRow[]>`SELECT fixture_id AS "fixtureId",supplier_fixture_id AS "supplierFixtureId",status,
-        data_as_of AS "dataAsOf",captured_at AS "capturedAt",home,away
-        FROM supplier.lineup_snapshots`,
-      this.sql<Array<{ fixtureId: string; syncState: SyncState }>>`SELECT DISTINCT ON (fixture_id)
-        fixture_id AS "fixtureId",sync_state AS "syncState"
-        FROM supplier.markets ORDER BY fixture_id,updated_at DESC`,
+      // DISTINCT ON does the newest-per-market pick in the database; the same
+      // fixture can hold one row per bookmaker and only the newest is rendered.
+      this.sql<OddsRow[]>`SELECT DISTINCT ON (m.fixture_id,m.supplier_market_id)
+        m.id AS "productMarketId",m.fixture_id AS "fixtureId",m.supplier,m.supplier_fixture_id AS "supplierFixtureId",
+        m.bookmaker_id AS "bookmakerId",m.bookmaker_name AS "bookmakerName",m.supplier_market_id AS "supplierMarketId",m.market_name AS "marketName",
+        m.current_version AS "currentVersion",m.data_as_of AS "dataAsOf",m.captured_at AS "capturedAt",m.outcomes
+        FROM supplier.markets m JOIN supplier.fixtures f ON f.id=m.fixture_id
+        WHERE (m.supplier_market_id=${ONE_X_TWO_SUPPLIER_MARKET_ID} OR m.supplier_market_id=${CORRECT_SCORE_SUPPLIER_MARKET_ID})
+          AND f.kickoff_at BETWEEN now() - make_interval(days => ${past}) AND now() + make_interval(days => ${future})
+        ORDER BY m.fixture_id,m.supplier_market_id,m.captured_at DESC`,
+      this.sql<LiveRow[]>`SELECT l.fixture_id AS "fixtureId",l.supplier_fixture_id AS "supplierFixtureId",l.home_score AS "homeScore",
+        l.away_score AS "awayScore",l.minute,l.data_as_of AS "dataAsOf",l.captured_at AS "capturedAt",l.markets
+        FROM supplier.live_snapshots l JOIN supplier.fixtures f ON f.id=l.fixture_id
+        WHERE f.kickoff_at BETWEEN now() - make_interval(days => ${past}) AND now() + make_interval(days => ${future})`,
+      this.sql<LineupRow[]>`SELECT n.fixture_id AS "fixtureId",n.supplier_fixture_id AS "supplierFixtureId",n.status,
+        n.data_as_of AS "dataAsOf",n.captured_at AS "capturedAt",n.home,n.away
+        FROM supplier.lineup_snapshots n JOIN supplier.fixtures f ON f.id=n.fixture_id
+        WHERE f.kickoff_at BETWEEN now() - make_interval(days => ${past}) AND now() + make_interval(days => ${future})`,
+      // Deliberately unfiltered by supplier_market_id: sync health is reported
+      // for whatever markets the supplier wrote, not only the two we render.
+      this.sql<Array<{ fixtureId: string; syncState: SyncState }>>`SELECT DISTINCT ON (m.fixture_id)
+        m.fixture_id AS "fixtureId",m.sync_state AS "syncState"
+        FROM supplier.markets m JOIN supplier.fixtures f ON f.id=m.fixture_id
+        WHERE f.kickoff_at BETWEEN now() - make_interval(days => ${past}) AND now() + make_interval(days => ${future})
+        ORDER BY m.fixture_id,m.updated_at DESC`,
     ]);
 
     const marketByFixture = new Map<string, Map<number, OddsSnapshotRecord & { productMarketId: string }>>();
     for (const row of marketRows) {
       const marketId = Number(row.supplierMarketId);
       const byKind = marketByFixture.get(row.fixtureId) ?? new Map();
-      // getMarketOdds() returns the newest captured row for each supplier market.
+      // Belt and braces: DISTINCT ON already yields one row per supplier market,
+      // matching getMarketOdds()'s newest-captured-row contract.
       if (!byKind.has(marketId)) byKind.set(marketId, mapOdds(row));
       marketByFixture.set(row.fixtureId, byKind);
     }

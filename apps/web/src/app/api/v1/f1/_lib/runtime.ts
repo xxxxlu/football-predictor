@@ -1,5 +1,5 @@
 import { loadIdentityConfig } from "@pulse/config";
-import { createIdentityDatabase, DrizzleF1Repository, refreshF1ReadModelIfDue } from "@pulse/db";
+import { DrizzleF1Repository, getSharedIdentityDatabase, refreshF1ReadModelIfDue } from "@pulse/db";
 import { F1_SEASON_2026 } from "@pulse/domain";
 import { getIdentityService } from "../../auth/_lib/runtime";
 import { readSessionToken } from "../../auth/_lib/handlers";
@@ -9,7 +9,7 @@ declare global { var __pulseF1Repository: DrizzleF1Repository | undefined; }
 export function getF1Repository() {
   if (!globalThis.__pulseF1Repository) {
     const config = loadIdentityConfig(process.env);
-    globalThis.__pulseF1Repository = new DrizzleF1Repository(createIdentityDatabase(config.databaseUrl).db);
+    globalThis.__pulseF1Repository = new DrizzleF1Repository(getSharedIdentityDatabase(config.databaseUrl).db);
   }
   return globalThis.__pulseF1Repository;
 }

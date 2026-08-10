@@ -14,6 +14,9 @@ export type ChatMessageRecord = {
   id: string;
   authorPulseId: string;
   authorNickname: string | null;
+  /** Story 12.6: null when the author has no avatar, or when this viewer blocked them. */
+  authorAvatarUrl?: string | null;
+  authorAvatarVersion?: number | null;
   body: string;
   createdAt: string;
   isPinned: boolean;

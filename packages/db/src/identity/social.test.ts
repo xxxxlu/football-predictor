@@ -260,11 +260,56 @@ describe("friend and block reads", () => {
   it("passes clean rows through and rejects any projection drift", async () => {
     const clean = [{ userId: TARGET, pulseId: "bob", nickname: null, online: false }];
     const repository = createSocialRepository(fakeSql(() => clean), clock);
-    await expect(repository.listFriends(REQUESTER)).resolves.toEqual(clean);
+    // Story 12.6 widened the projection by exactly the avatar pair; a member
+    // with no avatar reads back as nulls, never as a missing field.
+    await expect(repository.listFriends(REQUESTER)).resolves.toEqual([{ ...clean[0], avatarUrl: null, avatarVersion: null }]);
 
     const leaking = [{ userId: TARGET, pulseId: "bob", nickname: null, online: false, balance: 100 }];
     const drifted = createSocialRepository(fakeSql(() => leaking), clock);
     await expect(drifted.listFriends(REQUESTER)).rejects.toThrow(/must never carry "balance"/);
+  });
+
+  /* Story 12.6. The avatar is allowed to ride along on the friend surfaces, and
+     nothing else is: the join adds two derived fields and the raw public id is
+     dropped on the way out, so a forgotten mapper trips the guard instead of
+     leaking the storage handle. */
+  it("adds the avatar pair from the join and never the raw public id", async () => {
+    const joined = [{ userId: TARGET, pulseId: "bob", nickname: "Bob", online: true, avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 3 }];
+    const repository = createSocialRepository(fakeSql(() => joined), clock);
+    await expect(repository.listFriends(REQUESTER)).resolves.toEqual([
+      {
+        userId: TARGET,
+        pulseId: "bob",
+        nickname: "Bob",
+        online: true,
+        avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/3.webp",
+        avatarVersion: 3,
+      },
+    ]);
+  });
+
+  it("only serves an APPROVED avatar, so an operator takedown lands on the next read", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = createSocialRepository(fakeSql(() => [], log), clock);
+    await repository.listFriends(REQUESTER);
+    await repository.listFriendRequests(REQUESTER);
+    for (const query of log.queries) {
+      expect(query).toContain("LEFT JOIN identity.user_avatars av ON av.user_id = u.id AND av.moderation_status = 'APPROVED'");
+      // The object key stays server-side; only the public handle is selected.
+      expect(query).not.toContain("object_key");
+      expect(query).not.toContain("file_id");
+    }
+  });
+
+  it("never returns an avatar for someone the viewer has blocked", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    // Even if a joined row somehow carried one, the block list suppresses it.
+    const blocked = [{ userId: TARGET, pulseId: "bob", nickname: "Bob", createdAt: NOW.toISOString(), avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 3 }];
+    const repository = createSocialRepository(fakeSql(() => blocked, log), clock);
+    await expect(repository.listBlocks(REQUESTER)).resolves.toEqual([
+      { userId: TARGET, pulseId: "bob", nickname: "Bob", createdAt: NOW.toISOString(), avatarUrl: null, avatarVersion: null },
+    ]);
+    expect(log.queries.every((query) => !query.includes("user_avatars"))).toBe(true);
   });
 
   it("excludes blocked pairs and non-ACTIVE accounts in the SQL itself", async () => {

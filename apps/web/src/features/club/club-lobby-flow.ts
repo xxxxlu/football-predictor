@@ -27,6 +27,9 @@ export type ChannelMessageRecord = {
   id: string;
   authorPulseId: string;
   authorNickname: string | null;
+  /** Story 12.6: same-origin media path, null when the author has no avatar. */
+  authorAvatarUrl?: string | null;
+  authorAvatarVersion?: number | null;
   body: string;
   createdAt: string;
 };
@@ -37,11 +40,13 @@ export type ChannelPageRecord = {
   rulesConfirmed: boolean;
 };
 
-export type DirectoryEntry = { pulseId: string; nickname: string | null };
+export type DirectoryEntry = { pulseId: string; nickname: string | null; avatarUrl?: string | null; avatarVersion?: number | null };
 
 export type FriendActivityEntry = {
   pulseId: string;
   nickname: string | null;
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
   online: boolean;
   /** The friend opted into 向好友展示「正在大厅」 and their lobby beat is fresh. */
   inLobby: boolean;

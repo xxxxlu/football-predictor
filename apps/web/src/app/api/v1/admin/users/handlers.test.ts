@@ -20,6 +20,7 @@ function setup() {
     listUsers: vi.fn().mockResolvedValue([]),
     getUser: vi.fn().mockResolvedValue({ id: TARGET, username: "alice" }),
     revokeSessions: vi.fn().mockResolvedValue({ targetUserId: TARGET, revokedSessions: 2, auditId: "audit-2" }),
+    removeAvatar: vi.fn().mockResolvedValue({ targetUserId: TARGET, removed: true, auditId: "audit-5" }),
     fileAnonymizationRequest: vi.fn().mockResolvedValue({ privacyRequestId: REQUEST_ID, status: "RECEIVED", auditId: "audit-3" }),
     completeAnonymizationRequest: vi.fn().mockResolvedValue({ privacyRequestId: REQUEST_ID, status: "COMPLETED", auditId: "audit-4" }),
     listAnonymizationRequests: vi.fn().mockResolvedValue([]),
@@ -182,6 +183,54 @@ describe("user security console API", () => {
     const denied = setup();
     denied.identity.getAudienceStats.mockRejectedValueOnce(new AuthError("FORBIDDEN", 403, "You do not have permission for this operation."));
     expect((await denied.handlers.audience(read("/api/v1/admin/audience"))).status).toBe(403);
+  });
+
+  /* Story 12.6: an avatar takedown is a lifecycle write like any other — same
+     capability, same fresh re-auth proof, same mandatory justification, same
+     audit row. It is listed separately because it is the newest one and the
+     easiest to wire up with a weaker gate by accident. */
+  it("gates the admin avatar takedown on USER_SECURITY_WRITE plus a fresh re-auth proof", async () => {
+    const missingProof = setup();
+    const denied = await missingProof.handlers.removeAvatar(
+      write(`/api/v1/admin/users/${TARGET}/avatar`, "DELETE", { reason: REASON }, "fp_session=session-token"),
+      TARGET,
+    );
+    expect(denied.status).toBe(403);
+    expect((await denied.json()).error.code).toBe("REAUTH_REQUIRED");
+    expect(missingProof.identity.authorizeCapabilityAction).not.toHaveBeenCalled();
+    expect(missingProof.console_.removeAvatar).not.toHaveBeenCalled();
+
+    const forbidden = setup();
+    forbidden.identity.authorizeCapabilityAction.mockRejectedValueOnce(new AuthError("FORBIDDEN", 403, "You do not have permission for this operation."));
+    const refused = await forbidden.handlers.removeAvatar(write(`/api/v1/admin/users/${TARGET}/avatar`, "DELETE", { reason: REASON }), TARGET);
+    expect(refused.status).toBe(403);
+    expect(forbidden.console_.removeAvatar).not.toHaveBeenCalled();
+
+    const allowed = setup();
+    const response = await allowed.handlers.removeAvatar(write(`/api/v1/admin/users/${TARGET}/avatar`, "DELETE", { reason: `  ${REASON}  ` }), TARGET);
+    expect(response.status).toBe(200);
+    expect(allowed.identity.authorizeCapabilityAction).toHaveBeenCalledWith({ sessionToken: "session-token", proofToken: "proof-token", capability: "USER_SECURITY_WRITE" });
+    expect(allowed.console_.removeAvatar).toHaveBeenCalledWith("operator-1", TARGET, REASON);
+    await expect(response.json()).resolves.toMatchObject({ data: { removed: true, auditId: "audit-5" } });
+  });
+
+  it("refuses an avatar takedown without a justification, cross-origin, or against a malformed id", async () => {
+    const noReason = setup();
+    expect((await noReason.handlers.removeAvatar(write(`/api/v1/admin/users/${TARGET}/avatar`, "DELETE", {}), TARGET)).status).toBe(422);
+    expect(noReason.console_.removeAvatar).not.toHaveBeenCalled();
+
+    const crossOrigin = setup();
+    const response = await crossOrigin.handlers.removeAvatar(
+      write(`/api/v1/admin/users/${TARGET}/avatar`, "DELETE", { reason: REASON }, AUTHED, "https://evil.test"),
+      TARGET,
+    );
+    expect(response.status).toBeGreaterThanOrEqual(400);
+    expect(crossOrigin.identity.authorizeCapabilityAction).not.toHaveBeenCalled();
+    expect(crossOrigin.console_.removeAvatar).not.toHaveBeenCalled();
+
+    const badTarget = setup();
+    expect((await badTarget.handlers.removeAvatar(write(`/api/v1/admin/users/nope/avatar`, "DELETE", { reason: REASON }), "nope")).status).toBe(422);
+    expect(badTarget.console_.removeAvatar).not.toHaveBeenCalled();
   });
 
   it("never caches a console response", async () => {

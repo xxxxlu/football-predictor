@@ -1100,3 +1100,29 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 @keyframes session-mark-fill { 0% { clip-path: inset(100% 0 0 0); } 62%, 78% { clip-path: inset(0 0 0 0); } 100% { clip-path: inset(0 0 0 0); } }
 @keyframes session-ellipsis { to { width: 0; } }
 @media (prefers-reduced-motion: reduce) { .session-verification-overlay__fill, .session-verification-overlay__label::after { animation: none; } .session-verification-overlay__fill { clip-path: none; } }
+
+/* --- Member avatars (Story 12.6) ------------------------------------ */
+/* The box is sized inline in both dimensions before the image resolves, so a
+   slow, missing or failed avatar never reflows the row it sits in. */
+.pulse-avatar { position: relative; display: inline-grid; place-items: center; flex: none; overflow: hidden; border-radius: 50%; border: 1px solid var(--line); font: 800 1em/1 var(--pd-font-display); letter-spacing: -.02em; user-select: none; }
+.pulse-avatar > img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pulse-avatar--muted { opacity: .55; filter: grayscale(1); }
+.pulse-avatar-stack { position: relative; display: inline-flex; flex: none; }
+.pulse-avatar-dot { position: absolute; right: -1px; bottom: -1px; width: .7rem; height: .7rem; border-radius: 50%; border: 2px solid var(--paper); background: var(--line); }
+.pulse-avatar-dot--on { background: var(--pulse-teal); }
+
+/* Account-page editor. The 96px preview and the crop stage both stay inside a
+   390px viewport without a horizontal scrollbar. */
+.avatar-editor { display: flex; flex-wrap: wrap; align-items: center; gap: 1rem; }
+.avatar-editor__actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+/* 44px minimum touch target on every control here (WCAG 2.5.5). */
+.avatar-editor__button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; padding: 0 1rem; border-radius: 999px; border: 2px solid var(--ink); background: transparent; font-weight: 700; font-size: .875rem; cursor: pointer; }
+.avatar-editor__button--primary { background: var(--field); border-color: var(--field); color: #fff; }
+.avatar-editor__button--danger { border-color: var(--coral); color: var(--coral); }
+.avatar-editor__button:disabled { opacity: .45; cursor: not-allowed; }
+.avatar-editor__stage { margin-top: 1rem; width: 100%; max-width: 20rem; }
+.avatar-editor__canvas { width: 100%; height: auto; aspect-ratio: 1; display: block; border-radius: var(--pd-radius-card); border: 1px solid var(--line); background: var(--wash-neutral-soft); touch-action: none; }
+.avatar-editor__slider { width: 100%; min-height: 44px; }
+.avatar-editor__progress { width: 100%; height: .4rem; margin-top: .6rem; border-radius: 999px; background: var(--wash-neutral); overflow: hidden; }
+.avatar-editor__progress > span { display: block; height: 100%; background: var(--field); transition: width .2s var(--pd-ease-out); }
+.avatar-editor__note { margin-top: .6rem; font-size: .75rem; line-height: 1.5; color: var(--muted); }

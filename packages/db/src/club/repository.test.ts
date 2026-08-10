@@ -117,12 +117,30 @@ describe("submitAttempt", () => {
 
 describe("result reads", () => {
   const clean = [{ pulseId: "bob", nickname: null, answered: true, correct: false, streak: 0 }];
+  /** Story 12.6 widened the result row by the avatar pair and by nothing else. */
+  const projected = clean.map((row) => ({ ...row, avatarUrl: null, avatarVersion: null }));
 
   it("passes clean rows through the projection guard and rejects drift", async () => {
     const repository = createClubRepository(fakeSql(() => clean));
-    await expect(repository.listFriendResults(USER, DAY)).resolves.toEqual(clean);
+    await expect(repository.listFriendResults(USER, DAY)).resolves.toEqual(projected);
     const drifted = createClubRepository(fakeSql(() => [{ ...clean[0], balance: 100 }]));
     await expect(drifted.listFriendResults(USER, DAY)).rejects.toThrow(/must never carry "balance"/);
+  });
+
+  /* The room roster keeps listing everyone under a block (a room is a shared
+     space); only the photo is withheld, and only from the side that blocked. */
+  it("withholds a room member's photo from the viewer who blocked them", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = createClubRepository(
+      fakeSql((query) => (query.includes("SELECT role FROM room.members") ? [{ role: "MEMBER" }] : clean), log),
+    );
+    await repository.listRoomResults(USER, "room-1", DAY);
+    const roster = log.queries[1]!;
+    expect(roster).toContain("av.moderation_status = 'APPROVED'");
+    // Viewer-directional: the blocker stops seeing the photo, the blocked side
+    // sees no change at all (the 12.1 anti-enumeration rule).
+    expect(roster).toContain("b.blocker_user_id = $ AND b.blocked_user_id = u.id");
+    expect(roster).not.toContain("b.blocked_user_id = $ AND b.blocker_user_id = u.id");
   });
 
   it("reuses the 12.1 friendship + block shape in the friends SQL", async () => {
@@ -153,7 +171,7 @@ describe("result reads", () => {
     const repository = createClubRepository(
       fakeSql((query) => (query.includes("SELECT role FROM room.members") ? [{ role: "MEMBER" }] : clean), log),
     );
-    await expect(repository.listRoomResults(USER, "room-1", DAY)).resolves.toEqual(clean);
+    await expect(repository.listRoomResults(USER, "room-1", DAY)).resolves.toEqual(projected);
     const roster = log.queries[1];
     expect(roster).toContain("FROM room.members m");
     expect(roster).not.toMatch(/ledger\.|prediction\./);

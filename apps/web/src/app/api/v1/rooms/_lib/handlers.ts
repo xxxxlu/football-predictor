@@ -17,7 +17,7 @@ interface RoomsApplication {
   resetInvite(roomId: string, userId: string): Promise<unknown>;
   previewInvite(inviteToken: string): Promise<unknown>;
   join(input: { userId: string; inviteToken: string; rulesAccepted: boolean }): Promise<unknown>;
-  listPublic(userId: string): Promise<unknown>;
+  listPublic(userId: string, options?: { cursor?: string }): Promise<unknown>;
   joinPublic(input: { roomId: string; userId: string; rulesAccepted: boolean }): Promise<unknown>;
   updatePostMatchTicketVisibility(roomId: string, userId: string, visible: boolean): Promise<unknown>;
 }
@@ -46,7 +46,13 @@ export function createRoomHandlers(identity: IdentityLookup, rooms: RoomsApplica
       assertSameOrigin(request); const accountId = await userId(request); const input = joinSchema.parse(await request.json());
       return json({ data: await rooms.join({ userId: accountId, inviteToken: token, rulesAccepted: input.rulesAccepted }) });
     }),
-    listPublic: (request: Request) => execute(async () => json({ data: await rooms.listPublic(await userId(request)) })),
+    listPublic: (request: Request) => execute(async () => {
+      const accountId = await userId(request);
+      // Absent means page one; present but empty is a malformed cursor, and the
+      // service refuses it rather than silently restarting the caller at page one.
+      const cursor = new URL(request.url).searchParams.get("cursor");
+      return json({ data: await rooms.listPublic(accountId, cursor === null ? {} : { cursor }) });
+    }),
     joinPublic: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request); const accountId = await userId(request); const input = joinSchema.parse(await request.json());
       return json({ data: await rooms.joinPublic({ roomId, userId: accountId, rulesAccepted: input.rulesAccepted }) });

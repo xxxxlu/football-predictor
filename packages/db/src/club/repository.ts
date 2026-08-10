@@ -13,6 +13,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 
+import { avatarColumns, avatarJoin, avatarJoinUnlessViewerBlocked, withAvatar } from "../identity/avatar-projection.js";
 import { isUniqueViolation } from "../identity/repository.js";
 import { OperationError } from "../operations/repository.js";
 
@@ -50,7 +51,15 @@ export interface DailyResultRow {
   answered: boolean;
   correct: boolean | null;
   streak: number;
+  avatarUrl: string | null;
+  avatarVersion: number | null;
 }
+
+/** The same row as the SQL returns it, before the avatar pair is derived. */
+type DailyResultJoinRow = Omit<DailyResultRow, "avatarUrl" | "avatarVersion"> & {
+  avatarPublicId: string | null;
+  avatarVersion: number | null;
+};
 
 const EMPTY_PROFILE: EngagementSnapshot = { xpTotal: 0, currentStreak: 0, bestStreak: 0, lastAnsweredDay: null };
 
@@ -170,15 +179,17 @@ export function createClubRepository(sql: ClubSql) {
      * suppression reuse the Story 12.1 read shape.
      */
     async listFriendResults(userId: string, day: string): Promise<DailyResultRow[]> {
-      const rows = await sql<DailyResultRow[]>`
+      const joined = await sql<DailyResultJoinRow[]>`
         SELECT u.username_canonical AS "pulseId", u.nickname,
           (a.id IS NOT NULL) AS answered, a.is_correct AS correct,
-          COALESCE(p.current_streak, 0) AS streak
+          COALESCE(p.current_streak, 0) AS streak,
+          ${avatarColumns(sql)}
         FROM identity.friendships f
         JOIN identity.users u
           ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
         LEFT JOIN club.daily_challenge_attempts a ON a.user_id = u.id AND a.product_day = ${day}
         LEFT JOIN club.engagement_profiles p ON p.user_id = u.id
+        ${avatarJoin(sql)}
         WHERE (f.user_lo_id = ${userId} OR f.user_hi_id = ${userId})
           AND f.status = 'ACCEPTED' AND u.status = 'ACTIVE'
           AND NOT EXISTS (
@@ -186,6 +197,7 @@ export function createClubRepository(sql: ClubSql) {
             WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
                OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${userId}))
         ORDER BY u.username_canonical`;
+      const rows = joined.map(withAvatar) as DailyResultRow[];
       assertMinimalClubProjection(rows, CLUB_RESULT_PROJECTION_KEYS);
       return rows;
     },
@@ -199,16 +211,21 @@ export function createClubRepository(sql: ClubSql) {
       const [membership] = await sql<Array<{ role: string }>>`
         SELECT role FROM room.members WHERE room_id = ${roomId} AND user_id = ${userId} LIMIT 1`;
       if (!membership) throw new OperationError("ROOM_NOT_FOUND", 404);
-      const rows = await sql<DailyResultRow[]>`
+      // Room results keep showing every member (12.2), so the avatar — unlike the
+      // row — is suppressed for anyone this viewer has blocked.
+      const joined = await sql<DailyResultJoinRow[]>`
         SELECT u.username_canonical AS "pulseId", u.nickname,
           (a.id IS NOT NULL) AS answered, a.is_correct AS correct,
-          COALESCE(p.current_streak, 0) AS streak
+          COALESCE(p.current_streak, 0) AS streak,
+          ${avatarColumns(sql)}
         FROM room.members m
         JOIN identity.users u ON u.id = m.user_id
         LEFT JOIN club.daily_challenge_attempts a ON a.user_id = u.id AND a.product_day = ${day}
         LEFT JOIN club.engagement_profiles p ON p.user_id = u.id
+        ${avatarJoinUnlessViewerBlocked(sql, userId)}
         WHERE m.room_id = ${roomId} AND u.status = 'ACTIVE' AND u.id <> ${userId}
         ORDER BY u.username_canonical`;
+      const rows = joined.map(withAvatar) as DailyResultRow[];
       assertMinimalClubProjection(rows, CLUB_RESULT_PROJECTION_KEYS);
       return rows;
     },

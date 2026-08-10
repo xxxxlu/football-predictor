@@ -2,6 +2,7 @@ import { DEFAULT_AUDIT_QUERY, HIGH_RISK_AUDIT_ACTIONS, type AuditQuery } from "@
 import type postgres from "postgres";
 import { describe, expect, it } from "vitest";
 import { PostgresOperationsOverviewRepository, type AdminStatus } from "./overview.js";
+import type { OperatorAuthorization } from "../identity/operator-roles.js";
 import { listGovernanceAudit } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
 
@@ -55,10 +56,11 @@ const STATUS: AdminStatus = {
   jobs: { queued: 2, running: 1, failed: 1, maxLagSeconds: 30 },
 };
 
-/** A health reader that records who asked, standing in for the existing aggregate. */
+/** A health reader that records the authorization it was handed, standing in for
+ *  the existing aggregate. */
 function healthStub(status: AdminStatus = STATUS) {
-  const calls: string[] = [];
-  return { calls, adminStatus: async (userId: string) => { calls.push(userId); return status; } };
+  const calls: OperatorAuthorization[] = [];
+  return { calls, adminStatus: async (authorization: OperatorAuthorization) => { calls.push(authorization); return status; } };
 }
 
 function responder(authorization: Row[], extra?: Respond): Respond {
@@ -81,6 +83,20 @@ describe("operations overview", () => {
     expect(failure).toMatchObject({ code: "FORBIDDEN", status: 403 });
     expect(log.queries.every((query) => query.includes("identity.operator_role_grants"))).toBe(true);
     expect(health.calls).toEqual([]);
+  });
+
+  it("hands the health aggregate the authorization it already resolved", async () => {
+    // The aggregate resolves the actor to decide which cards exist; the health
+    // reader used to resolve the identical row again for its own capability
+    // check. Passing it through keeps that check and drops the second read.
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const { repository, health } = overviewFor(AS_SUPER_ADMIN, undefined, log);
+    await repository.overview("root-1");
+    expect(health.calls).toHaveLength(1);
+    expect(health.calls[0]?.capabilities).toContain("OPERATIONS_HEALTH_READ");
+    // Match the authorization read specifically: the ROLE_CHANGES card queries
+    // the same table for its own counts, so the table name alone over-matches.
+    expect(log.queries.filter((query) => query.includes("array_agg(g.role"))).toHaveLength(1);
   });
 
   it("gives a super-admin every section", async () => {

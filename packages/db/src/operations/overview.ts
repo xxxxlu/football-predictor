@@ -16,7 +16,7 @@ import {
   visibleOverviewCards,
   visibleReportKinds,
 } from "@pulse/domain";
-import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
+import { readOperatorAuthorization, type OperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { listGovernanceAudit } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
 
@@ -45,9 +45,11 @@ export class PostgresOperationsOverviewRepository {
     /**
      * The existing health aggregate. Injected rather than reimplemented: supplier
      * budget, cache freshness and job counts have exactly one definition, and it
-     * re-checks OPERATIONS_HEALTH_READ itself on every call.
+     * still asserts OPERATIONS_HEALTH_READ on every call — it is handed the
+     * authorization this aggregate already resolved rather than reading the very
+     * same row a second time.
      */
-    private readonly health: { adminStatus(userId: string): Promise<AdminStatus> },
+    private readonly health: { adminStatus(authorization: OperatorAuthorization): Promise<AdminStatus> },
     private readonly clock: { now(): Date } = { now: () => new Date() },
   ) {}
 
@@ -64,7 +66,7 @@ export class PostgresOperationsOverviewRepository {
     // its own entry in the registry: if their capabilities ever diverge, the card
     // that lost its capability stops rendering without this block being revisited.
     const needsHealth = visible.has("SUPPLIER_HEALTH") || visible.has("SETTLEMENT_HEALTH") || visible.has("JOB_HEALTH");
-    const status = needsHealth ? await this.health.adminStatus(actorUserId) : null;
+    const status = needsHealth ? await this.health.adminStatus(authorization) : null;
     const sections: OverviewSection[] = [];
 
     if (status && visible.has("SUPPLIER_HEALTH")) {

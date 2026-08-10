@@ -3,6 +3,7 @@ import { OperationError } from "@pulse/db";
 import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
 import { assertSameOrigin } from "../../_lib/request-origin";
+import { requireAnyCapability, type OperatorResolver } from "../../_lib/operator-gate";
 
 /**
  * Unified operations overview and permission audit (FR58, FR60, FR81, FR90).
@@ -22,7 +23,7 @@ const reasonField = z.string().trim().min(5).max(500);
 const retrySchema = z.object({ reason: reasonField }).strict();
 const uuidSchema = z.string().uuid();
 
-interface OverviewIdentity {
+interface OverviewIdentity extends OperatorResolver {
   requireCapability(sessionToken: string, capability: Capability): Promise<{ id: string }>;
   authorizeCapabilityAction(input: { sessionToken: string; proofToken: string; capability: Capability }): Promise<{ id: string }>;
 }
@@ -42,21 +43,10 @@ export function createOperationsOverviewHandlers(identity: OverviewIdentity, ope
   };
   const reader = async (request: Request, capability: Capability) => (await identity.requireCapability(session(request), capability)).id;
   /**
-   * Any one operational read duty. Only a plain FORBIDDEN moves on to the next
-   * candidate, so an expired session is never reported as a permission problem.
+   * Any one operational read duty. One resolve decides it: asking per capability
+   * meant re-reading the session up to five times for a single overview.
    */
-  const anyOperator = async (request: Request) => {
-    const sessionToken = session(request);
-    let refusal: unknown;
-    for (const capability of OVERVIEW_CAPABILITIES) {
-      try { return (await identity.requireCapability(sessionToken, capability)).id; }
-      catch (error) {
-        if (!(error instanceof AuthError) || error.code !== "FORBIDDEN") throw error;
-        refusal = error;
-      }
-    }
-    throw refusal;
-  };
+  const anyOperator = async (request: Request) => (await requireAnyCapability(identity, session(request), OVERVIEW_CAPABILITIES)).actorId;
   const retryActor = async (request: Request) => {
     assertSameOrigin(request);
     const sessionToken = session(request);

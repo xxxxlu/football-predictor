@@ -49,6 +49,22 @@ describe("operations projections", () => {
     expect(result.map((row) => [row.userId, row.netPoints])).toEqual([["bob", "-500.00"], ["alice", "-1000.00"]]);
   });
 
+  /* Story 12.6: the leaderboard row gained the avatar pair and nothing else — no
+     object key, no public id, and none of the balance internals it ranks on. */
+  it("carries only the avatar pair onto a leaderboard row", () => {
+    const [row] = projectLeaderboard([
+      { userId: "alice", displayName: "Alice", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", settledTickets: 1, avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 5 },
+    ]);
+    expect(row).toMatchObject({ avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/5.webp", avatarVersion: 5 });
+    expect(Object.keys(row!)).not.toContain("avatarPublicId");
+    expect(Object.keys(row!)).not.toContain("objectKey");
+
+    const [without] = projectLeaderboard([
+      { userId: "bob", displayName: "Bob", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", settledTickets: 0 },
+    ]);
+    expect(without).toMatchObject({ avatarUrl: null, avatarVersion: null });
+  });
+
   it("projects correction, re-settlement, refund and audit references without hiding debt", () => {
     const base = { id: "ledger-1", roomId: "room-1", kind: "SETTLEMENT", outcome: "WIN", createdAt: new Date("2026-07-13T12:30:00Z"), availableDelta: "1500.00", frozenDelta: "-1000.00", debtDelta: "-500.00", availableAfter: "1500.00", frozenAfter: "0.00", debtAfter: "0.00", ticketId: "ticket-1", settlementVersion: "result-v2", auditId: "audit-1", reversesLedgerId: null, hasPriorSettlement: true };
     expect(projectLedgerEntry(base)).toMatchObject({

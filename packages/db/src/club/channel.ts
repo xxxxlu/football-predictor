@@ -17,6 +17,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 
+import { avatarColumns, avatarJoin, withAuthorAvatar, withAvatar } from "../identity/avatar-projection.js";
 import { OperationError } from "../operations/repository.js";
 
 /**
@@ -37,6 +38,12 @@ import { OperationError } from "../operations/repository.js";
  * over here).
  */
 export type ClubChannelSql = postgres.Sql;
+
+/** A message row as it comes back from the avatar join, before the pair is derived. */
+type AuthorAvatarRow = Omit<ChannelMessageProjection, "authorAvatarUrl" | "authorAvatarVersion"> & {
+  avatarPublicId: string | null;
+  avatarVersion: number | null;
+};
 
 /**
  * Settles community mute windows that have already run out, so the "one live
@@ -117,11 +124,15 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         if (!cursor) throw new OperationError("INVALID_REQUEST", 422);
         cursorPredicate = sql`AND (m.created_at, m.id) < (${cursor.createdAt}, ${cursor.id})`;
       }
-      const page = await sql<ChannelMessageProjection[]>`
+      // The channel already drops both directions of a block, so the avatar can
+      // ride the plain join: an author a viewer has any block with produces no
+      // row at all.
+      const page = await sql<Array<AuthorAvatarRow>>`
         SELECT m.id, u.username_canonical AS "authorPulseId", u.nickname AS "authorNickname",
-          m.body, m.created_at AS "createdAt"
+          m.body, m.created_at AS "createdAt", ${avatarColumns(sql)}
         FROM club.channel_messages m
         JOIN identity.users u ON u.id = m.user_id
+        ${avatarJoin(sql)}
         WHERE NOT EXISTS (SELECT 1 FROM club.channel_message_moderation mm
             WHERE mm.message_id = m.id AND mm.state = 'HIDDEN')
           AND ${blockedPairPredicate(sql, viewerId)}
@@ -135,7 +146,7 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${CHANNEL_PAGE_SIZE + 1}`;
       const hasMore = page.length > CHANNEL_PAGE_SIZE;
-      const messages = hasMore ? page.slice(0, CHANNEL_PAGE_SIZE) : page;
+      const messages = (hasMore ? page.slice(0, CHANNEL_PAGE_SIZE) : page).map(withAuthorAvatar) as ChannelMessageProjection[];
       const last = messages[messages.length - 1];
       const cursor = hasMore && last
         ? encodeChatCursor({ createdAt: new Date(last.createdAt).toISOString(), id: last.id })
@@ -161,10 +172,12 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         // count-then-insert under READ COMMITTED and need an arbiter against
         // parallel bursts. Transaction-scoped, released on commit/abort.
         await tx`SELECT pg_advisory_xact_lock(hashtextextended('channel-send:' || ${userId}, 0))`;
-        const [account] = await tx<Array<{ pulseId: string; nickname: string | null }>>`
-          SELECT username_canonical AS "pulseId", nickname FROM identity.users
-          WHERE id = ${userId} AND status = 'ACTIVE' LIMIT 1`;
+        const [account] = await tx<Array<{ pulseId: string; nickname: string | null; avatarPublicId: string | null; avatarVersion: number | null }>>`
+          SELECT u.username_canonical AS "pulseId", u.nickname, ${avatarColumns(tx)}
+          FROM identity.users u ${avatarJoin(tx)}
+          WHERE u.id = ${userId} AND u.status = 'ACTIVE' LIMIT 1`;
         if (!account) throw new OperationError("USER_NOT_FOUND", 404);
+        const authorAvatar = withAuthorAvatar(account);
 
         // Statuses come from the domain refusal table so the two cannot drift.
         if (!(await hasConfirmedRules(tx, userId))) {
@@ -201,6 +214,8 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
           id: inserted!.id,
           authorPulseId: account.pulseId,
           authorNickname: account.nickname,
+          authorAvatarUrl: authorAvatar.authorAvatarUrl,
+          authorAvatarVersion: authorAvatar.authorAvatarVersion,
           body,
           createdAt: inserted!.createdAt instanceof Date ? inserted!.createdAt : new Date(inserted!.createdAt),
         };
@@ -216,15 +231,17 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
      */
     async lobbyDirectory(viewerId: string) {
       const ttlCutoffIso = new Date(clock().getTime() - PRESENCE_TTL_MS).toISOString();
-      const rows = await sql<Array<{ pulseId: string; nickname: string | null }>>`
-        SELECT u.username_canonical AS "pulseId", u.nickname
+      const joined = await sql<Array<{ pulseId: string; nickname: string | null; avatarPublicId: string | null; avatarVersion: number | null }>>`
+        SELECT u.username_canonical AS "pulseId", u.nickname, ${avatarColumns(sql)}
         FROM identity.users u
         JOIN identity.presence_signals p ON p.user_id = u.id
+        ${avatarJoin(sql)}
         WHERE u.status = 'ACTIVE' AND u.show_in_lobby_directory
           AND p.lobby_beat_at > ${ttlCutoffIso}
           AND ${blockedPairPredicate(sql, viewerId)}
         ORDER BY u.username_canonical
         LIMIT 100`;
+      const rows = joined.map(withAvatar);
       assertMinimalLobbyProjection(rows, LOBBY_DIRECTORY_PROJECTION_KEYS);
       return rows;
     },
@@ -241,22 +258,28 @@ export function createClubChannelRepository(sql: ClubChannelSql, clock: () => Da
         SELECT EXISTS (SELECT 1 FROM club.daily_challenge_attempts a
           WHERE a.user_id = ${viewerId} AND a.product_day = ${productDay}) AS answered`;
       const viewerAnswered = viewer?.answered ?? false;
-      const rows = await sql<
-        Array<{ pulseId: string; nickname: string | null; online: boolean; inLobby: boolean; answeredToday: boolean | null }>
+      const joined = await sql<
+        Array<{
+          pulseId: string; nickname: string | null; online: boolean; inLobby: boolean; answeredToday: boolean | null;
+          avatarPublicId: string | null; avatarVersion: number | null;
+        }>
       >`
         SELECT u.username_canonical AS "pulseId", u.nickname,
           COALESCE(u.show_online_to_friends AND p.online_beat_at > ${ttlCutoffIso}, false) AS online,
           COALESCE(u.show_lobby_to_friends AND p.lobby_beat_at > ${ttlCutoffIso}, false) AS "inLobby",
           CASE WHEN ${viewerAnswered} THEN EXISTS (SELECT 1 FROM club.daily_challenge_attempts a
-            WHERE a.user_id = u.id AND a.product_day = ${productDay}) END AS "answeredToday"
+            WHERE a.user_id = u.id AND a.product_day = ${productDay}) END AS "answeredToday",
+          ${avatarColumns(sql)}
         FROM identity.friendships f
         JOIN identity.users u
           ON u.id = CASE WHEN f.user_lo_id = ${viewerId} THEN f.user_hi_id ELSE f.user_lo_id END
         LEFT JOIN identity.presence_signals p ON p.user_id = u.id
+        ${avatarJoin(sql)}
         WHERE (f.user_lo_id = ${viewerId} OR f.user_hi_id = ${viewerId})
           AND f.status = 'ACCEPTED' AND u.status = 'ACTIVE'
           AND ${blockedPairPredicate(sql, viewerId)}
         ORDER BY u.username_canonical`;
+      const rows = joined.map(withAvatar);
       assertMinimalLobbyProjection(rows, FRIEND_ACTIVITY_PROJECTION_KEYS);
       return { viewerAnswered, friends: rows };
     },

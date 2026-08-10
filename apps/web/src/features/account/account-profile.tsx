@@ -1,12 +1,14 @@
 "use client";
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
+import { AvatarEditor } from "@/features/avatar/avatar-editor";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { purgePrivateCaches } from "@/features/pwa/private-cache";
 
-type Profile = { id: string; username: string; nickname: string; roles?: string[]; operatorRoles?: string[]; capabilities?: string[] };
+type Profile = { id: string; username: string; nickname: string; roles?: string[]; operatorRoles?: string[]; capabilities?: string[]; avatarUrl?: string | null; avatarVersion?: number | null };
 type PrivacyPreferences = { showOnlineToFriends: boolean; showLobbyToFriends: boolean; showInLobbyDirectory: boolean };
 
 /**
@@ -27,6 +29,7 @@ const OPERATOR_ENTRIES: Array<{ href: string; label: string; capability: string;
   // they already reach directly above.
   { href: "/admin/status", label: "运营总览", capability: "OPERATIONS_HEALTH_READ" },
   { href: "/admin/operators", label: "运营职责", capability: "OPERATOR_ROLE_MANAGE" },
+  { href: "/admin/privacy", label: "隐私数据管理", capability: "USER_SECURITY_READ" },
 ];
 const ROLE_LABELS: Record<string, string> = { SUPER_ADMIN: "超级管理员", OPERATIONS_ADMIN: "运营管理员", COMMUNITY_MODERATOR: "社区协管员" };
 
@@ -53,7 +56,11 @@ export function AccountProfile() {
         <span aria-hidden="true" className="pulse-pass__wedge"/>
         <span aria-hidden="true" className="pulse-pass__mark">P</span>
         <p className="pulse-pass__eyebrow">PULSE SPORTS CLUB / MEMBER PASS</p>
-        <p className="pulse-pass__name">{profile.nickname}</p>
+        {/* The pass photo. Decorative here — the nickname is right beside it. */}
+        <div className="mt-4 flex items-center gap-4">
+          <Avatar src={profile.avatarUrl ?? null} version={profile.avatarVersion ?? null} nickname={profile.nickname} pulseId={profile.username} size={56}/>
+          <p className="pulse-pass__name !mt-0">{profile.nickname}</p>
+        </div>
         <div className="pulse-pass__foot">
           <p className="pulse-pass__no">NO. <b>{profile.username}</b></p>
           <span className={`pulse-pass__stamp${isOperator ? " pulse-pass__stamp--admin" : ""}`}><span>{duties.length ? duties.join(" / ") : "普通用户"}</span></span>
@@ -66,6 +73,18 @@ export function AccountProfile() {
 
     <div className="grid gap-5 lg:grid-cols-[1fr_.7fr]">
       <section className="surface p-5 sm:p-7">
+        <p className="eyebrow">PROFILE PHOTO</p>
+        <h2 className="display mt-1 text-2xl font-bold">换一张头像</h2>
+        <p className="mt-2 mb-5 text-sm leading-6 text-[var(--muted)]">头像会显示在好友、大厅和聊天里。只有你主动选择并确认裁剪的照片才会上传，网页端不会读取整个相册。</p>
+        <AvatarEditor
+          nickname={profile.nickname}
+          pulseId={profile.username}
+          avatarUrl={profile.avatarUrl ?? null}
+          avatarVersion={profile.avatarVersion ?? null}
+          onChange={(next) => setProfile((current) => (current ? { ...current, ...next } : current))}
+        />
+
+        <div className="mt-8 border-t border-[var(--line)] pt-6">
         <p className="eyebrow">DISPLAY NAME</p>
         <h2 className="display mt-1 text-2xl font-bold">改一个房间里的名字</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">昵称会显示给同一房间的成员；用户名不会变，登录仍然用它。</p>
@@ -75,6 +94,7 @@ export function AccountProfile() {
           <p className="mt-2 text-xs text-[var(--muted)]">2–32 个字符</p>
           <button disabled={saving || nickname.trim() === profile.nickname} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[var(--field)] px-6 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{saving ? "正在保存…" : "保存昵称"}</button>
         </form>
+        </div>
         <div className="mt-8 border-t border-[var(--line)] pt-6">
           <p className="eyebrow">FRIENDS & PRESENCE</p>
           <h3 className="mt-1 font-bold">好友与在场</h3>
@@ -99,7 +119,15 @@ export function AccountProfile() {
             {privacyError && <p className="text-xs font-bold text-[var(--coral)]">{privacyError}</p>}
           </div>}
         </div>
-        {isOperator && <div className="mt-8 border-t border-[var(--line)] pt-6">
+        <div className="mt-8 border-t border-[var(--line)] pt-6">
+	          <p className="eyebrow">PRIVACY</p>
+	          <h3 className="mt-1 font-bold">隐私与数据授权</h3>
+	          <p className="mt-2 text-xs leading-5 text-[var(--muted)]">管理你的数据收集授权，包括相册、位置、设备信息和偏好设置。你可以随时开启或关闭授权。</p>
+	          <div className="mt-4 flex flex-wrap gap-3">
+	            <Link href="/privacy" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">隐私与授权中心</Link>
+	          </div>
+	        </div>
+	        {isOperator && <div className="mt-8 border-t border-[var(--line)] pt-6">
           <p className="eyebrow">OPERATIONS</p>
           <h3 className="mt-1 font-bold">运营入口</h3>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">这里只列出你已获授权的入口，每个接口仍会在服务端逐请求校验权限。为保证账本不可篡改，任何职责都不能覆盖用户余额、改动预测或账本流水。</p>

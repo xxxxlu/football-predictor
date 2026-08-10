@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { BalanceSummary } from "@/components/balance-summary";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { RoomSwitcher } from "@/components/room-switcher";
@@ -9,6 +10,7 @@ import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { MatchList } from "@/features/matchday/match-list";
 import { RoomF1Arena } from "@/features/f1/room-f1-arena";
+import { useVisibleInterval } from "@/lib/use-visible-interval";
 import { buildInvitePath, normalizeRoomDetail, type RoomBalanceRecord, type RoomMemberRecord, type RoomSummaryRecord } from "./room-flow";
 import { RoomChatView } from "./room-chat-view";
 
@@ -26,36 +28,39 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
   const [reporting, setReporting] = useState(false);
   const [reportMessage, setReportMessage] = useState("");
 
-  useEffect(() => {
-    let disposed = false;
-    const controllers = new Set<AbortController>();
-    const load = async () => {
-      const controller = new AbortController();
-      controllers.add(controller);
-      try {
-        const [roomsResult, roomResult, balanceResult, membersResult] = await Promise.all([
-          request<RoomSummaryRecord[]>("/api/v1/rooms", controller.signal),
-          request<RoomSummaryRecord>(`/api/v1/rooms/${encodeURIComponent(roomId)}`, controller.signal),
-          request<RoomBalanceRecord>(`/api/v1/rooms/${encodeURIComponent(roomId)}/balance`, controller.signal),
-          request<RoomMemberRecord[]>(`/api/v1/rooms/${encodeURIComponent(roomId)}/members`, controller.signal),
-        ]);
-        if (disposed) return;
-        setRooms(roomsResult);
-        setDetail(normalizeRoomDetail({ room: roomResult, balance: balanceResult, members: membersResult }));
-        setError("");
-      } catch (reason) {
-        if (!disposed && (reason as Error).name !== "AbortError") setError((reason as Error).message || "无法加载房间");
-      } finally {
-        controllers.delete(controller);
-        if (!disposed) setLoading(false);
-      }
-    };
-    void load();
-    // Settlement happens in the worker. Polling turns that server-side close into an
-    // immediate in-room explanation rather than leaving a stale, still-clickable slip.
-    const interval = window.setInterval(() => { void load(); }, 30_000);
-    return () => { disposed = true; window.clearInterval(interval); for (const controller of controllers) controller.abort(); };
+  // Pure read: returns data and touches no state, so every setState below stays
+  // in a promise callback where React can see it.
+  const loadRoom = useCallback(async (signal: AbortSignal) => {
+    const [rooms, room, balance, members] = await Promise.all([
+      request<RoomSummaryRecord[]>("/api/v1/rooms", signal),
+      request<RoomSummaryRecord>(`/api/v1/rooms/${encodeURIComponent(roomId)}`, signal),
+      request<RoomBalanceRecord>(`/api/v1/rooms/${encodeURIComponent(roomId)}/balance`, signal),
+      request<RoomMemberRecord[]>(`/api/v1/rooms/${encodeURIComponent(roomId)}/members`, signal),
+    ]);
+    return { rooms, detail: normalizeRoomDetail({ room, balance, members }) };
   }, [roomId]);
+
+  // One round at a time: opening a round abandons the previous one, so a slow
+  // early response can never land on top of a newer one.
+  const inFlight = useRef<AbortController | null>(null);
+  const refresh = useCallback(() => {
+    inFlight.current?.abort();
+    const controller = new AbortController();
+    inFlight.current = controller;
+    const { signal } = controller;
+    return loadRoom(signal)
+      .then((data) => { if (signal.aborted) return; setRooms(data.rooms); setDetail(data.detail); setError(""); })
+      .catch((reason) => { if (!signal.aborted && (reason as Error).name !== "AbortError") setError((reason as Error).message || "无法加载房间"); })
+      .finally(() => { if (!signal.aborted) setLoading(false); });
+  }, [loadRoom]);
+
+  useEffect(() => { void refresh(); return () => inFlight.current?.abort(); }, [refresh]);
+
+  // Settlement happens in the worker. Polling turns that server-side close into an
+  // immediate in-room explanation rather than leaving a stale, still-clickable slip
+  // — but only while the room is on screen. Four requests every 30 seconds was the
+  // app's heaviest loop, and a backgrounded room had nobody reading the answer.
+  useVisibleInterval(() => { void refresh(); }, 30_000);
 
   async function resetInvite() {
     setResetting(true); setInviteError(""); setInviteToken(""); setCopied(false);
@@ -114,7 +119,7 @@ export function RoomDetailView({ roomId }: { roomId: string }) {
     </section>
 
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_20rem]">
-      <section aria-labelledby="members-title" className="surface p-5"><div className="flex items-center justify-between gap-4"><h2 id="members-title" className="display text-2xl font-bold">房间成员</h2>{detail.isOwner && <Link href={`/rooms/${encodeURIComponent(roomId)}/status`} className="text-sm font-bold underline">查看提交状态</Link>}</div><ul className="mt-4 divide-y divide-[var(--line)]">{detail.members.map((member) => <li key={member.userId} className="flex min-h-14 items-center justify-between gap-4 py-3"><span className="font-bold">{member.displayName}</span><span className="text-xs text-[var(--muted)]">{member.roleLabel}</span></li>)}</ul></section>
+      <section aria-labelledby="members-title" className="surface p-5"><div className="flex items-center justify-between gap-4"><h2 id="members-title" className="display text-2xl font-bold">房间成员</h2>{detail.isOwner && <Link href={`/rooms/${encodeURIComponent(roomId)}/status`} className="text-sm font-bold underline">查看提交状态</Link>}</div><ul className="mt-4 divide-y divide-[var(--line)]">{detail.members.map((member) => <li key={member.userId} className="flex min-h-14 items-center justify-between gap-4 py-3"><span className="flex min-w-0 items-center gap-3"><Avatar src={member.avatarUrl} version={member.avatarVersion} nickname={member.displayName} size={40}/><span className="truncate font-bold">{member.displayName}</span></span><span className="text-xs text-[var(--muted)]">{member.roleLabel}</span></li>)}</ul></section>
       {detail.status !== "ACTIVE" ? <aside className="surface h-fit p-5"><h2 className="display text-xl font-bold">本轮已结束</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">群组会保留；待全部结算完成后即可开启下一场赛事。个人战绩可在「我的战绩」查询。</p></aside> : detail.visibility === "PUBLIC" ? <aside className="surface h-fit p-5"><h2 className="display text-xl font-bold">公开群组</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">此群组会显示在公开大厅，任何已登录用户确认本轮规则后都可以加入，无需邀请链接。</p></aside> : detail.isOwner ? <aside className="surface h-fit p-5" aria-labelledby="invite-title"><h2 id="invite-title" className="display text-xl font-bold">邀请朋友</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">请先确认参与者理解：赛事开始会自动封盘；所有已提交竞猜结算后，群组才可进入下一轮。生成新链接会让旧链接立即失效，不影响现有成员和积分。</p>{inviteError && <div className="mt-4"><StatusMessage tone="error" title="邀请操作失败">{inviteError}</StatusMessage></div>}{inviteToken ? <div className="mt-4"><StatusMessage tone="success" title="新邀请已生成">请只发送给你认识的人。</StatusMessage><label htmlFor="room-invite-url" className="mt-4 block text-xs font-bold">邀请链接</label><input id="room-invite-url" readOnly value={inviteUrl} className="mt-2 min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm"/><button type="button" onClick={async () => { try { await navigator.clipboard.writeText(inviteUrl); setCopied(true); } catch { setInviteError("浏览器无法自动复制，请手动选择上方链接。"); } }} className="mt-3 min-h-11 w-full rounded-full border-2 border-[var(--ink)] px-3 font-bold transition hover:bg-[var(--ink)] hover:text-white">{copied ? "已复制" : "复制邀请链接"}</button></div> : <button type="button" onClick={resetInvite} disabled={resetting} className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[var(--field)] px-3 font-bold text-white transition hover:brightness-95 disabled:opacity-55">{resetting ? "正在生成…" : "生成新的邀请链接"}</button>}</aside> : <aside className="surface h-fit p-5"><h2 className="display text-xl font-bold">成员权限</h2><p className="mt-2 text-sm leading-6 text-[var(--muted)]">赛事开始后自动封盘。你可以查看自己的个人战绩；下一轮须等当前轮次全部结算。</p></aside>}
     </div>
 

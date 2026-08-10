@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Avatar, AvatarWithPresence } from "@/components/avatar";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
 import { useLocale } from "@/components/locale-provider";
@@ -145,7 +146,10 @@ export function FriendsView() {
             ? <p className="mt-5 text-sm text-[var(--muted)]">{t("friends.empty")}</p>
             : <ul className="mt-5 divide-y divide-[var(--line)]">
               {friends.map((friend) => <li key={friend.userId} className="flex flex-wrap items-center gap-3 py-3">
-                <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${friend.online ? "bg-emerald-500" : "bg-[var(--line)]"}`} />
+                {/* The presence dot rides the avatar's corner (12.6); the
+                    screen-reader wording below stays the accessible source. */}
+                <AvatarWithPresence online={friend.online} src={friend.avatarUrl} version={friend.avatarVersion}
+                  nickname={friend.nickname} pulseId={friend.pulseId} size={40} />
                 <span className="font-bold">{friend.nickname || friend.pulseId}</span>
                 <span className="text-xs text-[var(--muted)]">NO. {friend.pulseId}</span>
                 <span className="sr-only">{friend.online ? t("friends.online") : t("friends.offline")}</span>
@@ -169,6 +173,7 @@ export function FriendsView() {
             <h3 className="text-sm font-bold">{t("friends.incoming")}</h3>
             <ul className="mt-2 divide-y divide-[var(--line)]">
               {incoming.map((request) => <li key={request.requestId} className="flex flex-wrap items-center gap-3 py-3">
+                <Avatar src={request.avatarUrl} version={request.avatarVersion} nickname={request.nickname} pulseId={request.pulseId} size={36} />
                 <span className="font-bold">{request.nickname || request.pulseId}</span>
                 <span className="text-xs text-[var(--muted)]">NO. {request.pulseId}</span>
                 <span className="ml-auto flex gap-2">
@@ -184,6 +189,7 @@ export function FriendsView() {
             <h3 className="text-sm font-bold">{t("friends.outgoing")}</h3>
             <ul className="mt-2 divide-y divide-[var(--line)]">
               {outgoing.map((request) => <li key={request.requestId} className="flex flex-wrap items-center gap-3 py-3 text-sm">
+                <Avatar src={request.avatarUrl} version={request.avatarVersion} nickname={request.nickname} pulseId={request.pulseId} size={36} />
                 <span className="font-bold">{request.nickname || request.pulseId}</span>
                 <span className="text-xs text-[var(--muted)]">{t("friends.awaiting")}</span>
                 {/* Requester-side withdrawal is the pair DELETE — decline is recipient-only and would 404. */}
@@ -202,6 +208,9 @@ export function FriendsView() {
             ? <p className="mt-5 text-sm text-[var(--muted)]">{t("friends.blocksEmpty")}</p>
             : <ul className="mt-5 divide-y divide-[var(--line)]">
               {blocks.map((entry) => <li key={entry.userId} className="flex flex-wrap items-center gap-3 py-3">
+                {/* A block stops the pair seeing each other's photo, so the server
+                    sends no URL here — this renders the muted initials fallback. */}
+                <Avatar src={entry.avatarUrl} version={entry.avatarVersion} nickname={entry.nickname} pulseId={entry.pulseId} size={36} muted />
                 <span className="font-bold">{entry.nickname || entry.pulseId}</span>
                 <span className="text-xs text-[var(--muted)]">NO. {entry.pulseId}</span>
                 <button type="button" onClick={() => void act(async () => { await api(`/api/v1/blocks/${entry.userId}`, { method: "DELETE" }); return "friends.unblocked"; })}

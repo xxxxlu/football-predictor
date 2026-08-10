@@ -141,6 +141,7 @@ describe("user security console writes", () => {
       const repository = new PostgresUserSecurityRepository(fakeSql(grants(authorization), log), clock);
       for (const write of [
         repository.revokeSessions("caller-1", "user-1", "安全复核"),
+        repository.removeAvatar("caller-1", "user-1", "头像违规"),
         repository.fileAnonymizationRequest("caller-1", "user-1", "用户申请"),
         repository.completeAnonymizationRequest("caller-1", "user-1", "request-1", "用户申请"),
       ]) {
@@ -149,6 +150,8 @@ describe("user security console writes", () => {
         expect((failure as OperationError).status).toBe(403);
       }
       expect(log.queries.some((query) => query.includes("UPDATE identity.sessions") || query.includes("INSERT INTO ops.privacy_requests"))).toBe(false);
+      // Story 12.6: the takedown must not reach the avatar table either.
+      expect(log.queries.some((query) => query.includes("DELETE FROM identity.user_avatars"))).toBe(false);
     }
   });
 
@@ -177,9 +180,53 @@ describe("user security console writes", () => {
     expect(log.values.some((value) => value instanceof Date)).toBe(false);
   });
 
+  /* Story 12.6. An avatar takedown deletes the row AND books the bucket copy for
+     deletion — a takedown that only unlinked the row would leave the image
+     readable at its object key. Same capability, same audit store as the rest. */
+  it("removes the avatar, queues its object for deletion, and audits it under AVATAR_REMOVED", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresUserSecurityRepository(fakeSql((query) => {
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
+      if (query.includes("FROM identity.users")) return [{ id: "user-1" }];
+      if (query.includes("DELETE FROM identity.user_avatars")) {
+        return [{ objectKey: "avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/2.webp", fileId: "cloud://env/x" }];
+      }
+      return [];
+    }, log), clock);
+
+    const result = await repository.removeAvatar("ops-1", "user-1", "头像违反社区规范");
+    expect(result).toMatchObject({ targetUserId: "user-1", removed: true });
+    expect(result.auditId).toMatch(/^[0-9a-f-]{36}$/);
+
+    const deleted = log.queries.find((query) => query.includes("DELETE FROM identity.user_avatars"))!;
+    expect(deleted).toContain('RETURNING object_key AS "objectKey"');
+    expect(log.queries.some((query) => query.includes("INSERT INTO identity.avatar_object_deletions"))).toBe(true);
+    const audit = log.queries.find((query) => query.includes("'AVATAR_REMOVED'"))!;
+    expect(audit).toContain("::text::jsonb");
+    // The audit note carries the justification and the outcome — never the
+    // image, its object key or its storage handle. (The deletion queue does bind
+    // the fileID, which is exactly what it exists to remember.)
+    const note = log.values.find((value) => typeof value === "string" && value.startsWith("{\"reason\"")) as string;
+    expect(JSON.parse(note)).toEqual({ reason: "头像违反社区规范", removed: true });
+    expect(note).not.toMatch(/cloud:\/\/|avatars\/|object_key/);
+  });
+
+  it("audits an avatar takedown against an account that had none, without failing", async () => {
+    const log = { queries: [] as string[], values: [] as unknown[] };
+    const repository = new PostgresUserSecurityRepository(fakeSql((query) => {
+      if (query.includes("array_agg(g.role")) return AS_OPS_ADMIN;
+      if (query.includes("FROM identity.users")) return [{ id: "user-1" }];
+      return [];
+    }, log), clock);
+
+    await expect(repository.removeAvatar("ops-1", "user-1", "例行复核")).resolves.toMatchObject({ removed: false });
+    expect(log.queries.some((query) => query.includes("INSERT INTO identity.avatar_object_deletions"))).toBe(false);
+    expect(log.values).toContain(JSON.stringify({ reason: "例行复核", removed: false }));
+  });
+
   it("refuses to act on a super-admin or an account that is not there", async () => {
     const repository = new PostgresUserSecurityRepository(fakeSql(grants(AS_SUPER_ADMIN)), clock);
-    for (const write of [repository.revokeSessions("root-1", "root-2", "尝试"), repository.fileAnonymizationRequest("root-1", "root-2", "尝试处理")]) {
+    for (const write of [repository.revokeSessions("root-1", "root-2", "尝试"), repository.removeAvatar("root-1", "root-2", "尝试删除头像"), repository.fileAnonymizationRequest("root-1", "root-2", "尝试处理")]) {
       const failure = await write.catch((error: unknown) => error);
       expect(failure).toBeInstanceOf(OperationError);
       expect((failure as OperationError).code).toBe("TARGET_NOT_MANAGEABLE");
@@ -274,8 +321,17 @@ describe("user security console writes", () => {
     expect(log.queries.some((query) => query.includes("UPDATE identity.sessions") && query.includes("revoked_at IS NULL"))).toBe(true);
     expect(log.queries.some((query) => query.includes("'ACCOUNT_ANONYMIZED'"))).toBe(true);
     for (const query of log.queries) {
-      expect(query).not.toContain("DELETE FROM");
+      // FR70 forbids hard-deleting the account's records — with exactly one
+      // carve-out since 12.6. An avatar is published personal content, not a
+      // traceability record: anonymizing the name while leaving the member's
+      // face in the bucket would defeat the whole exercise, so the avatar row
+      // goes and its object is queued for deletion.
+      if (!query.includes("DELETE FROM identity.user_avatars")) {
+        expect(query).not.toContain("DELETE FROM");
+      }
       for (const forbidden of ["ledger", "room.tickets", "SET available_points", "predictions"]) expect(query).not.toContain(forbidden);
     }
+    // ...and that carve-out really does schedule the bucket copy for removal.
+    expect(log.queries.some((query) => query.includes("DELETE FROM identity.user_avatars"))).toBe(true);
   });
 });

@@ -1,5 +1,5 @@
 import { OperationError } from "@pulse/db";
-import { AuthError } from "@pulse/domain";
+import { AuthError, decodeKeysetCursor, type KeysetCursor } from "@pulse/domain";
 import { z } from "zod";
 import { readSessionToken } from "../auth/_lib/handlers";
 import { assertSameOrigin } from "./request-origin";
@@ -7,14 +7,13 @@ import { assertSameOrigin } from "./request-origin";
 const nicknameSchema = z.object({ nickname: z.string().trim().min(2).max(32) }).strict();
 interface Identity {
   authenticate(token: string): Promise<{ id: string } | null>;
-  requireCapability(sessionToken: string, capability: "OPERATIONS_HEALTH_READ"): Promise<{ id: string }>;
 }
 interface Operations {
   getProfile(userId: string): Promise<unknown>; updateNickname(userId: string, nickname: string): Promise<unknown>;
   accountHistory(userId: string): Promise<unknown>;
   submissionStatus(roomId: string, userId: string): Promise<unknown>; ticketHistory(roomId: string, userId: string): Promise<unknown>;
   myTickets(roomId: string, userId: string, fixtureId?: string): Promise<unknown>;
-  ledger(roomId: string, userId: string): Promise<unknown>; leaderboard(roomId: string, userId: string): Promise<unknown>; adminStatus(userId: string): Promise<unknown>;
+  ledger(roomId: string, userId: string, options?: { cursor?: KeysetCursor }): Promise<unknown>; leaderboard(roomId: string, userId: string): Promise<unknown>;
 }
 export function createOperationsHandlers(identity: Identity, operations: Operations) {
   const user = async (request: Request) => { const token = readSessionToken(request); const account = token ? await identity.authenticate(token) : null; if (!account) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue."); return account.id; };
@@ -34,16 +33,17 @@ export function createOperationsHandlers(identity: Identity, operations: Operati
       if (fixtureId !== undefined && fixtureId.length > 128) return failure("INVALID_REQUEST", 422);
       return json({ data: await operations.myTickets(roomId, id, fixtureId) });
     }),
-    ledger: roomRead((roomId, id) => operations.ledger(roomId, id)),
-    leaderboard: roomRead((roomId, id) => operations.leaderboard(roomId, id)),
-    // Authorized at the route boundary and again inside the repository: the
-    // operational-health view is an operator surface, not a member surface.
-    adminStatus: (request: Request) => execute(async () => {
-      const token = readSessionToken(request);
-      if (!token) throw new AuthError("UNAUTHENTICATED", 401, "Log in to continue.");
-      const actor = await identity.requireCapability(token, "OPERATIONS_HEALTH_READ");
-      return json({ data: await operations.adminStatus(actor.id) });
+    // A cursor that fails to decode is refused rather than quietly ignored:
+    // silently restarting at page one would look like the ledger had lost rows.
+    ledger: (request: Request, roomId: string) => execute(async () => {
+      const id = await user(request);
+      const raw = new URL(request.url).searchParams.get("cursor")?.trim();
+      if (!raw) return json({ data: await operations.ledger(roomId, id) });
+      const cursor = decodeKeysetCursor(raw);
+      if (!cursor) return failure("INVALID_REQUEST", 422);
+      return json({ data: await operations.ledger(roomId, id, { cursor }) });
     }),
+    leaderboard: roomRead((roomId, id) => operations.leaderboard(roomId, id)),
   };
 }
 async function execute(operation: () => Promise<Response>) { try { return await operation(); } catch (error) { if (error instanceof AuthError || error instanceof OperationError) return failure(error.code, error.status); if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422); console.error("[operations] unexpected failure", error); return failure("INTERNAL_ERROR", 500); } }

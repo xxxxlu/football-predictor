@@ -14,10 +14,13 @@ function request(path: string, init: RequestInit & { session?: string; proof?: s
   return new Request(`${ORIGIN}${path}`, { ...init, headers });
 }
 
-function identity(overrides: Partial<{ requireCapability: unknown; authorizeCapabilityAction: unknown }> = {}) {
+function identity(overrides: Partial<{ requireCapability: unknown; authorizeCapabilityAction: unknown; resolveOperator: unknown }> = {}) {
   return {
     requireCapability: vi.fn(async () => ({ id: "operator-1" })),
     authorizeCapabilityAction: vi.fn(async () => ({ id: "operator-1" })),
+    // Triage resolves once and intersects rather than asking per duty; the
+    // default stub holds both governance write duties.
+    resolveOperator: vi.fn(async () => ({ account: { id: "operator-1" }, capabilities: ["ROOM_GOVERNANCE_WRITE", "COMMUNITY_GOVERNANCE_WRITE"] })),
     ...overrides,
   };
 }

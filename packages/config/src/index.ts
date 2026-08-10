@@ -56,6 +56,40 @@ export function loadIdentityConfig(environment: Record<string, string | undefine
   };
 }
 
+/**
+ * CloudBase object storage for member avatars (Story 12.6).
+ *
+ * Deliberately optional: an environment without these keys still boots, still
+ * serves every other surface, and answers the avatar endpoints with a stable
+ * STORAGE_NOT_CONFIGURED refusal instead of failing at import time. Like every
+ * other loader here, an invalid value produces key names only — never a value.
+ */
+const avatarStorageConfigSchema = z.object({
+  CLOUDBASE_ENV_ID: z.string().trim().min(1).max(200),
+  CLOUDBASE_SECRET_ID: z.string().trim().min(1).max(500),
+  CLOUDBASE_SECRET_KEY: z.string().trim().min(1).max(500),
+  CLOUDBASE_REGION: z.string().trim().min(1).max(64).optional(),
+});
+
+export type AvatarStorageConfig = {
+  envId: string;
+  secretId: string;
+  secretKey: string;
+  region?: string;
+};
+
+/** Returns null when object storage is not configured, so callers can degrade. */
+export function loadAvatarStorageConfig(environment: Record<string, string | undefined>): AvatarStorageConfig | null {
+  const result = avatarStorageConfigSchema.safeParse(environment);
+  if (!result.success) return null;
+  return {
+    envId: result.data.CLOUDBASE_ENV_ID,
+    secretId: result.data.CLOUDBASE_SECRET_ID,
+    secretKey: result.data.CLOUDBASE_SECRET_KEY,
+    ...(result.data.CLOUDBASE_REGION ? { region: result.data.CLOUDBASE_REGION } : {}),
+  };
+}
+
 const supplierWorkerConfigSchema = z.object({
   DATABASE_URL: z.string().url().refine((value) => value.startsWith("postgres://") || value.startsWith("postgresql://")),
   API_FOOTBALL_KEY: z.string().trim().min(1),

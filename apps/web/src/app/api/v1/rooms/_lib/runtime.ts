@@ -1,6 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { loadIdentityConfig } from "@pulse/config";
-import { createIdentityDatabase, DrizzleRoomRepository } from "@pulse/db";
+import { DrizzleRoomRepository, getSharedIdentityDatabase } from "@pulse/db";
 import { RoomService } from "@pulse/domain";
 
 declare global { var __pulseRoomService: RoomService | undefined; }
@@ -8,7 +8,7 @@ declare global { var __pulseRoomService: RoomService | undefined; }
 export function getRoomService() {
   if (globalThis.__pulseRoomService) return globalThis.__pulseRoomService;
   const config = loadIdentityConfig(process.env);
-  const { db } = createIdentityDatabase(config.databaseUrl);
+  const { db } = getSharedIdentityDatabase(config.databaseUrl);
   const tokens = {
     inviteToken: () => randomBytes(32).toString("base64url"),
     hash: (value: string) => createHash("sha256").update(value, "utf8").digest("hex"),

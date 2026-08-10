@@ -2,11 +2,13 @@
 
 import { FormEvent, useId, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { StatusMessage } from "@/components/status-message";
 import { purgePrivateCaches } from "@/features/pwa/private-cache";
 import { recoveryReceiptContinueHref, safeReturnTo } from "./navigation";
 import { authErrorMessage } from "./auth-error-messages";
 import { useLocale } from "@/components/locale-provider";
+import { collectLoginPrivacyContext } from "@/features/privacy/mobile-context";
 
 type Mode = "login" | "register" | "recover";
 type ApiError = { error?: { code?: string; message?: string; correlationId?: string } };
@@ -22,6 +24,12 @@ export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) 
     if (mode === "register") { payload.ageConfirmed = form.get("ageConfirmed") === "on"; payload.nonCashTermsAccepted = form.get("nonCashTermsAccepted") === "on"; }
     if (mode === "recover") { payload.recoveryCode = String(form.get("recoveryCode") || ""); payload.newPassword = password; delete payload.password; }
     try {
+      if (mode === "login") {
+        payload.privacyConsent = form.get("privacyConsent") === "on";
+        const privacyContext = await collectLoginPrivacyContext();
+        payload.deviceInfo = privacyContext.deviceInfo;
+        payload.preferences = privacyContext.preferences;
+      }
       const response = await fetch(`/api/v1/auth/${mode}`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "same-origin", body: JSON.stringify(payload) });
       const result = await response.json().catch(() => ({})) as ApiError & ApiSuccess;
       if (!response.ok) { setError(authErrorMessage(result.error?.code)); return; }
@@ -37,6 +45,7 @@ export function AuthForm({ mode, returnTo }: { mode: Mode; returnTo?: string }) 
     <Field id={`${baseId}-username`} name="username" label={t("auth.username")} autoComplete="username" minLength={3} maxLength={32} hint={t("auth.usernameHint")} />
     {mode === "recover" && <Field id={`${baseId}-code`} name="recoveryCode" label={t("auth.recoveryCode")} autoComplete="off" required hint={t("auth.recoveryHint")} />}
     <Field id={`${baseId}-password`} name="password" type="password" label={mode === "recover" ? t("auth.newPassword") : t("auth.password")} autoComplete={mode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} hint={mode === "login" ? undefined : t("auth.passwordHint")} />
+    {mode === "login" && <fieldset className="border-t rule pt-5"><legend className="sr-only">{t("auth.privacyConsentTitle")}</legend><Check name="privacyConsent"><span>{t("auth.privacyConsentPrefix")} <Link href="/privacy-policy" target="_blank" rel="noreferrer" className="font-bold underline underline-offset-2">{t("auth.privacyPolicy")}</Link>{t("auth.privacyConsentSuffix")}</span></Check></fieldset>}
     {mode === "register" && <fieldset className="space-y-3 border-t rule pt-5"><legend className="sr-only">{t("auth.rules")}</legend><Check name="ageConfirmed">{t("auth.ageConfirm")}</Check><Check name="nonCashTermsAccepted">{t("auth.nonCashConfirm")}</Check></fieldset>}
     <button disabled={pending} className="inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-5 py-3 font-bold text-white transition hover:bg-[var(--field-dark)] disabled:cursor-wait disabled:opacity-60">{pending ? t("auth.processing") : mode === "login" ? t("auth.login") : mode === "register" ? t("auth.register") : t("auth.resetPassword")}</button>
   </form>;

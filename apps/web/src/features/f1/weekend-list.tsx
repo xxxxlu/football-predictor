@@ -6,6 +6,7 @@ import { DataStatePanel } from "@/components/data-state-panel";
 import { PulseLine } from "@/components/pulse";
 import { PulseCircuit } from "@/components/pulse-circuit";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { useVisibleInterval } from "@/lib/use-visible-interval";
 import { normalizeWeekend, SESSION_KIND_LABELS, SESSION_STATE_LABELS, sessionPredictable, weekendPhase, type F1SessionView, type F1WeekendView, type WeekendPhaseFilter } from "./types";
 
 function sessionHref(sessionId: string, roomId?: string): string {
@@ -50,12 +51,11 @@ export function WeekendList({ roomId }: { roomId?: string }) {
     return () => controller.abort();
   }, [retry]);
 
-  useEffect(() => {
-    // Result sync runs in the worker; refresh the read model while this screen is open
-    // so a confirmed result moves from locked to finished without a manual reload.
-    const interval = window.setInterval(() => setRetry((value) => value + 1), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
+  // Result sync runs in the worker; refresh the read model while this screen is open
+  // so a confirmed result moves from locked to finished without a manual reload.
+  // Only while the screen is actually visible — a backgrounded weekend list has
+  // nobody waiting on it, and coming back re-reads immediately.
+  useVisibleInterval(() => setRetry((value) => value + 1), 60_000);
 
   if (error) {
     return <DataStatePanel state="error" title="暂时无法取得 F1 赛程" description={error} action={

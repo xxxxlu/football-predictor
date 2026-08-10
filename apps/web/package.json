@@ -19,11 +19,13 @@
     "@pulse/db": "workspace:*",
     "@pulse/domain": "workspace:*",
     "@pulse/supplier": "workspace:*",
+    "@cloudbase/node-sdk": "3.18.3",
     "@node-rs/argon2": "2.0.2",
     "next": "16.2.11",
     "postgres": "3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "sharp": "0.35.3",
     "zod": "^4.4.3"
   },
   "devDependencies": {

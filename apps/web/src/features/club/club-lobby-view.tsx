@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar, AvatarWithPresence } from "@/components/avatar";
 import { StatusMessage } from "@/components/status-message";
 import { useLocale } from "@/components/locale-provider";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
@@ -246,7 +247,7 @@ export function ClubLobbyView() {
           : lobby.directory.length === 0
             ? <p className="mt-4 text-sm text-[var(--muted)]">{t("club.lobby.directoryEmpty")}</p>
             : <ul className="mt-4 flex flex-wrap gap-2" aria-label={t("club.lobby.directoryTitle")}>
-                {lobby.directory.map((entry) => <li key={entry.pulseId} className="rounded-full border border-[var(--line)] px-3 py-1.5 text-sm"><b>{entry.nickname || entry.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">@{entry.pulseId}</span></li>)}
+                {lobby.directory.map((entry) => <li key={entry.pulseId} className="flex items-center gap-2 rounded-full border border-[var(--line)] py-1 pl-1 pr-3 text-sm"><Avatar src={entry.avatarUrl} version={entry.avatarVersion} nickname={entry.nickname} pulseId={entry.pulseId} size={24} /><b>{entry.nickname || entry.pulseId}</b><span className="text-xs text-[var(--muted)]">@{entry.pulseId}</span></li>)}
               </ul>}
       </section>
 
@@ -262,7 +263,7 @@ export function ClubLobbyView() {
                 {!lobby.friends.viewerAnswered && <p className="mt-2 text-xs text-[var(--muted)]">{t("club.lobby.friendsLocked")}</p>}
                 <ul className="mt-4 divide-y divide-[var(--line)]" aria-label={t("club.lobby.friendsTitle")}>
                   {lobby.friends.friends.map((friend) => <li key={friend.pulseId} className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm">
-                    <span><b>{friend.nickname || friend.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">@{friend.pulseId}</span></span>
+                    <span className="flex items-center gap-2"><AvatarWithPresence online={friend.online} src={friend.avatarUrl} version={friend.avatarVersion} nickname={friend.nickname} pulseId={friend.pulseId} size={32} /><b>{friend.nickname || friend.pulseId}</b><span className="text-xs text-[var(--muted)]">@{friend.pulseId}</span></span>
                     <span className="flex gap-2 text-xs">
                       <span className={`rounded-full border px-2 py-0.5 font-bold ${friend.online ? "border-[var(--field)] text-[var(--field)]" : "border-[var(--line)] text-[var(--muted)]"}`}>{friend.online ? t("club.lobby.online") : t("club.lobby.offline")}</span>
                       {friend.inLobby && <span className="rounded-full border border-[var(--field)] px-2 py-0.5 font-bold text-[var(--field)]">{t("club.lobby.inLobby")}</span>}
@@ -329,7 +330,8 @@ export function ClubLobbyView() {
             </li>)}
             {channel.messages.map((message) => <li key={message.id} className="py-3">
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                <p className="min-w-0 text-sm">
+                <p className="flex min-w-0 items-center gap-2 text-sm">
+                  <Avatar src={message.authorAvatarUrl} version={message.authorAvatarVersion} nickname={message.authorNickname} pulseId={message.authorPulseId} size={32} />
                   <b className="text-[var(--ink)]">{message.authorNickname || message.authorPulseId}</b>
                   <span className="ml-2 text-xs text-[var(--muted)]">{new Date(message.createdAt).toLocaleString()}</span>
                 </p>

@@ -1,4 +1,4 @@
-import { index, jsonb, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uniqueIndex, uuid, boolean } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uniqueIndex, uuid, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const identitySchema = pgSchema("identity");
@@ -140,6 +140,59 @@ export const friendRequestEvents = identitySchema.table("friend_request_events",
   kind: text("kind").notNull().default("FRIEND_REQUEST"),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [index("friend_request_events_requester_kind_time_idx").on(table.requesterUserId, table.kind, table.occurredAt)]);
+
+/**
+ * One avatar per account (Story 12.6). The row holds the CloudBase handle and
+ * the metadata a projection needs — never image bytes, and never a temporary CDN
+ * URL, which expires and would rot in the database.
+ *
+ * `publicId` is the random handle the same-origin media URL is built from; the
+ * object key stays server-side. `version` is monotonic per account and is
+ * enforced by the 0030 trigger, not by application code alone.
+ */
+export const userAvatars = identitySchema.table("user_avatars", {
+  userId: uuid("user_id").primaryKey().references(() => identityUsers.id, { onDelete: "cascade" }),
+  publicId: uuid("public_id").notNull().defaultRandom(),
+  fileId: text("file_id").notNull(),
+  objectKey: text("object_key").notNull(),
+  contentType: text("content_type").notNull(),
+  byteSize: integer("byte_size").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  version: integer("version").notNull().default(1),
+  moderationStatus: text("moderation_status").notNull().default("APPROVED"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique("user_avatars_public_id_unique").on(table.publicId),
+  unique("user_avatars_object_key_unique").on(table.objectKey),
+  index("user_avatars_moderation_idx").on(table.moderationStatus),
+]);
+
+/** Persisted counting window for the avatar change quota (5/h, 20/d). */
+export const avatarChangeEvents = identitySchema.table("avatar_change_events", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull().references(() => identityUsers.id, { onDelete: "cascade" }),
+  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [index("avatar_change_events_user_time_idx").on(table.userId, table.occurredAt)]);
+
+/**
+ * Object-storage deletions still owed. No user_id and no FK on purpose: the row
+ * has to outlive the account it came from, otherwise deleting an account would
+ * drop the only pointer to an image that is still sitting in the bucket.
+ */
+export const avatarObjectDeletions = identitySchema.table("avatar_object_deletions", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  objectKey: text("object_key").notNull(),
+  fileId: text("file_id"),
+  enqueuedAt: timestamp("enqueued_at", { withTimezone: true }).notNull().defaultNow(),
+  attempts: integer("attempts").notNull().default(0),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+}, (table) => [
+  unique("avatar_object_deletions_object_key_unique").on(table.objectKey),
+  index("avatar_object_deletions_pending_idx").on(table.enqueuedAt).where(sql`${table.deletedAt} is null`),
+]);
 
 export const accessEvents = identitySchema.table("access_events", {
   id: uuid("id").defaultRandom().primaryKey(),

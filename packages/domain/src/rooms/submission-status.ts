@@ -25,6 +25,9 @@ export interface SubmissionStatusRow {
   userId: string;
   displayName: string;
   submitted: boolean;
+  /** Story 12.6: same-origin media path, null when the member has no avatar. */
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
 }
 
 export interface SubmissionBoardEvent {
@@ -34,7 +37,7 @@ export interface SubmissionBoardEvent {
   awayTeam: string;
   kickoffAt: string;
   status: SubmissionEventPhase;
-  members: Array<{ userId: string; displayName: string; submitted: boolean }>;
+  members: Array<{ userId: string; displayName: string; submitted: boolean; avatarUrl: string | null; avatarVersion: number | null }>;
 }
 
 /** Maps a sport-specific lifecycle onto the wall's shared phase. Football keeps
@@ -69,7 +72,13 @@ export function projectSubmissionBoard(rows: readonly SubmissionStatusRow[], now
       events.set(row.eventId, event);
     }
     // Explicit allowlist — see module doc. Never spread `row` here.
-    event.members.push({ userId: row.userId, displayName: row.displayName, submitted: row.submitted === true });
+    event.members.push({
+      userId: row.userId,
+      displayName: row.displayName,
+      submitted: row.submitted === true,
+      avatarUrl: row.avatarUrl ?? null,
+      avatarVersion: row.avatarVersion ?? null,
+    });
   }
   return [...events.values()].sort((left, right) => left.kickoffAt.localeCompare(right.kickoffAt) || left.matchId.localeCompare(right.matchId));
 }

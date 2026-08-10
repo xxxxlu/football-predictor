@@ -19,6 +19,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 
+import { avatarColumns, avatarJoin, withAvatar, withoutAvatar } from "./avatar-projection.js";
 import { isUniqueViolation } from "./repository.js";
 import { OperationError } from "../operations/repository.js";
 
@@ -45,6 +46,9 @@ export interface FriendEntry {
   pulseId: string;
   nickname: string | null;
   online: boolean;
+  /** Same-origin media path, or null when the account has no avatar (Story 12.6). */
+  avatarUrl: string | null;
+  avatarVersion: number | null;
 }
 
 export interface FriendRequestEntry {
@@ -55,6 +59,8 @@ export interface FriendRequestEntry {
   pulseId: string;
   nickname: string | null;
   createdAt: Date;
+  avatarUrl: string | null;
+  avatarVersion: number | null;
 }
 
 export interface BlockEntry {
@@ -62,6 +68,9 @@ export interface BlockEntry {
   pulseId: string;
   nickname: string | null;
   createdAt: Date;
+  /** Always null: a blocker stops receiving the blocked account's photo (Story 12.6). */
+  avatarUrl: null;
+  avatarVersion: null;
 }
 
 export function createSocialRepository(sql: SocialSql, clock: () => Date = () => new Date()) {
@@ -215,13 +224,15 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
 
     async listFriends(userId: string): Promise<FriendEntry[]> {
       const ttlCutoffIso = new Date(clock().getTime() - PRESENCE_TTL_MS).toISOString();
-      const rows = await sql<FriendEntry[]>`
+      const joined = await sql<Array<Omit<FriendEntry, "avatarUrl" | "avatarVersion"> & { avatarPublicId: string | null; avatarVersion: number | null }>>`
         SELECT u.id AS "userId", u.username_canonical AS "pulseId", u.nickname,
-          COALESCE(u.show_online_to_friends AND p.online_beat_at > ${ttlCutoffIso}, false) AS online
+          COALESCE(u.show_online_to_friends AND p.online_beat_at > ${ttlCutoffIso}, false) AS online,
+          ${avatarColumns(sql)}
         FROM identity.friendships f
         JOIN identity.users u
           ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
         LEFT JOIN identity.presence_signals p ON p.user_id = u.id
+        ${avatarJoin(sql)}
         WHERE (f.user_lo_id = ${userId} OR f.user_hi_id = ${userId})
           AND f.status = 'ACCEPTED' AND u.status = 'ACTIVE'
           AND NOT EXISTS (
@@ -229,6 +240,9 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
             WHERE (b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
                OR (b.blocker_user_id = u.id AND b.blocked_user_id = ${userId}))
         ORDER BY u.username_canonical`;
+      // The join column is mapped to the public pair before the guard runs, so a
+      // forgotten mapping fails loudly instead of shipping the storage handle.
+      const rows = joined.map(withAvatar) as FriendEntry[];
       assertMinimalFriendProjection(rows, FRIEND_LIST_PROJECTION_KEYS);
       return rows;
     },
@@ -240,19 +254,28 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
       // outbox — that disappearance is exactly the "you are blocked" signal
       // AC2 forbids. The counterpart still never sees it: their view is
       // filtered by THEIR block, and the respond path re-checks the pair.
-      const rows = await sql<FriendRequestEntry[]>`
+      //
+      // The avatar rides the plain join here, with no extra block condition. The
+      // row filter above already removes everyone the viewer blocked, and the
+      // remaining block case — the counterpart blocked the viewer — must look
+      // exactly like no block at all: an avatar that vanished from the viewer's
+      // own outbox would be the disclosure AC2 exists to prevent.
+      const joined = await sql<Array<Omit<FriendRequestEntry, "avatarUrl" | "avatarVersion"> & { avatarPublicId: string | null; avatarVersion: number | null }>>`
         SELECT f.id AS "requestId",
           CASE WHEN f.requested_by = ${userId} THEN 'OUTGOING' ELSE 'INCOMING' END AS direction,
-          u.id AS "userId", u.username_canonical AS "pulseId", u.nickname, f.created_at AS "createdAt"
+          u.id AS "userId", u.username_canonical AS "pulseId", u.nickname, f.created_at AS "createdAt",
+          ${avatarColumns(sql)}
         FROM identity.friendships f
         JOIN identity.users u
           ON u.id = CASE WHEN f.user_lo_id = ${userId} THEN f.user_hi_id ELSE f.user_lo_id END
+        ${avatarJoin(sql)}
         WHERE (f.user_lo_id = ${userId} OR f.user_hi_id = ${userId})
           AND f.status = 'PENDING' AND u.status = 'ACTIVE'
           AND NOT EXISTS (
             SELECT 1 FROM identity.user_blocks b
             WHERE b.blocker_user_id = ${userId} AND b.blocked_user_id = u.id)
         ORDER BY f.created_at DESC`;
+      const rows = joined.map(withAvatar) as FriendRequestEntry[];
       assertMinimalFriendProjection(rows, FRIEND_REQUEST_PROJECTION_KEYS);
       return rows;
     },
@@ -292,13 +315,21 @@ export function createSocialRepository(sql: SocialSql, clock: () => Date = () =>
       return { unblocked: rows.length > 0 };
     },
 
+    /**
+     * The blocker's own list. It deliberately carries no avatar: a block stops
+     * the pair from being shown each other's photo, and this is the one surface
+     * where a blocked account is still listed. The nickname and PULSE ID are
+     * enough to recognise an entry and unblock it, and the UI renders its
+     * low-emphasis initials fallback in the avatar slot.
+     */
     async listBlocks(blockerId: string): Promise<BlockEntry[]> {
-      const rows = await sql<BlockEntry[]>`
+      const joined = await sql<Array<Omit<BlockEntry, "avatarUrl" | "avatarVersion">>>`
         SELECT u.id AS "userId", u.username_canonical AS "pulseId", u.nickname, b.created_at AS "createdAt"
         FROM identity.user_blocks b
         JOIN identity.users u ON u.id = b.blocked_user_id
         WHERE b.blocker_user_id = ${blockerId}
         ORDER BY b.created_at DESC`;
+      const rows = joined.map(withoutAvatar) as BlockEntry[];
       assertMinimalFriendProjection(rows, BLOCK_PROJECTION_KEYS);
       return rows;
     },

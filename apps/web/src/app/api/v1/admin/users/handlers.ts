@@ -27,6 +27,7 @@ interface UserSecurityConsole {
   listUsers(actorUserId: string, query: UserSecurityQuery): Promise<unknown>;
   getUser(actorUserId: string, targetUserId: string): Promise<unknown>;
   revokeSessions(actorUserId: string, targetUserId: string, reason: string): Promise<unknown>;
+  removeAvatar(actorUserId: string, targetUserId: string, reason: string): Promise<unknown>;
   fileAnonymizationRequest(actorUserId: string, targetUserId: string, reason: string): Promise<unknown>;
   completeAnonymizationRequest(actorUserId: string, targetUserId: string, requestId: string, reason: string): Promise<unknown>;
   listAnonymizationRequests(actorUserId: string): Promise<unknown>;
@@ -83,6 +84,21 @@ export function createAdminIdentityHandlers(identity: AdminIdentity, console_: U
       const actorId = await writer(request, "USER_SECURITY_WRITE");
       const input = reasonSchema.parse(await request.json());
       return json({ data: await console_.revokeSessions(actorId, target(userId), input.reason) });
+    }),
+    /**
+     * Takes down a policy-violating avatar (Story 12.6). Same gate as every other
+     * write on this console — USER_SECURITY_WRITE plus a fresh re-auth proof plus
+     * a justification — and authorization runs before the body is parsed, so an
+     * unauthenticated caller cannot learn the endpoint's validation rules.
+     *
+     * A DELETE with a body is unusual but deliberate: the reason is mandatory
+     * here exactly as it is for the other takedowns, and it belongs in the body
+     * rather than in a query string that would land in access logs.
+     */
+    removeAvatar: (request: Request, userId: string) => execute(async () => {
+      const actorId = await writer(request, "USER_SECURITY_WRITE");
+      const input = reasonSchema.parse(await request.json());
+      return json({ data: await console_.removeAvatar(actorId, target(userId), input.reason) });
     }),
     listAnonymizationRequests: (request: Request) => execute(async () => {
       const actorId = await reader(request, "USER_SECURITY_READ");

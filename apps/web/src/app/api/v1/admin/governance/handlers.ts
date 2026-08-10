@@ -16,6 +16,7 @@ import { z } from "zod";
 import { readReauthProof, readSessionToken } from "../../auth/_lib/handlers";
 import { governanceReason } from "../../_lib/reason";
 import { assertSameOrigin } from "../../_lib/request-origin";
+import { requireAnyCapability, type OperatorResolver } from "../../_lib/operator-gate";
 
 /**
  * Room and community governance inbox (FR81, FR83, FR90).
@@ -46,7 +47,7 @@ const triageSchema = z.object({
 const reasonSchema = z.object({ reason: reasonField }).strict();
 const uuidSchema = z.string().uuid();
 
-interface GovernanceIdentity {
+interface GovernanceIdentity extends OperatorResolver {
   requireCapability(sessionToken: string, capability: Capability): Promise<{ id: string }>;
   authorizeCapabilityAction(input: { sessionToken: string; proofToken: string; capability: Capability }): Promise<{ id: string }>;
 }
@@ -70,6 +71,11 @@ export function createGovernanceInboxHandlers(identity: GovernanceIdentity, inbo
    * Identity confirmation plus at least one governance write duty. Only a plain
    * FORBIDDEN moves on to the next candidate — an expired proof stays a
    * REAUTH_REQUIRED rather than being reported as a permission problem.
+   *
+   * Left as a loop, unlike the read gates: this needs a *named* capability for
+   * the re-auth-gated call that follows, so resolving separately first would add
+   * a session read in the common case rather than remove one. The list is two
+   * long, so the worst case is two.
    */
   const writer = async (request: Request) => {
     assertSameOrigin(request);
@@ -89,16 +95,7 @@ export function createGovernanceInboxHandlers(identity: GovernanceIdentity, inbo
   /** Triage changes nothing a member can see, so it needs the duty but no proof. */
   const triager = async (request: Request) => {
     assertSameOrigin(request);
-    const sessionToken = session(request);
-    let refusal: unknown;
-    for (const capability of GOVERNANCE_WRITE_CAPABILITIES) {
-      try { return (await identity.requireCapability(sessionToken, capability)).id; }
-      catch (error) {
-        if (!(error instanceof AuthError) || error.code !== "FORBIDDEN") throw error;
-        refusal = error;
-      }
-    }
-    throw refusal;
+    return (await requireAnyCapability(identity, session(request), GOVERNANCE_WRITE_CAPABILITIES)).actorId;
   };
   const report = (reportId: string) => {
     const parsed = uuidSchema.safeParse(reportId);

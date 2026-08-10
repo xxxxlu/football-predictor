@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
 import { loadIdentityConfig } from "@pulse/config";
-import { createIdentityDatabase, DrizzleIdentityRepository } from "@pulse/db";
+import { DrizzleIdentityRepository, getSharedIdentityDatabase } from "@pulse/db";
 import { IdentityService, type AccessContext, type PasswordHasher, type TokenFactory } from "@pulse/domain";
 
 const RECOVERY_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -35,7 +35,7 @@ declare global {
 export function getIdentityService() {
   if (globalThis.__pulseIdentityService) return globalThis.__pulseIdentityService;
   const config = loadIdentityConfig(process.env);
-  const { db } = createIdentityDatabase(config.databaseUrl);
+  const { db } = getSharedIdentityDatabase(config.databaseUrl);
   const service = new IdentityService(
     new DrizzleIdentityRepository(db),
     createPasswordHasher(),

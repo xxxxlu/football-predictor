@@ -1,9 +1,9 @@
 import { AuthError, type IdentityAccount } from "@pulse/domain";
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
-import { activeOperatorRoles, DrizzleIdentityRepository, type IdentityDatabase } from "./repository.js";
+import { activeOperatorRoles, closeSharedIdentityDatabases, createIdentityDatabase, DrizzleIdentityRepository, getSharedIdentityDatabase, type IdentityDatabase } from "./repository.js";
 import { identityUsers } from "./schema.js";
 
 // Regression guard for the CI-caught bug where a duplicate username registration returned 500
@@ -82,5 +82,45 @@ describe("active operator duties subquery", () => {
     expect(rendered).toContain("FROM identity.operator_role_grants g");
     expect(rendered).toContain("g.revoked_at IS NULL");
     expect(rendered).toContain("array_agg(g.role ORDER BY g.role)");
+  });
+});
+
+// Every API runtime used to call createIdentityDatabase for itself. Seventeen of
+// them in apps/web, each pool defaulting to ten connections, meant a warm process
+// could hold 170 — past a stock `max_connections` on its own, before CloudBase
+// multiplies it by the number of function instances. postgres.js connects lazily,
+// so this needs no database.
+describe("shared identity database pool", () => {
+  const url = "postgres://verify@127.0.0.1:1/verify";
+  afterEach(async () => { await closeSharedIdentityDatabases(); });
+
+  it("hands every caller of the same database URL one pool", () => {
+    expect(getSharedIdentityDatabase(url)).toBe(getSharedIdentityDatabase(url));
+  });
+
+  it("keeps distinct URLs on distinct pools", () => {
+    expect(getSharedIdentityDatabase(url)).not.toBe(getSharedIdentityDatabase(`${url}2`));
+  });
+
+  it("survives module re-evaluation by registering on globalThis", () => {
+    getSharedIdentityDatabase(url);
+    expect(globalThis.__pulseSharedIdentityDatabases?.has(url)).toBe(true);
+  });
+
+  it("exposes no close, so one runtime cannot take the others' pool down", () => {
+    expect("close" in getSharedIdentityDatabase(url)).toBe(false);
+  });
+
+  it("builds a fresh pool after teardown rather than handing back a closed one", async () => {
+    const before = getSharedIdentityDatabase(url);
+    await closeSharedIdentityDatabases();
+    expect(getSharedIdentityDatabase(url)).not.toBe(before);
+  });
+
+  it("still gives owned callers — scripts, probes, tests — a pool of their own", async () => {
+    const owned = createIdentityDatabase(url);
+    expect(owned.sql).not.toBe(getSharedIdentityDatabase(url).sql);
+    expect(typeof owned.close).toBe("function");
+    await owned.close();
   });
 });

@@ -68,10 +68,26 @@ describe("projectSubmissionBoard", () => {
     } as SubmissionStatusRow;
 
     const [event] = projectSubmissionBoard([leakyRow], NOW);
-    expect(event?.members[0]).toEqual({ userId: "user-1", displayName: "成员一", submitted: true });
+    // Story 12.6 widened this by exactly the avatar pair, and by nothing else:
+    // the projection is an explicit allowlist, never a spread of the source row.
+    expect(event?.members[0]).toEqual({ userId: "user-1", displayName: "成员一", submitted: true, avatarUrl: null, avatarVersion: null });
     expect(JSON.stringify(event)).not.toContain("PODIUM");
     expect(JSON.stringify(event)).not.toContain("4.85");
     expect(JSON.stringify(event)).not.toContain("500");
+  });
+
+  it("carries the avatar pair when the query joined one, and nulls when it did not", () => {
+    const [event] = projectSubmissionBoard(
+      [
+        row({ userId: "user-1", avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/2.webp", avatarVersion: 2 }),
+        row({ userId: "user-2", displayName: "成员二" }),
+      ],
+      NOW,
+    );
+    expect(event?.members).toEqual([
+      { userId: "user-1", displayName: "成员一", submitted: false, avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/2.webp", avatarVersion: 2 },
+      { userId: "user-2", displayName: "成员二", submitted: false, avatarUrl: null, avatarVersion: null },
+    ]);
   });
 
   it("coerces a non-boolean submitted flag to a boolean instead of passing raw data through", () => {

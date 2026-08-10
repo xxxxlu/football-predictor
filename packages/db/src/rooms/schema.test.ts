@@ -28,6 +28,21 @@ describe("private room schema", () => {
     expect(migration).toContain("DROP NOT NULL");
   });
 
+  it("indexes room.rooms for the paged lobby and for the per-owner creation guards", async () => {
+    const indexNames = getTableConfig(rooms).indexes.map((idx) => idx.config.name);
+    // The lobby pages on (created_at, id), so the discovery index carries id.
+    expect(indexNames).toContain("room_public_discovery_keyset_idx");
+    // Both creation guards read room.rooms itself — no separate event ledger.
+    expect(indexNames).toContain("room_owner_creation_idx");
+    expect(indexNames).not.toContain("room_public_discovery_idx");
+
+    const migration = await readFile(new URL("../../migrations/0031_room_creation_quota.sql", import.meta.url), "utf8");
+    expect(migration).toContain('"visibility", "status", "created_at", "id"');
+    expect(migration).toContain('"created_by", "created_at"');
+    // Superseded, and dropped only after its replacement exists.
+    expect(migration.indexOf("room_public_discovery_keyset_idx")).toBeLessThan(migration.indexOf('DROP INDEX IF EXISTS "room"."room_public_discovery_idx"'));
+  });
+
   it("stores room ticket visibility settings with privacy-preserving defaults", async () => {
     const migration = await readFile(new URL("../../migrations/0013_room_ticket_visibility.sql", import.meta.url), "utf8");
     expect(migration).toContain("ADD COLUMN IF NOT EXISTS pre_match_stake_visible");

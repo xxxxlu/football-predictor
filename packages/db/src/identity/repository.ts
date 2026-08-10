@@ -8,9 +8,53 @@ import { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, ope
 const schema = { accessEvents, adminAccountAuditEvents, authAttempts, identityUsers, operatorRoleGrants, reauthProofs, ruleAcceptances, securityEvents, sessions };
 export type IdentityDatabase = PostgresJsDatabase<typeof schema>;
 
-export function createIdentityDatabase(databaseUrl: string) {
-  const client = postgres(databaseUrl, { max: 10, prepare: false });
+export type IdentityDatabaseHandle = { db: IdentityDatabase; sql: postgres.Sql; close(): Promise<void> };
+
+/** Connections a single pool may open. Every extra pool in a process multiplies
+ *  this against `max_connections`, which is why request-serving code shares one
+ *  pool via `getSharedIdentityDatabase` instead of calling this directly. */
+export const IDENTITY_POOL_MAX = 10;
+
+/**
+ * A pool the caller owns and must close: one-shot scripts, health probes and
+ * tests. Request-serving runtimes want `getSharedIdentityDatabase` — seventeen
+ * of them each calling this would hold seventeen pools open per process.
+ */
+export function createIdentityDatabase(databaseUrl: string, options: { max?: number } = {}): IdentityDatabaseHandle {
+  const client = postgres(databaseUrl, { max: options.max ?? IDENTITY_POOL_MAX, prepare: false });
   return { db: drizzle(client, { schema }), sql: client, close: () => client.end() };
+}
+
+export type SharedIdentityDatabase = Pick<IdentityDatabaseHandle, "db" | "sql">;
+
+/** Keyed by database URL and parked on `globalThis` for the same reason every
+ *  API runtime is: Next.js can hand the server several instances of this module,
+ *  and a module-local Map would then memoize nothing. */
+declare global { var __pulseSharedIdentityDatabases: Map<string, { close(): Promise<void>; shared: SharedIdentityDatabase }> | undefined; }
+
+/**
+ * The process-wide pool behind every request-serving runtime. What comes back
+ * carries no `close` — not merely a narrowed type but a distinct object, so
+ * neither a JS caller nor a cast can close a pool sixteen other runtimes are
+ * still using. Process teardown goes through `closeSharedIdentityDatabases`.
+ */
+export function getSharedIdentityDatabase(databaseUrl: string): SharedIdentityDatabase {
+  const registry = (globalThis.__pulseSharedIdentityDatabases ??= new Map());
+  const existing = registry.get(databaseUrl);
+  if (existing) return existing.shared;
+  const handle = createIdentityDatabase(databaseUrl);
+  const shared: SharedIdentityDatabase = { db: handle.db, sql: handle.sql };
+  registry.set(databaseUrl, { close: handle.close, shared });
+  return shared;
+}
+
+/** Closes every shared pool. Process teardown and integration-test cleanup only. */
+export async function closeSharedIdentityDatabases(): Promise<void> {
+  const registry = globalThis.__pulseSharedIdentityDatabases;
+  if (!registry) return;
+  const entries = [...registry.values()];
+  registry.clear();
+  await Promise.all(entries.map((entry) => entry.close()));
 }
 
 export class DrizzleIdentityRepository implements IdentityRepository {

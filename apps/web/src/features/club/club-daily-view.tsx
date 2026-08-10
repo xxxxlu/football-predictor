@@ -1,5 +1,6 @@
 "use client";
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { DataStatePanel } from "@/components/data-state-panel";
 import { StatusMessage } from "@/components/status-message";
 import { useLocale } from "@/components/locale-provider";
@@ -35,6 +36,7 @@ function ResultList({ rows, title }: { rows: DailyResultRowPayload[]; title: str
     <h3 className="text-sm font-bold">{title}</h3>
     <ul className="mt-2 divide-y divide-[var(--line)]">
       {rows.map((row) => <li key={row.pulseId} className="flex flex-wrap items-center gap-3 py-2.5 text-sm">
+        <Avatar src={row.avatarUrl} version={row.avatarVersion} nickname={row.nickname} pulseId={row.pulseId} size={32} />
         <span className="font-bold">{row.nickname || row.pulseId}</span>
         <span className="text-xs text-[var(--muted)]">NO. {row.pulseId}</span>
         <span className="ml-auto flex items-center gap-3">

@@ -10,6 +10,7 @@ import {
   type UserSecuritySummary,
 } from "@pulse/domain";
 import type postgres from "postgres";
+import { clearAvatarWithin } from "../identity/avatar-projection.js";
 import { manageableAccountPredicate, readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { anonymizeAccountWithin, normalizeAuditEvent, type GovernanceAuditRow } from "./moderation-privacy.js";
 import { OperationError } from "./repository.js";
@@ -124,6 +125,33 @@ export class PostgresUserSecurityRepository {
       await tx`INSERT INTO identity.admin_account_audit_events (audit_id,actor_user_id,target_user_id,action,result,metadata,occurred_at)
         VALUES (${auditId},${actorUserId},${targetUserId},'SESSIONS_REVOKED','SUCCESS',${JSON.stringify({ reason, revokedSessions: revoked.length })}::text::jsonb,${now})`;
       return { targetUserId, revokedSessions: revoked.length, auditId };
+    });
+  }
+
+  /**
+   * Takes down a policy-violating avatar (Story 12.6). Deletes the row and books
+   * the object for deletion in the same transaction, so an operator removal can
+   * never leave the image readable in the bucket.
+   *
+   * Same gates as every other write here: USER_SECURITY_WRITE re-checked in the
+   * repository on top of the route's capability + fresh re-auth proof, no
+   * self-targeting, a justification, and an entry in the account audit trail.
+   * Idempotent — removing an avatar that is already gone succeeds with
+   * `removed: false` rather than a 404, and still leaves an audit record, because
+   * "an operator aimed a takedown at this account" is the fact worth keeping.
+   */
+  async removeAvatar(actorUserId: string, targetUserId: string, reason: string) {
+    const now = this.clock.now().toISOString(); const auditId = randomUUID();
+    return this.sql.begin(async (tx) => {
+      await this.assertCapability(actorUserId, "USER_SECURITY_WRITE", tx);
+      this.assertNotSelf(actorUserId, targetUserId);
+      const [target] = await tx<Array<{ id: string }>>`
+        SELECT id FROM identity.users WHERE ${manageableAccountPredicate(tx, targetUserId)} FOR UPDATE`;
+      if (!target) throw new OperationError("TARGET_NOT_MANAGEABLE", 422);
+      const object = await clearAvatarWithin(tx, targetUserId, now);
+      await tx`INSERT INTO identity.admin_account_audit_events (audit_id,actor_user_id,target_user_id,action,result,metadata,occurred_at)
+        VALUES (${auditId},${actorUserId},${targetUserId},'AVATAR_REMOVED','SUCCESS',${JSON.stringify({ reason, removed: object !== null })}::text::jsonb,${now})`;
+      return { targetUserId, removed: object !== null, auditId };
     });
   }
 

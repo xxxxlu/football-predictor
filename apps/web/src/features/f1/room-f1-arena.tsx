@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
+import { useVisibleInterval } from "@/lib/use-visible-interval";
 import { F1PredictionSlip } from "./prediction-slip";
 import {
   normalizeSessionDetail,
@@ -44,11 +45,9 @@ export function RoomF1Arena({ roomId, interactive }: {
     return () => controller.abort();
   }, [refreshTick]);
 
-  useEffect(() => {
-    // Keep this embedded panel aligned with worker-side F1 result confirmation.
-    const interval = window.setInterval(() => setRefreshTick((value) => value + 1), 60_000);
-    return () => window.clearInterval(interval);
-  }, []);
+  // Keep this embedded panel aligned with worker-side F1 result confirmation,
+  // while it is on screen.
+  useVisibleInterval(() => setRefreshTick((value) => value + 1), 60_000);
 
   const nearestId = sessions?.[0]?.id;
 

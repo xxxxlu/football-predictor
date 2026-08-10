@@ -14,6 +14,7 @@ import {
 } from "@pulse/domain";
 import type postgres from "postgres";
 
+import { avatarColumns, avatarJoinUnlessViewerBlocked, withAuthorAvatar } from "../identity/avatar-projection.js";
 import { isUniqueViolation } from "../identity/repository.js";
 import { OperationError } from "../operations/repository.js";
 import { closeExpiredMuteWindows } from "./mutes.js";
@@ -36,6 +37,12 @@ import { closeExpiredMuteWindows } from "./mutes.js";
 export type ChatSql = postgres.Sql;
 
 const OWNER_MUTE_PROJECTION_KEYS = ["muteId", "pulseId", "nickname", "mutedUntil"] as const;
+
+/** A chat row as the avatar join returns it, before the author pair is derived. */
+type ChatAuthorAvatarRow = Omit<ChatMessageProjection, "authorAvatarUrl" | "authorAvatarVersion"> & {
+  avatarPublicId: string | null;
+  avatarVersion: number | null;
+};
 
 interface MemberContext {
   roomStatus: "ACTIVE" | "RESTRICTED" | "CLOSED";
@@ -77,13 +84,23 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
       VALUES (${input.auditId},${input.actorUserId},${input.action},${input.targetType},${input.targetId},'SUCCESS',${JSON.stringify(input.metadata)}::text::jsonb,${input.occurredAt})`;
   }
 
-  const messageSelect = (tx: postgres.ISql, roomId: string) => tx`
+  /**
+   * Room chat stays block-agnostic on purpose (the 12.3 decision: a member's
+   * messages must not vanish from a shared room because someone blocked them).
+   * The avatar is the one part that does honour a block, and only in the
+   * viewer-directional sense: a blocker stops being shown the blocked member's
+   * photo, while the blocked member's own view is unchanged — a photo that
+   * disappeared for them would announce the block.
+   */
+  const messageSelect = (tx: postgres.ISql, roomId: string, viewerId: string) => tx`
     SELECT m.id, u.username_canonical AS "authorPulseId", u.nickname AS "authorNickname",
       m.body, m.created_at AS "createdAt",
-      (m.id = r.pinned_message_id) AS "isPinned"
+      (m.id = r.pinned_message_id) AS "isPinned",
+      ${avatarColumns(tx)}
     FROM room.messages m
     JOIN room.rooms r ON r.id = m.room_id
     JOIN identity.users u ON u.id = m.user_id
+    ${avatarJoinUnlessViewerBlocked(tx, viewerId)}
     WHERE m.room_id = ${roomId}
       AND NOT EXISTS (SELECT 1 FROM room.message_moderation mm
         WHERE mm.message_id = m.id AND mm.state = 'HIDDEN')`;
@@ -104,21 +121,22 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
         if (!cursor) throw new OperationError("INVALID_REQUEST", 422);
         cursorPredicate = sql`AND (m.created_at, m.id) < (${cursor.createdAt}, ${cursor.id})`;
       }
-      const page = await sql<ChatMessageProjection[]>`
-        ${messageSelect(sql, roomId)} ${cursorPredicate}
+      const page = await sql<ChatAuthorAvatarRow[]>`
+        ${messageSelect(sql, roomId, userId)} ${cursorPredicate}
         ORDER BY m.created_at DESC, m.id DESC
         LIMIT ${MESSAGE_PAGE_SIZE + 1}`;
       const hasMore = page.length > MESSAGE_PAGE_SIZE;
-      const messages = hasMore ? page.slice(0, MESSAGE_PAGE_SIZE) : page;
+      const messages = (hasMore ? page.slice(0, MESSAGE_PAGE_SIZE) : page).map(withAuthorAvatar) as ChatMessageProjection[];
       const last = messages[messages.length - 1];
       const cursor = hasMore && last
         ? encodeChatCursor({ createdAt: new Date(last.createdAt).toISOString(), id: last.id })
         : null;
 
-      const pinned = context.pinnedMessageId
-        ? ((await sql<ChatMessageProjection[]>`
-            ${messageSelect(sql, roomId)} AND m.id = ${context.pinnedMessageId} LIMIT 1`)[0] ?? null)
+      const pinnedRow = context.pinnedMessageId
+        ? ((await sql<ChatAuthorAvatarRow[]>`
+            ${messageSelect(sql, roomId, userId)} AND m.id = ${context.pinnedMessageId} LIMIT 1`)[0] ?? null)
         : null;
+      const pinned = pinnedRow ? (withAuthorAvatar(pinnedRow) as ChatMessageProjection) : null;
 
       assertMinimalChatProjection(messages);
       assertMinimalChatProjection(pinned);
@@ -182,13 +200,18 @@ export function createRoomChatRepository(sql: ChatSql, clock: () => Date = () =>
           INSERT INTO room.messages (room_id, user_id, body, created_at)
           VALUES (${roomId}, ${userId}, ${body}, ${nowIso})
           RETURNING id, created_at AS "createdAt"`;
-        const [author] = await tx<Array<{ pulseId: string; nickname: string | null }>>`
-          SELECT username_canonical AS "pulseId", nickname FROM identity.users WHERE id = ${userId} LIMIT 1`;
+        const [author] = await tx<Array<{ pulseId: string; nickname: string | null; avatarPublicId: string | null; avatarVersion: number | null }>>`
+          SELECT u.username_canonical AS "pulseId", u.nickname, ${avatarColumns(tx)}
+          FROM identity.users u ${avatarJoinUnlessViewerBlocked(tx, userId)}
+          WHERE u.id = ${userId} LIMIT 1`;
+        const authorAvatar = withAuthorAvatar(author!);
 
         const message: ChatMessageProjection = {
           id: inserted!.id,
           authorPulseId: author!.pulseId,
           authorNickname: author!.nickname,
+          authorAvatarUrl: authorAvatar.authorAvatarUrl,
+          authorAvatarVersion: authorAvatar.authorAvatarVersion,
           body,
           createdAt: inserted!.createdAt instanceof Date ? inserted!.createdAt : new Date(inserted!.createdAt),
           isPinned: false,

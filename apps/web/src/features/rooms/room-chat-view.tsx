@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Avatar } from "@/components/avatar";
 import { StatusMessage } from "@/components/status-message";
 import { useLocale } from "@/components/locale-provider";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
@@ -181,7 +182,8 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
   const renderMessage = (message: ChatMessageRecord, pinnedBanner = false) => (
     <li key={pinnedBanner ? `pinned-${message.id}` : message.id} className="py-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <p className="min-w-0 text-sm">
+        <p className="flex min-w-0 items-center gap-2 text-sm">
+          <Avatar src={message.authorAvatarUrl} version={message.authorAvatarVersion} nickname={message.authorNickname} pulseId={message.authorPulseId} size={32} />
           <b className="text-[var(--ink)]">{message.authorNickname || message.authorPulseId}</b>
           <span className="ml-2 text-xs text-[var(--muted)]">{new Date(message.createdAt).toLocaleString()}</span>
           {(pinnedBanner || message.isPinned) && <span className="ml-2 rounded-full border border-[var(--line)] px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide">{t("room.chat.pinnedLabel")}</span>}

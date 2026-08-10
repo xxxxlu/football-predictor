@@ -1,6 +1,7 @@
 import type postgres from "postgres";
-import { projectSubmissionBoard, type SubmissionSport, type SubmissionStatusRow } from "@pulse/domain";
-import { readOperatorAuthorization } from "../identity/operator-roles.js";
+import { avatarProjection, encodeKeysetCursor, projectSubmissionBoard, type KeysetCursor, type SubmissionSport, type SubmissionStatusRow } from "@pulse/domain";
+import { avatarColumns, avatarJoin, avatarJoinUnlessViewerBlocked } from "../identity/avatar-projection.js";
+import { readOperatorAuthorization, type OperatorAuthorization } from "../identity/operator-roles.js";
 
 export class OperationError extends Error {
   constructor(readonly code: string, readonly status: number, readonly details?: Record<string, unknown>) { super(code); this.name = "OperationError"; }
@@ -91,14 +92,40 @@ export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now
   };
 }
 
-export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; settledTickets: number };
+export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; settledTickets: number; avatarPublicId?: string | null; avatarVersion?: number | null };
 
 export function projectLeaderboard(rows: LeaderboardSourceRow[]) {
   return rows
     .map((row) => ({ ...row, net: Number(row.availablePoints) - Number(row.correctionDebt) - 10_000 }))
     .sort((a, b) => b.net - a.net || a.displayName.localeCompare(b.displayName))
-    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, settledTickets: row.settledTickets, movement: null }));
+    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, settledTickets: row.settledTickets, movement: null, ...avatarProjection(row) }));
 }
+
+/** Entries per ledger page. Unchanged from the pre-paging cap, so page one
+ *  still shows exactly what it always did — it is now simply not the last page. */
+export const LEDGER_PAGE_SIZE = 200;
+
+/** A hard ceiling on the leaderboard, cut from the bottom of the standing (the
+ *  query orders by net points) rather than at an arbitrary point. Rooms are
+ *  friend-sized groups and the schema imposes no member cap, so this is a
+ *  runaway guard, not a product limit. */
+export const LEADERBOARD_MAX_ROWS = 500;
+
+type LedgerBalanceRow = { available: string; frozen: string; debt: string };
+const ZERO_BALANCE: LedgerBalanceRow = { available: "0", frozen: "0", debt: "0" };
+
+/**
+ * Page one's stand-in cursor. Every real entry sorts strictly below it, so both
+ * pages run the same row-comparison — one statement, one plan, and the index
+ * range scan a `cursor IS NULL OR ...` disjunction would have thrown away.
+ *
+ * A finite timestamp, not `'infinity'`: postgres.js serializes anything the
+ * server describes as `timestamptz` through `new Date(x).toISOString()`
+ * (`postgres/src/types.js`), so Postgres's special timestamp inputs are not
+ * bindable as parameters at all — `'infinity'` becomes an Invalid Date and
+ * throws in the driver before a packet is sent.
+ */
+export const LEDGER_CURSOR_START: KeysetCursor = { createdAt: "9999-12-31T23:59:59.999Z", id: "ffffffff-ffff-ffff-ffff-ffffffffffff" };
 
 export type LedgerSourceRow = {
   id: string; roomId: string; kind: string; outcome: string | null; createdAt: DbTimestamp;
@@ -138,8 +165,10 @@ export class PostgresOperationsRepository {
   // only appears for an operator who actually holds the duty behind it. The
   // navigation is a convenience — every API still authorizes on its own.
   async getProfile(userId: string) {
-    const [row] = await this.sql<Array<{ id: string; username: string; nickname: string | null; superAdmin: boolean }>>`
-      SELECT id,username_canonical AS username,nickname,is_super_admin AS "superAdmin" FROM identity.users WHERE id=${userId} AND status='ACTIVE' LIMIT 1`;
+    const [row] = await this.sql<Array<{ id: string; username: string; nickname: string | null; superAdmin: boolean; avatarPublicId: string | null; avatarVersion: number | null }>>`
+      SELECT u.id,u.username_canonical AS username,u.nickname,u.is_super_admin AS "superAdmin",${avatarColumns(this.sql)}
+      FROM identity.users u ${avatarJoin(this.sql)}
+      WHERE u.id=${userId} AND u.status='ACTIVE' LIMIT 1`;
     if (!row) throw new OperationError("UNAUTHENTICATED", 401);
     const authorization = await readOperatorAuthorization(this.sql, userId);
     return {
@@ -149,6 +178,9 @@ export class PostgresOperationsRepository {
       roles: [row.superAdmin ? "super_admin" : "user"],
       operatorRoles: authorization.roles,
       capabilities: authorization.capabilities,
+      // Story 12.6: the account page reads its own avatar from the same call it
+      // already makes, so the member pass never renders an empty slot first.
+      ...avatarProjection(row),
     };
   }
 
@@ -196,24 +228,29 @@ export class PostgresOperationsRepository {
     // Sport-neutral wall: football fixtures and F1 sessions project through the
     // same domain allowlist. Only the submitted EXISTS boolean leaves the data
     // layer — selections, stakes and odds are never selected here.
-    type RawRow = { eventId: string; homeTeam: string; awayTeam: string; startsAt: DbTimestamp; lifecycleState: string; userId: string; displayName: string; submitted: boolean };
+    type RawRow = { eventId: string; homeTeam: string; awayTeam: string; startsAt: DbTimestamp; lifecycleState: string; userId: string; displayName: string; submitted: boolean; avatarPublicId: string | null; avatarVersion: number | null };
     const football = await this.sql<RawRow[]>`
       SELECT f.id AS "eventId",f.home_team_name AS "homeTeam",f.away_team_name AS "awayTeam",f.kickoff_at AS "startsAt",f.status AS "lifecycleState",
         m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
-        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id=f.id) AS submitted
+        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id=f.id) AS submitted,
+        ${avatarColumns(this.sql)}
       FROM supplier.fixtures f CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
+      ${avatarJoinUnlessViewerBlocked(this.sql, userId)}
       WHERE m.room_id=${roomId} ORDER BY f.kickoff_at,m.joined_at LIMIT 500`;
     const formula1 = await this.sql<RawRow[]>`
       SELECT 'f1:'||fs.id::text AS "eventId",fw.name AS "homeTeam",fs.kind AS "awayTeam",fs.starts_at AS "startsAt",fs.state AS "lifecycleState",
         m.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",
-        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id='f1:'||fs.id::text) AS submitted
+        EXISTS(SELECT 1 FROM prediction.tickets t WHERE t.room_id=m.room_id AND t.user_id=m.user_id AND t.fixture_id='f1:'||fs.id::text) AS submitted,
+        ${avatarColumns(this.sql)}
       FROM f1.sessions fs JOIN f1.race_weekends fw ON fw.id=fs.weekend_id
       CROSS JOIN room.members m JOIN identity.users u ON u.id=m.user_id
+      ${avatarJoinUnlessViewerBlocked(this.sql, userId)}
       WHERE m.room_id=${roomId} ORDER BY fs.starts_at,m.joined_at LIMIT 500`;
     const toDomainRow = (sport: SubmissionSport) => (row: RawRow): SubmissionStatusRow => ({
       sport, eventId: row.eventId, homeTeam: row.homeTeam, awayTeam: row.awayTeam,
       startsAt: timestampIso(row.startsAt), lifecycleState: row.lifecycleState,
       userId: row.userId, displayName: row.displayName, submitted: row.submitted,
+      ...avatarProjection(row),
     });
     const fixtures = projectSubmissionBoard(
       [...football.map(toDomainRow("FOOTBALL")), ...formula1.map(toDomainRow("FORMULA_1"))],
@@ -265,33 +302,115 @@ export class PostgresOperationsRepository {
         ORDER BY created_at DESC LIMIT 500`;
   }
 
-  async ledger(roomId: string, userId: string) {
+  /**
+   * The member's own money explanation, newest first.
+   *
+   * The running balance is a prefix sum from the account's first entry, which
+   * used to be read as `SUM(...) OVER (ORDER BY created_at, id)` — a window
+   * evaluated before `LIMIT`, so every open of the page re-scanned the account's
+   * entire history no matter how few rows were shown. It is derived instead
+   * from an anchor (the balance this page opens on) minus a window confined to
+   * the page itself. Page one costs a primary-key lookup plus the page; later
+   * pages add one aggregate over the rows already paged past.
+   *
+   * The anchor is exact because `ledger.point_accounts` is maintained as the
+   * sum of `ledger.entries` deltas: every insert site (room creation, join,
+   * prediction freeze, settlement, reversal) writes both in one transaction,
+   * and entries are append-only (`ledger_entries_idempotency_unique`, FK
+   * `ON DELETE RESTRICT`). It is also stable under concurrent writes — an entry
+   * landing mid-read raises the account balance and joins the backed-out set in
+   * equal measure. Balances stay in `numeric` end to end, so paging introduces
+   * no rounding.
+   */
+  async ledger(roomId: string, userId: string, options: { cursor?: KeysetCursor } = {}) {
     await this.assertMember(roomId, userId);
+    const { cursor } = options;
+    // The account row is the balance standing after the newest entry there is.
+    const [account] = await this.sql<LedgerBalanceRow[]>`
+      SELECT available_points::text AS available,frozen_points::text AS frozen,correction_debt::text AS debt
+      FROM ledger.point_accounts WHERE room_id=${roomId} AND user_id=${userId}`;
+    // No account row means no entries either; the empty page is the honest answer.
+    if (!account) return { entries: [], nextCursor: null };
+
+    // Past page one, back that out over every entry from the cursor row upward
+    // — the rows the reader has already been shown — to reach this page's
+    // opening balance. Derived server-side on purpose: a cursor carrying its own
+    // balances would let a tampered value render wrong numbers on the one screen
+    // whose whole job is explaining where the points went.
+    const [shown = ZERO_BALANCE] = cursor
+      ? await this.sql<LedgerBalanceRow[]>`
+        SELECT COALESCE(SUM(available_delta_points),0)::text AS available,COALESCE(SUM(frozen_delta_points),0)::text AS frozen,
+          COALESCE(SUM(correction_debt_delta_points),0)::text AS debt
+        FROM ledger.entries
+        WHERE room_id=${roomId} AND user_id=${userId} AND (created_at,id) >= (${cursor.createdAt}::timestamptz,${cursor.id}::uuid)`
+      : [ZERO_BALANCE];
+
     const rows = await this.sql<LedgerSourceRow[]>`
-      SELECT e.id,e.room_id AS "roomId",e.kind,e.created_at AS "createdAt",e.available_delta_points::text AS "availableDelta",e.frozen_delta_points::text AS "frozenDelta",
-        e.correction_debt_delta_points::text AS "debtDelta",
-        SUM(e.available_delta_points) OVER (ORDER BY e.created_at,e.id)::text AS "availableAfter",
-        SUM(e.frozen_delta_points) OVER (ORDER BY e.created_at,e.id)::text AS "frozenAfter",
-        SUM(e.correction_debt_delta_points) OVER (ORDER BY e.created_at,e.id)::text AS "debtAfter",e.ticket_id AS "ticketId",
-        e.settlement_version AS "settlementVersion",e.audit_id AS "auditId",e.reverses_ledger_id AS "reversesLedgerId",s.outcome,
-        EXISTS(SELECT 1 FROM prediction.settlements prior WHERE prior.ticket_id=e.ticket_id AND prior.settled_at<e.created_at) AS "hasPriorSettlement"
-      FROM ledger.entries e LEFT JOIN prediction.settlements s ON s.ledger_id=e.id
-      WHERE e.room_id=${roomId} AND e.user_id=${userId} ORDER BY e.created_at DESC,e.id DESC LIMIT 200`;
-    return { entries: rows.map(projectLedgerEntry), nextCursor: null };
+      WITH page AS (
+        SELECT e.id,e.room_id,e.kind,e.created_at,e.available_delta_points,e.frozen_delta_points,e.correction_debt_delta_points,
+          e.ticket_id,e.settlement_version,e.audit_id,e.reverses_ledger_id
+        FROM ledger.entries e
+        WHERE e.room_id=${roomId} AND e.user_id=${userId}
+          AND (e.created_at,e.id) < (${cursor?.createdAt ?? LEDGER_CURSOR_START.createdAt}::timestamptz,${cursor?.id ?? LEDGER_CURSOR_START.id}::uuid)
+        ORDER BY e.created_at DESC,e.id DESC LIMIT ${LEDGER_PAGE_SIZE + 1}
+      ), running AS (
+        SELECT p.*,
+          COALESCE(SUM(p.available_delta_points) OVER newer,0) AS newer_available,
+          COALESCE(SUM(p.frozen_delta_points) OVER newer,0) AS newer_frozen,
+          COALESCE(SUM(p.correction_debt_delta_points) OVER newer,0) AS newer_debt
+        FROM page p
+        WINDOW newer AS (ORDER BY p.created_at DESC,p.id DESC ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+      )
+      SELECT r.id,r.room_id AS "roomId",r.kind,r.created_at AS "createdAt",r.available_delta_points::text AS "availableDelta",r.frozen_delta_points::text AS "frozenDelta",
+        r.correction_debt_delta_points::text AS "debtDelta",
+        (${account.available}::numeric - ${shown.available}::numeric - r.newer_available)::text AS "availableAfter",
+        (${account.frozen}::numeric - ${shown.frozen}::numeric - r.newer_frozen)::text AS "frozenAfter",
+        (${account.debt}::numeric - ${shown.debt}::numeric - r.newer_debt)::text AS "debtAfter",r.ticket_id AS "ticketId",
+        r.settlement_version AS "settlementVersion",r.audit_id AS "auditId",r.reverses_ledger_id AS "reversesLedgerId",s.outcome,
+        EXISTS(SELECT 1 FROM prediction.settlements prior WHERE prior.ticket_id=r.ticket_id AND prior.settled_at<r.created_at) AS "hasPriorSettlement"
+      FROM running r LEFT JOIN prediction.settlements s ON s.ledger_id=r.id
+      ORDER BY r.created_at DESC,r.id DESC`;
+
+    // One row over the page size proves another page exists without a count(*).
+    const page = rows.slice(0, LEDGER_PAGE_SIZE);
+    const last = rows.length > LEDGER_PAGE_SIZE ? page[page.length - 1] : undefined;
+    return {
+      entries: page.map(projectLedgerEntry),
+      nextCursor: last ? encodeKeysetCursor({ createdAt: timestampIso(last.createdAt), id: last.id }) : null,
+    };
   }
 
   async leaderboard(roomId: string, userId: string) {
     await this.assertMember(roomId, userId);
+    // The settled count is a correlated subquery, not a join: joining every
+    // ticket in the room only to COUNT(...) FILTER it back down multiplied the
+    // scanned rows by each member's ticket history, and the GROUP BY existed
+    // solely to undo that. `prediction_tickets_room_user_idx` serves the
+    // subquery directly.
     const rows = await this.sql<LeaderboardSourceRow[]>`
       SELECT a.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",a.available_points::text AS "availablePoints",
-        a.frozen_points::text AS "frozenPoints",a.correction_debt::text AS "correctionDebt",COUNT(t.id) FILTER (WHERE t.status='SETTLED')::int AS "settledTickets"
-      FROM ledger.point_accounts a JOIN identity.users u ON u.id=a.user_id LEFT JOIN prediction.tickets t ON t.room_id=a.room_id AND t.user_id=a.user_id
-      WHERE a.room_id=${roomId} GROUP BY a.user_id,u.nickname,u.username_canonical,a.available_points,a.frozen_points,a.correction_debt`;
+        a.frozen_points::text AS "frozenPoints",a.correction_debt::text AS "correctionDebt",
+        (SELECT COUNT(*) FROM prediction.tickets t WHERE t.room_id=a.room_id AND t.user_id=a.user_id AND t.status='SETTLED')::int AS "settledTickets",
+        ${avatarColumns(this.sql)}
+      FROM ledger.point_accounts a JOIN identity.users u ON u.id=a.user_id
+      ${avatarJoinUnlessViewerBlocked(this.sql, userId)}
+      WHERE a.room_id=${roomId}
+      ORDER BY (a.available_points - a.correction_debt) DESC,"displayName" LIMIT ${LEADERBOARD_MAX_ROWS}`;
     return projectLeaderboard(rows);
   }
 
-  async adminStatus(userId: string) {
-    const authorization = await readOperatorAuthorization(this.sql, userId);
+  /**
+   * Operational health: supplier budget, cache freshness, settlement backlog
+   * and job counts.
+   *
+   * Takes the caller's already-resolved authorization rather than a user id.
+   * Its one caller — the overview — reads that authorization to decide which
+   * cards exist, and the by-id form used to make the identical read a second
+   * time just to run this capability check. The check still runs here, so this
+   * is not a "trust me" seam; and it takes the resolved authorization rather
+   * than a boolean so a caller cannot simply assert "yes, allowed".
+   */
+  async adminStatus(authorization: OperatorAuthorization) {
     if (!authorization.capabilities.includes("OPERATIONS_HEALTH_READ")) throw new OperationError("FORBIDDEN", 403);
     const now = this.clock.now(); const nowIso = now.toISOString(); const date = nowIso.slice(0, 10);
     // postgres.js 参数必须传 ISO 字符串而非 Date 实例：Next.js 运行时对全局 Date 做了插桩，

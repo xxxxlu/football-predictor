@@ -59,6 +59,9 @@ export interface DailyResultRowPayload {
   answered: boolean;
   correct: boolean | null;
   streak: number;
+  /** Story 12.6: same-origin media path, null when the member has no avatar. */
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
 }
 
 export interface DailyResultsPayload {

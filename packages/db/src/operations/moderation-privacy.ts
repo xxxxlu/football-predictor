@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { REDACTION_MARKER, resolveAuditActions, type AuditQuery, type Capability } from "@pulse/domain";
+import { clearAvatarWithin } from "../identity/avatar-projection.js";
 import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { OperationError } from "./repository.js";
 
@@ -37,6 +38,11 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
   await tx`UPDATE identity.auth_attempts SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
   await tx`UPDATE identity.security_events SET account_key=${`deleted:${opaque}`} WHERE account_key=${account.username}`;
   await tx`UPDATE identity.sessions SET revoked_at=${input.occurredAt} WHERE user_id=${input.userId} AND revoked_at IS NULL`;
+  // An avatar IS public identity, so removing the identity removes the photo —
+  // and books the object-storage copy for deletion in the same transaction.
+  // Dropping only the database reference would leave the member's face readable
+  // in the bucket after their account was deleted (Story 12.6).
+  await clearAvatarWithin(tx, input.userId, input.occurredAt);
   await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
     VALUES (${input.auditId},${input.actorUserId},'ACCOUNT_ANONYMIZED','USER',${input.userId},'SUCCESS',${JSON.stringify({ privacyRequestId: input.privacyRequestId, ...(input.reason ? { reason: input.reason } : {}) })}::text::jsonb,${input.occurredAt})`;
   return { anonymizedName };

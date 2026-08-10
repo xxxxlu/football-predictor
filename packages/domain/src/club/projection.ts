@@ -10,8 +10,8 @@
 const FORBIDDEN_KEY_PATTERN =
   /(room|ticket|ledger|balance|point|stake|odds|prediction|wallet|settle|invite|session|password|recovery|token|correctOption|answerKey)/i;
 
-/** Friend/room member result rows: identity + participation only. */
-export const CLUB_RESULT_PROJECTION_KEYS = ["pulseId", "nickname", "answered", "correct", "streak"] as const;
+/** Friend/room member result rows: identity + participation only (12.6 adds the avatar pair). */
+export const CLUB_RESULT_PROJECTION_KEYS = ["pulseId", "nickname", "answered", "correct", "streak", "avatarUrl", "avatarVersion"] as const;
 
 export function assertMinimalClubProjection(value: unknown, allowedKeys: readonly string[]): void {
   if (value === null || value === undefined) return;

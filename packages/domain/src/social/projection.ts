@@ -10,9 +10,20 @@
 const FORBIDDEN_KEY_PATTERN =
   /(room|ticket|ledger|balance|point|stake|odds|prediction|wallet|settle|invite|session|password|recovery|token)/i;
 
-export const FRIEND_LIST_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "online"] as const;
-export const FRIEND_REQUEST_PROJECTION_KEYS = ["requestId", "direction", "userId", "pulseId", "nickname", "createdAt"] as const;
-export const BLOCK_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "createdAt"] as const;
+/**
+ * Story 12.6 widens each allowlist by exactly two keys — `avatarUrl` and
+ * `avatarVersion` — and nothing else. The URL is a same-origin media path derived
+ * from the avatar row's random public id, so an avatar adds no identifier a
+ * friend payload did not already carry.
+ *
+ * The block list carries the pair for response-shape stability only: `listBlocks`
+ * always emits nulls there, because a block must stop serving either side the
+ * other's photo (the AC2 symmetry rule). The UI renders its low-emphasis initials
+ * fallback from the nickname it already shows.
+ */
+export const FRIEND_LIST_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "online", "avatarUrl", "avatarVersion"] as const;
+export const FRIEND_REQUEST_PROJECTION_KEYS = ["requestId", "direction", "userId", "pulseId", "nickname", "createdAt", "avatarUrl", "avatarVersion"] as const;
+export const BLOCK_PROJECTION_KEYS = ["userId", "pulseId", "nickname", "createdAt", "avatarUrl", "avatarVersion"] as const;
 export const PRESENCE_PREFERENCES_PROJECTION_KEYS = ["showOnlineToFriends", "showLobbyToFriends", "showInLobbyDirectory"] as const;
 
 /**

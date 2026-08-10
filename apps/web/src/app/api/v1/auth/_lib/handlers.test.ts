@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { AuthError } from "@pulse/domain";
 import { createAuthHandlers } from "./handlers.js";
 
+const LOGIN_PRIVACY = {
+  privacyConsent: true,
+  deviceInfo: { platform: "iPhone", language: "zh-TW", maxTouchPoints: 5, displayMode: "browser" },
+  preferences: { locale: "zh-TW", timezone: "Asia/Taipei", colorScheme: "dark" },
+} as const;
+
 function request(path: string, body?: unknown, cookie?: string) {
   return new Request(`https://example.test${path}`, {
     method: "POST",
@@ -20,7 +26,8 @@ function setup() {
     changePassword: vi.fn().mockResolvedValue({ sessionToken: "rotated-token", expiresAt: new Date("2026-08-12T10:00:00Z"), mustChangePassword: false }),
     reauthenticate: vi.fn().mockResolvedValue({ proofToken: "proof-token", expiresAt: new Date("2026-07-13T10:05:00Z") }),
   };
-  return { service, handlers: createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: true }) };
+  const privacyRecorder = { recordLoginConsent: vi.fn().mockResolvedValue([]) };
+  return { service, privacyRecorder, handlers: createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: true, privacyRecorder }) };
 }
 
 describe("auth HTTP handlers", () => {
@@ -35,7 +42,7 @@ describe("auth HTTP handlers", () => {
   it("routes a seeded super-admin to mandatory password change, then rotates the session cookie", async () => {
     const { handlers, service } = setup();
     service.login.mockResolvedValueOnce({ sessionToken: "initial-token", expiresAt: new Date("2026-08-12T10:00:00Z"), userId: "admin-1", mustChangePassword: true });
-    const login = await handlers.login(request("/api/v1/auth/login", { username: "ops_admin", password: "initial-password-123" }));
+    const login = await handlers.login(request("/api/v1/auth/login", { username: "ops_admin", password: "initial-password-123", ...LOGIN_PRIVACY }));
     expect(await login.json()).toEqual({ data: { redirectTo: "/change-password", mustChangePassword: true } });
 
     const changed = await handlers.changePassword(request("/api/v1/auth/change-password", { currentPassword: "initial-password-123", newPassword: "rotated-password-456" }, "fp_session=initial-token"));
@@ -52,13 +59,20 @@ describe("auth HTTP handlers", () => {
   });
 
   it("sets and clears an HttpOnly session cookie", async () => {
-    const { handlers, service } = setup();
-    const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123" }));
+    const { handlers, service, privacyRecorder } = setup();
+    const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123", ...LOGIN_PRIVACY }));
     expect(await login.json()).toEqual({ data: { redirectTo: "/rooms", mustChangePassword: false } });
     expect(login.headers.get("set-cookie")).toContain("fp_session=opaque-token");
     expect(login.headers.get("set-cookie")).toContain("HttpOnly");
     expect(login.headers.get("set-cookie")).toContain("SameSite=Lax");
     expect(login.headers.get("set-cookie")).toContain("Secure");
+    expect(privacyRecorder.recordLoginConsent).toHaveBeenCalledWith(
+      "user-1",
+      LOGIN_PRIVACY.deviceInfo,
+      { ...LOGIN_PRIVACY.preferences, privacyPolicyVersion: "privacy-2026-08-07" },
+      "unknown",
+      "",
+    );
 
     const logout = await handlers.logout(request("/api/v1/auth/logout", undefined, "fp_session=opaque-token"));
     expect(service.logout).toHaveBeenCalledWith("opaque-token");
@@ -66,9 +80,9 @@ describe("auth HTTP handlers", () => {
   });
 
   it("does not mark a local HTTP development cookie as Secure", async () => {
-    const service = setup().service;
-    const handlers = createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: false });
-    const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123" }));
+    const { service, privacyRecorder } = setup();
+    const handlers = createAuthHandlers(service, { rulesVersion: "rules-2026-07", secureCookie: false, privacyRecorder });
+    const login = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "correct-horse-123", ...LOGIN_PRIVACY }));
 
     expect(login.headers.get("set-cookie")).toContain("HttpOnly");
     expect(login.headers.get("set-cookie")).not.toContain("Secure");
@@ -79,7 +93,7 @@ describe("auth HTTP handlers", () => {
     const response = await handlers.login(new Request("http://localhost:3001/api/v1/auth/login", {
       method: "POST",
       headers: { host: "127.0.0.1:3001", origin: "http://127.0.0.1:3001", "content-type": "application/json" },
-      body: JSON.stringify({ username: "alice", password: "correct-horse-123" }),
+      body: JSON.stringify({ username: "alice", password: "correct-horse-123", ...LOGIN_PRIVACY }),
     }));
 
     expect(response.status).toBe(200);
@@ -88,9 +102,39 @@ describe("auth HTTP handlers", () => {
   it("returns a stable error envelope without sensitive details", async () => {
     const { handlers, service } = setup();
     service.login.mockRejectedValueOnce(new AuthError("INVALID_CREDENTIALS", 401, "Check the username and password, then try again."));
-    const response = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "wrong-password-123" }));
+    const response = await handlers.login(request("/api/v1/auth/login", { username: "alice", password: "wrong-password-123", ...LOGIN_PRIVACY }));
     expect(response.status).toBe(401);
     expect(await response.json()).toEqual({ error: { code: "INVALID_CREDENTIALS", message: "Check the username and password, then try again." } });
+  });
+
+  it("requires an affirmative privacy checkbox before authenticating", async () => {
+    const { handlers, service, privacyRecorder } = setup();
+    const response = await handlers.login(request("/api/v1/auth/login", {
+      username: "alice",
+      password: "correct-horse-123",
+      privacyConsent: false,
+      deviceInfo: LOGIN_PRIVACY.deviceInfo,
+      preferences: LOGIN_PRIVACY.preferences,
+    }));
+
+    expect(response.status).toBe(422);
+    expect(service.login).not.toHaveBeenCalled();
+    expect(privacyRecorder.recordLoginConsent).not.toHaveBeenCalled();
+  });
+
+  it("revokes the newly-created session if privacy persistence fails", async () => {
+    const { handlers, service, privacyRecorder } = setup();
+    privacyRecorder.recordLoginConsent.mockRejectedValueOnce(new Error("database unavailable"));
+
+    const response = await handlers.login(request("/api/v1/auth/login", {
+      username: "alice",
+      password: "correct-horse-123",
+      ...LOGIN_PRIVACY,
+    }));
+
+    expect(response.status).toBe(500);
+    expect(service.logout).toHaveBeenCalledWith("opaque-token");
+    expect(response.headers.get("set-cookie")).toBeNull();
   });
 
   it("maps recovery and never creates a session implicitly", async () => {

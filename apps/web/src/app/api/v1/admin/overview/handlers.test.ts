@@ -14,13 +14,17 @@ function request(path: string, init: RequestInit & { session?: string; proof?: s
   return new Request(`${ORIGIN}${path}`, { ...init, headers });
 }
 
-function identity(overrides: Partial<{ requireCapability: unknown; authorizeCapabilityAction: unknown }> = {}) {
+function identity(overrides: Partial<{ requireCapability: unknown; authorizeCapabilityAction: unknown; resolveOperator: unknown }> = {}) {
   return {
     requireCapability: vi.fn(async () => ({ id: "operator-1" })),
     authorizeCapabilityAction: vi.fn(async () => ({ id: "operator-1" })),
+    resolveOperator: vi.fn(async () => ({ account: { id: "operator-1" }, capabilities: [...OVERVIEW_CAPABILITIES] })),
     ...overrides,
   };
 }
+
+/** An operator holding exactly the duties listed, and nothing else. */
+const holding = (...capabilities: string[]) => vi.fn(async () => ({ account: { id: "mod-1" }, capabilities }));
 
 function operations(overrides: Record<string, unknown> = {}) {
   return {
@@ -42,14 +46,9 @@ const forbidden = () => { throw new AuthError("FORBIDDEN", 403, "You do not have
 
 describe("operations overview route", () => {
   it("admits an account holding any one operational read duty", async () => {
-    // A community moderator holds only ROOM_REPORT_READ, which is the fourth
-    // candidate — the route must keep trying rather than refuse on the first miss.
-    const identityStub = identity({
-      requireCapability: vi.fn(async (_token: string, capability: string) => {
-        if (capability !== "ROOM_REPORT_READ") forbidden();
-        return { id: "mod-1" };
-      }),
-    });
+    // A community moderator holds only ROOM_REPORT_READ, which is not the first
+    // candidate — admission must not depend on where the duty sits in the list.
+    const identityStub = identity({ resolveOperator: holding("ROOM_REPORT_READ") });
     const operationsStub = operations();
     const response = await handlersFor(identityStub, operationsStub).overview(request("/api/v1/admin/overview"));
     expect(response.status).toBe(200);
@@ -57,22 +56,33 @@ describe("operations overview route", () => {
     expect(operationsStub.overview).toHaveBeenCalledWith("mod-1");
   });
 
+  it("resolves the operator once no matter which duty admits them", async () => {
+    // The gate used to ask "do you hold X?" once per candidate, and every ask
+    // re-read the session: five storage reads to answer one overview, worst for
+    // the operator whose single duty happened to sit last.
+    const identityStub = identity({ resolveOperator: holding("AUDIT_READ") });
+    const response = await handlersFor(identityStub, operations()).overview(request("/api/v1/admin/overview"));
+    expect(response.status).toBe(200);
+    expect(identityStub.resolveOperator).toHaveBeenCalledTimes(1);
+    expect(identityStub.requireCapability).not.toHaveBeenCalled();
+  });
+
   it("refuses an account with no operational duty at all", async () => {
-    const identityStub = identity({ requireCapability: vi.fn(async () => forbidden()) });
+    const identityStub = identity({ resolveOperator: holding() });
     const operationsStub = operations();
     const response = await handlersFor(identityStub, operationsStub).overview(request("/api/v1/admin/overview"));
     expect(response.status).toBe(403);
-    expect(identityStub.requireCapability).toHaveBeenCalledTimes(OVERVIEW_CAPABILITIES.length);
+    expect(identityStub.resolveOperator).toHaveBeenCalledTimes(1);
     expect(operationsStub.overview).not.toHaveBeenCalled();
   });
 
-  it("reports an expired session as unauthenticated rather than trying the next duty", async () => {
+  it("reports an expired session as unauthenticated rather than as a permission problem", async () => {
     const identityStub = identity({
-      requireCapability: vi.fn(async () => { throw new AuthError("SESSION_EXPIRED", 401, "Log in again to continue."); }),
+      resolveOperator: vi.fn(async () => { throw new AuthError("SESSION_EXPIRED", 401, "Log in again to continue."); }),
     });
     const response = await handlersFor(identityStub, operations()).overview(request("/api/v1/admin/overview"));
     expect(response.status).toBe(401);
-    expect(identityStub.requireCapability).toHaveBeenCalledTimes(1);
+    expect(identityStub.resolveOperator).toHaveBeenCalledTimes(1);
   });
 
   it("refuses a request with no session before touching the repository", async () => {

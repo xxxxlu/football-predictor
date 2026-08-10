@@ -57,6 +57,8 @@ export interface ChannelMessageProjection {
   id: string;
   authorPulseId: string;
   authorNickname: string | null;
+  authorAvatarUrl: string | null;
+  authorAvatarVersion: number | null;
   body: string;
   createdAt: Date;
 }
@@ -65,12 +67,14 @@ export const CHANNEL_MESSAGE_PROJECTION_KEYS = [
   "id",
   "authorPulseId",
   "authorNickname",
+  "authorAvatarUrl",
+  "authorAvatarVersion",
   "body",
   "createdAt",
 ] as const;
 
-/** The lobby directory: opted-in, present, and nothing but the public pair. */
-export const LOBBY_DIRECTORY_PROJECTION_KEYS = ["pulseId", "nickname"] as const;
+/** The lobby directory: opted-in, present, and nothing but the public pair (plus its avatar). */
+export const LOBBY_DIRECTORY_PROJECTION_KEYS = ["pulseId", "nickname", "avatarUrl", "avatarVersion"] as const;
 
 /**
  * Friend activity is a composed read model (12.1 presence × 12.2 challenge
@@ -79,7 +83,7 @@ export const LOBBY_DIRECTORY_PROJECTION_KEYS = ["pulseId", "nickname"] as const;
  * `inLobby` is the reader for the 12.1 `show_lobby_to_friends` toggle: friends
  * only, gated on that consent column and the presence TTL.
  */
-export const FRIEND_ACTIVITY_PROJECTION_KEYS = ["pulseId", "nickname", "online", "inLobby", "answeredToday"] as const;
+export const FRIEND_ACTIVITY_PROJECTION_KEYS = ["pulseId", "nickname", "online", "inLobby", "answeredToday", "avatarUrl", "avatarVersion"] as const;
 
 /**
  * Forbidden categories for anything the lobby ships. `room` is on the list —

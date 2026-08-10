@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import { accessEvents, adminAccountAuditEvents, authAttempts, friendRequestEvents, friendships, identityUsers, operatorRoleGrants, presenceSignals, reauthProofs, ruleAcceptances, sessions, userBlocks } from "./schema.js";
+import { accessEvents, adminAccountAuditEvents, authAttempts, avatarChangeEvents, avatarObjectDeletions, friendRequestEvents, friendships, identityUsers, operatorRoleGrants, presenceSignals, reauthProofs, ruleAcceptances, sessions, userAvatars, userBlocks } from "./schema.js";
 
 describe("identity database schema", () => {
   it("keeps credentials and sessions as hashes with unique account identity", () => {
@@ -119,6 +119,66 @@ describe("identity database schema", () => {
     // Physical isolation: the SQL itself (comments stripped) must never touch reward-side schemas.
     const sqlOnly = migration.replace(/--[^\n]*/g, "");
     expect(sqlOnly).not.toMatch(/"room"\.|"predictions"\.|balance|ledger|settle/i);
+  });
+
+  it("stores an avatar as a storage handle plus metadata — never the image itself", () => {
+    const avatars = getTableConfig(userAvatars);
+    expect(avatars.schema).toBe("identity");
+    const columns = avatars.columns.map((column) => column.name);
+    expect(columns).toEqual(
+      expect.arrayContaining(["user_id", "public_id", "file_id", "object_key", "content_type", "byte_size", "width", "height", "version", "moderation_status"]),
+    );
+    // No image bytes in Postgres, in any spelling.
+    expect(columns).not.toEqual(expect.arrayContaining(["data", "bytes", "image", "base64", "data_url", "content", "blob"]));
+    // Nor a temporary CDN URL: it expires, and a stored expired URL is worse than none.
+    expect(columns.some((name) => /url|cdn|signed|token/.test(name))).toBe(false);
+    // Nothing here can identify the uploader's device or the original file.
+    expect(columns.some((name) => /exif|gps|latitude|longitude|filename|file_name|device/.test(name))).toBe(false);
+    expect(avatars.uniqueConstraints.some((constraint) => constraint.columns.some((column) => column.name === "public_id"))).toBe(true);
+    expect(avatars.uniqueConstraints.some((constraint) => constraint.columns.some((column) => column.name === "object_key"))).toBe(true);
+  });
+
+  it("keeps the object-deletion queue free of any account reference so it outlives the account", () => {
+    const queue = getTableConfig(avatarObjectDeletions);
+    const columns = queue.columns.map((column) => column.name);
+    expect(columns).toEqual(expect.arrayContaining(["object_key", "file_id", "enqueued_at", "attempts", "deleted_at"]));
+    // A user_id or an FK here would cascade the queue row away with the account,
+    // leaving the image readable in the bucket forever.
+    expect(columns).not.toContain("user_id");
+    expect(queue.foreignKeys).toHaveLength(0);
+    expect(getTableConfig(avatarChangeEvents).columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(["user_id", "occurred_at"]),
+    );
+    expect(getTableConfig(avatarChangeEvents).indexes.map((index) => index.config.name)).toContain("avatar_change_events_user_time_idx");
+  });
+
+  it("migration 0030 enforces the avatar invariants in the database, not in application code", async () => {
+    const migration = await readFile(new URL("../../migrations/0030_user_avatar.sql", import.meta.url), "utf8");
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."user_avatars"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."avatar_change_events"');
+    expect(migration).toContain('CREATE TABLE IF NOT EXISTS "identity"."avatar_object_deletions"');
+    // Deleting the account takes its avatar row with it.
+    expect(migration).toMatch(/REFERENCES "identity"\."users"\("id"\) ON DELETE CASCADE/);
+    // One output format, one shape, one bounded size.
+    expect(migration).toContain(`CHECK ("content_type" = 'image/webp')`);
+    expect(migration).toContain(`CHECK ("byte_size" > 0 AND "byte_size" <= 524288)`);
+    expect(migration).toMatch(/"width" = "height"/);
+    // The storage path can only ever be random segments plus a version.
+    expect(migration).toMatch(/\^avatars\/\[0-9a-f\]\{8\}/);
+    // Version is monotonic and the public handle is immutable, enforced by trigger.
+    expect(migration).toContain('CREATE OR REPLACE FUNCTION "identity"."user_avatars_guard"()');
+    expect(migration).toMatch(/IF NEW\."version" <= OLD\."version" THEN/);
+    expect(migration).toMatch(/IF NEW\."public_id" <> OLD\."public_id" THEN/);
+    expect(migration).toContain('DROP TRIGGER IF EXISTS "user_avatars_guard"');
+    // The audit vocabulary is widened, never replaced.
+    expect(migration).toMatch(/DROP CONSTRAINT IF EXISTS "admin_account_audit_events_action_check"/);
+    expect(migration).toMatch(/'ACCOUNT_DISABLED','ACCOUNT_RESTORED','OPERATOR_ROLE_GRANTED','OPERATOR_ROLE_REVOKED','SESSIONS_REVOKED','AVATAR_REMOVED'/);
+    // No image bytes, and no reach into the reward side (the 0023 isolation rule).
+    const sqlOnly = migration.replace(/--[^\n]*/g, "");
+    expect(sqlOnly).not.toMatch(/bytea|base64|data_url/i);
+    expect(sqlOnly).not.toMatch(/"room"\.|"predictions"\.|balance|ledger|settle/i);
+    // The avatar never becomes a privacy.collected_data payload.
+    expect(sqlOnly).not.toMatch(/privacy\./i);
   });
 
   it("stores registration/login audience context without device fingerprint identifiers", () => {

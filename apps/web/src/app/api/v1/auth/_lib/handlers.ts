@@ -3,6 +3,11 @@ import { z } from "zod";
 import { assertSameOrigin } from "../../_lib/request-origin";
 import { accessContext, sourceKey } from "./runtime";
 import type { AccessContext } from "@pulse/domain";
+import { readCookie } from "./session-token";
+import { deviceInfoSchema, preferencesSchema, type DeviceInfoInput, type PreferencesInput } from "../../_lib/privacy-input";
+export { readReauthProof, readSessionToken } from "./session-token";
+
+const LOGIN_PRIVACY_POLICY_VERSION = "privacy-2026-08-07";
 
 const registerSchema = z.object({
   username: z.string(),
@@ -10,7 +15,13 @@ const registerSchema = z.object({
   ageConfirmed: z.literal(true),
   nonCashTermsAccepted: z.literal(true),
 });
-const loginSchema = z.object({ username: z.string(), password: z.string() });
+const loginSchema = z.object({
+  username: z.string(),
+  password: z.string(),
+  privacyConsent: z.literal(true),
+  deviceInfo: deviceInfoSchema,
+  preferences: preferencesSchema,
+}).strict();
 const recoverySchema = z.object({ username: z.string(), recoveryCode: z.string().min(1), newPassword: z.string() });
 const passwordChangeSchema = z.object({ currentPassword: z.string(), newPassword: z.string() });
 const reauthSchema = z.object({ password: z.string() });
@@ -25,7 +36,17 @@ interface AuthService {
   reauthenticate(input: { sessionToken: string; password: string }): Promise<{ proofToken: string; expiresAt: Date }>;
 }
 
-export function createAuthHandlers(service: AuthService, options: { rulesVersion: string; secureCookie: boolean }) {
+interface LoginPrivacyRecorder {
+  recordLoginConsent(
+    userId: string,
+    deviceInfo: DeviceInfoInput,
+    preferences: PreferencesInput,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<unknown>;
+}
+
+export function createAuthHandlers(service: AuthService, options: { rulesVersion: string; secureCookie: boolean; privacyRecorder: LoginPrivacyRecorder }) {
   return {
     register: (request: Request) => execute(async () => {
       assertSameOrigin(request);
@@ -42,7 +63,21 @@ export function createAuthHandlers(service: AuthService, options: { rulesVersion
     login: (request: Request) => execute(async () => {
       assertSameOrigin(request);
       const input = loginSchema.parse(await request.json());
-      const result = await service.login({ ...input, sourceKey: sourceKey(request), accessContext: accessContext(request) });
+      const context = accessContext(request);
+      const result = await service.login({ username: input.username, password: input.password, sourceKey: sourceKey(request), accessContext: context });
+      try {
+        await options.privacyRecorder.recordLoginConsent(
+          result.userId,
+          input.deviceInfo,
+          { ...input.preferences, privacyPolicyVersion: LOGIN_PRIVACY_POLICY_VERSION },
+          context.ipAddress,
+          context.userAgent,
+        );
+      } catch (error) {
+        // Do not leave an undisclosed active session when consent persistence fails.
+        await service.logout(result.sessionToken).catch(() => undefined);
+        throw error;
+      }
       const response = json({ data: { redirectTo: result.mustChangePassword ? "/change-password" : "/rooms", mustChangePassword: result.mustChangePassword } });
       response.headers.append("set-cookie", sessionCookie(result.sessionToken, result.expiresAt, options.secureCookie));
       return response;
@@ -118,17 +153,3 @@ function clearSessionCookie(secure: boolean) {
 function reauthCookie(token: string, expiresAt: Date, secure: boolean) {
   return `fp_reauth=${encodeURIComponent(token)}; Path=/api/v1/admin; HttpOnly; SameSite=Strict; Expires=${expiresAt.toUTCString()}${secure ? "; Secure" : ""}`;
 }
-
-function readCookie(header: string | null, name: string) {
-  for (const pair of header?.split(";") ?? []) {
-    const [key, ...parts] = pair.trim().split("=");
-    if (key === name) return decodeURIComponent(parts.join("="));
-  }
-  return null;
-}
-
-export function readSessionToken(request: Request) {
-  return readCookie(request.headers.get("cookie"), "fp_session");
-}
-
-export function readReauthProof(request: Request) { return readCookie(request.headers.get("cookie"), "fp_reauth"); }

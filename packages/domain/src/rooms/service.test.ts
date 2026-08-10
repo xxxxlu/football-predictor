@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { RoomError, RoomService, type RoomRepository, type RoomSummaryRecord } from "./service.js";
+import { encodeKeysetCursor, type KeysetCursor } from "./keyset-cursor.js";
+import { ACTIVE_ROOMS_PER_OWNER, PUBLIC_ROOM_PAGE_SIZE, RoomError, roomCreationRefusal, RoomService, ROOMS_PER_DAY, ROOMS_PER_HOUR, type PublicRoomPage, type RoomRepository, type RoomSummaryRecord } from "./service.js";
 
 class MemoryRoomRepository implements RoomRepository {
-  rooms = new Map<string, RoomSummaryRecord & { inviteHash: string | null; ownerId: string }>();
+  rooms = new Map<string, RoomSummaryRecord & { inviteHash: string | null; ownerId: string; createdAt: Date }>();
   members = new Map<string, { userId: string; role: "OWNER" | "MEMBER"; rulesVersion: string }>();
   balances = new Map<string, { availablePoints: string; frozenPoints: string; correctionDebt: string }>();
   ledger: Array<{ roomId: string; userId: string; kind: string; amount: string }> = [];
 
   async createRoom(input: Parameters<RoomRepository["createRoom"]>[0]) {
-    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, tier: input.tier, sport: input.sport, preMatchStakeVisible: false, postMatchTicketVisible: true, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId });
+    this.rooms.set(input.id, { id: input.id, name: input.name, status: "ACTIVE", visibility: input.visibility, tier: input.tier, sport: input.sport, preMatchStakeVisible: false, postMatchTicketVisible: true, memberCount: 1, role: "OWNER", inviteHash: input.inviteTokenHash, ownerId: input.ownerId, createdAt: input.now });
     this.members.set(`${input.id}:${input.ownerId}`, { userId: input.ownerId, role: "OWNER", rulesVersion: input.rulesVersion });
     this.balances.set(`${input.id}:${input.ownerId}`, { availablePoints: input.initialPoints, frozenPoints: "0.00", correctionDebt: "0.00" });
     this.ledger.push({ roomId: input.id, userId: input.ownerId, kind: "INITIAL_GRANT", amount: input.initialPoints });
@@ -37,10 +38,25 @@ class MemoryRoomRepository implements RoomRepository {
     }
     return { roomId: room.id, joined };
   }
-  async listPublicRooms(userId: string) {
-    return [...this.rooms.values()].filter((room) => room.visibility === "PUBLIC" && room.status === "ACTIVE").map((room) => ({
-      id: room.id, name: room.name, ownerName: room.ownerId, sport: room.sport, memberCount: room.memberCount, joined: this.members.has(`${room.id}:${userId}`),
-    }));
+  /** Pages exactly as the real repository does — same order, same page size,
+   *  same strict (createdAt, id) comparison. A fake that returned everything
+   *  would let an unpaged regression walk straight through these tests. */
+  async listPublicRooms(userId: string, options: { cursor?: KeysetCursor } = {}): Promise<PublicRoomPage> {
+    const ordered = [...this.rooms.values()]
+      .filter((room) => room.visibility === "PUBLIC" && room.status === "ACTIVE")
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+    const after = options.cursor;
+    const remaining = after
+      ? ordered.filter((room) => `${room.createdAt.toISOString()}|${room.id}` > `${after.createdAt}|${after.id}`)
+      : ordered;
+    const page = remaining.slice(0, PUBLIC_ROOM_PAGE_SIZE);
+    const last = page[page.length - 1];
+    return {
+      rooms: page.map((room) => ({
+        id: room.id, name: room.name, ownerName: room.ownerId, sport: room.sport, memberCount: room.memberCount, joined: this.members.has(`${room.id}:${userId}`),
+      })),
+      cursor: remaining.length > PUBLIC_ROOM_PAGE_SIZE && last ? encodeKeysetCursor({ createdAt: last.createdAt.toISOString(), id: last.id }) : null,
+    };
   }
   async joinPublicRoom(input: Parameters<RoomRepository["joinPublicRoom"]>[0]) {
     const room = this.rooms.get(input.roomId);
@@ -83,7 +99,12 @@ class MemoryRoomRepository implements RoomRepository {
 }
 
 let sequence = 0;
-const tokens = { inviteToken: () => `invite-${++sequence}`, hash: (value: string) => `hash-${value}`, id: () => `id-${++sequence}` };
+/** Room ids are UUIDs in production (`randomUUID`), and the lobby cursor
+ *  decoder refuses a non-UUID id — a fake that minted `id-1` would make a
+ *  perfectly good cursor look malformed. Zero-padded so the sequence also
+ *  sorts the way the real (created_at, id) keyset does. */
+const testUuid = (value: number) => `00000000-0000-4000-8000-${String(value).padStart(12, "0")}`;
+const tokens = { inviteToken: () => `invite-${++sequence}`, hash: (value: string) => `hash-${value}`, id: () => testUuid(++sequence) };
 const now = new Date("2026-07-13T12:00:00Z");
 function setup() { const repository = new MemoryRoomRepository(); return { repository, service: new RoomService(repository, tokens, () => now, { rulesVersion: "rooms-2026-07", initialPoints: "10000.00" }) }; }
 
@@ -128,7 +149,7 @@ describe("RoomService", () => {
   it("lists and idempotently joins active public rooms after rules confirmation", async () => {
     const { repository, service } = setup();
     const room = await service.create({ userId: "alice", name: "公开看球局", visibility: "PUBLIC", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
-    await expect(service.listPublic("bob")).resolves.toEqual([{ id: room.id, name: "公开看球局", ownerName: "alice", sport: "FOOTBALL", memberCount: 1, joined: false }]);
+    await expect(service.listPublic("bob")).resolves.toEqual({ rooms: [{ id: room.id, name: "公开看球局", ownerName: "alice", sport: "FOOTBALL", memberCount: 1, joined: false }], cursor: null });
     await expect(service.joinPublic({ roomId: room.id, userId: "bob", rulesAccepted: true })).resolves.toEqual({ roomId: room.id, joined: true });
     await expect(service.joinPublic({ roomId: room.id, userId: "bob", rulesAccepted: true })).resolves.toEqual({ roomId: room.id, joined: false });
     expect(repository.ledger.filter((entry) => entry.userId === "bob")).toHaveLength(1);
@@ -170,5 +191,84 @@ describe("RoomService", () => {
     await expect(service.updatePostMatchTicketVisibility(room.id, "alice", false)).resolves.toMatchObject({ roomId: room.id, postMatchTicketVisible: false });
     await expect(service.getRoom(room.id, "alice")).resolves.toMatchObject({ preMatchStakeVisible: false, postMatchTicketVisible: false });
     await expect(service.updatePostMatchTicketVisibility(room.id, "mallory", true)).rejects.toMatchObject({ code: "ROOM_OWNER_REQUIRED", status: 403 });
+  });
+});
+
+// The lobby used to return every ACTIVE public room ever opened. Combined with
+// unlimited room creation that is an unbounded response, and the CloudBase
+// gateway caps one at ~2 MB — the lobby would stop working rather than degrade.
+describe("public lobby paging", () => {
+  async function seedPublicRooms(service: RoomService, count: number) {
+    for (let index = 0; index < count; index += 1) {
+      await service.create({ userId: `owner-${index}`, name: `房间 ${index}`, visibility: "PUBLIC", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true });
+    }
+  }
+
+  it("caps a page and offers a cursor only while rooms remain", async () => {
+    const { service } = setup();
+    await seedPublicRooms(service, PUBLIC_ROOM_PAGE_SIZE + 5);
+    const first = await service.listPublic("bob");
+    expect(first.rooms).toHaveLength(PUBLIC_ROOM_PAGE_SIZE);
+    expect(first.cursor).toEqual(expect.any(String));
+
+    const second = await service.listPublic("bob", { cursor: first.cursor! });
+    expect(second.rooms).toHaveLength(5);
+    // The end of the list says so, rather than handing back a cursor that
+    // returns an empty page forever.
+    expect(second.cursor).toBeNull();
+  });
+
+  it("walks every room exactly once across pages", async () => {
+    const { service } = setup();
+    await seedPublicRooms(service, PUBLIC_ROOM_PAGE_SIZE * 2);
+    const seen: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page: PublicRoomPage = await service.listPublic("bob", cursor ? { cursor } : {});
+      seen.push(...page.rooms.map((room) => room.id));
+      cursor = page.cursor;
+    } while (cursor);
+    expect(seen).toHaveLength(PUBLIC_ROOM_PAGE_SIZE * 2);
+    expect(new Set(seen).size).toBe(seen.length);
+  });
+
+  it("refuses a malformed cursor instead of silently restarting at page one", async () => {
+    const { service } = setup();
+    await seedPublicRooms(service, 3);
+    // Silently falling back to page one loops a paging caller forever.
+    await expect(service.listPublic("bob", { cursor: "not-a-cursor" })).rejects.toMatchObject({ code: "INVALID_CURSOR", status: 422 });
+    await expect(service.listPublic("bob", { cursor: "" })).rejects.toMatchObject({ code: "INVALID_CURSOR", status: 422 });
+    await expect(service.listPublic("bob", { cursor: encodeKeysetCursor({ createdAt: now.toISOString(), id: "1 OR 1=1" }) })).rejects.toMatchObject({ code: "INVALID_CURSOR" });
+  });
+});
+
+// Every room mints its owner a fresh 10,000-point account plus a ledger grant,
+// and a PUBLIC one also takes a lobby slot — so unlimited creation is both an
+// abuse channel and the product's accidental answer to a busted balance.
+describe("room creation quota", () => {
+  const clear = { active: 0, lastHour: 0, lastDay: 0 };
+
+  it("allows creation below every limit", () => {
+    expect(roomCreationRefusal(clear)).toBeNull();
+    expect(roomCreationRefusal({ active: ACTIVE_ROOMS_PER_OWNER - 1, lastHour: ROOMS_PER_HOUR - 1, lastDay: ROOMS_PER_DAY - 1 })).toBeNull();
+  });
+
+  it("refuses at the active-room cap, not one room past it", () => {
+    expect(roomCreationRefusal({ ...clear, active: ACTIVE_ROOMS_PER_OWNER })).toMatchObject({ code: "ROOM_LIMIT_REACHED", status: 409 });
+  });
+
+  it("refuses on either rate window", () => {
+    expect(roomCreationRefusal({ ...clear, lastHour: ROOMS_PER_HOUR })).toMatchObject({ code: "ROOM_RATE_LIMITED", status: 429 });
+    expect(roomCreationRefusal({ ...clear, lastDay: ROOMS_PER_DAY })).toMatchObject({ code: "ROOM_RATE_LIMITED", status: 429 });
+  });
+
+  it("reports the cap first when both are breached, because it is the actionable one", () => {
+    // "Close a room" is something the owner can do now; "wait" is not.
+    expect(roomCreationRefusal({ active: ACTIVE_ROOMS_PER_OWNER, lastHour: ROOMS_PER_HOUR, lastDay: ROOMS_PER_DAY })).toMatchObject({ code: "ROOM_LIMIT_REACHED" });
+  });
+
+  it("carries an action the API can show, since the handler renders error.action", () => {
+    expect(roomCreationRefusal({ ...clear, active: ACTIVE_ROOMS_PER_OWNER })?.action).toContain(String(ACTIVE_ROOMS_PER_OWNER));
+    expect(roomCreationRefusal({ ...clear, lastHour: ROOMS_PER_HOUR })?.action).toBeTruthy();
   });
 });

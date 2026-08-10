@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { RoomError } from "@pulse/domain";
 import { createRoomHandlers } from "./handlers.js";
 
 const post = (path: string, body: unknown, cookie = "fp_session=session-token") => new Request(`https://example.test${path}`, { method: "POST", headers: { "content-type": "application/json", cookie }, body: JSON.stringify(body) });
@@ -15,7 +16,7 @@ function setup() {
     resetInvite: vi.fn().mockResolvedValue({ roomId: "room-1", inviteToken: "new-invite", auditId: "audit-2" }),
     previewInvite: vi.fn().mockResolvedValue({ id: "room-1", name: "决赛之夜" }),
     join: vi.fn().mockResolvedValue({ roomId: "room-1", joined: true }),
-    listPublic: vi.fn().mockResolvedValue([{ id: "public-1", name: "公开看球局", ownerName: "alice", memberCount: 3, joined: false }]),
+    listPublic: vi.fn().mockResolvedValue({ rooms: [{ id: "public-1", name: "公开看球局", ownerName: "alice", memberCount: 3, joined: false }], cursor: null }),
     joinPublic: vi.fn().mockResolvedValue({ roomId: "public-1", joined: true }),
     updatePostMatchTicketVisibility: vi.fn().mockResolvedValue({ roomId: "room-1", postMatchTicketVisible: false }),
   };
@@ -87,8 +88,12 @@ describe("room HTTP handlers", () => {
 
   it("requires identity to list public rooms and same-origin rules confirmation to join", async () => {
     const { handlers, rooms } = setup();
-    await expect((await handlers.listPublic(get("/api/v1/rooms/public"))).json()).resolves.toMatchObject({ data: [{ id: "public-1", joined: false }] });
-    expect(rooms.listPublic).toHaveBeenCalledWith("user-1");
+    await expect((await handlers.listPublic(get("/api/v1/rooms/public"))).json()).resolves.toMatchObject({ data: { rooms: [{ id: "public-1", joined: false }], cursor: null } });
+    // No `cursor` param means page one, and must not be reported as an empty
+    // cursor — the service refuses an empty string rather than restarting.
+    expect(rooms.listPublic).toHaveBeenCalledWith("user-1", {});
+    await handlers.listPublic(get("/api/v1/rooms/public?cursor=abc"));
+    expect(rooms.listPublic).toHaveBeenLastCalledWith("user-1", { cursor: "abc" });
     const joined = await handlers.joinPublic(post("/api/v1/rooms/public-1/join", { rulesAccepted: true }), "public-1");
     expect(joined.status).toBe(200);
     expect(rooms.joinPublic).toHaveBeenCalledWith({ roomId: "public-1", userId: "user-1", rulesAccepted: true });
@@ -111,5 +116,36 @@ describe("room HTTP handlers", () => {
     const response = await handlers.updateSettings(request, "room-1");
     expect(response.status).toBe(200);
     expect(rooms.updatePostMatchTicketVisibility).toHaveBeenCalledWith("room-1", "user-1", false);
+  });
+});
+
+// The creation guards live in the repository transaction (atomicity) but raise
+// RoomError, which postgres.js passes through untouched — it only substitutes
+// the error for a PostgresError 25P02. These pin the resulting public contract:
+// a refused creation is a 4xx the caller can act on, never a 500.
+describe("room creation quota responses", () => {
+  const body = { name: "决赛之夜", visibility: "PRIVATE", tier: "STANDARD", sport: "FOOTBALL", rulesAccepted: true };
+
+  it("answers the active-room cap with 409 and something the owner can do", async () => {
+    const { handlers, rooms } = setup();
+    rooms.create.mockRejectedValueOnce(new RoomError("ROOM_LIMIT_REACHED", 409, "Close one of your 20 open rooms before creating another."));
+    const response = await handlers.create(post("/api/v1/rooms", body));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "ROOM_LIMIT_REACHED", message: expect.stringContaining("20") } });
+  });
+
+  it("answers the creation rate window with 429", async () => {
+    const { handlers, rooms } = setup();
+    rooms.create.mockRejectedValueOnce(new RoomError("ROOM_RATE_LIMITED", 429, "You have created several rooms just now. Try again later."));
+    const response = await handlers.create(post("/api/v1/rooms", body));
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "ROOM_RATE_LIMITED" } });
+  });
+
+  it("answers a malformed lobby cursor with 422 rather than page one", async () => {
+    const { handlers, rooms } = setup();
+    rooms.listPublic.mockRejectedValueOnce(new RoomError("INVALID_CURSOR", 422, "Reload the lobby and try again."));
+    const response = await handlers.listPublic(get("/api/v1/rooms/public?cursor=tampered"));
+    expect(response.status).toBe(422);
   });
 });

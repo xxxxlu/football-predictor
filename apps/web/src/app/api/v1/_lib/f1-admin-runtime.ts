@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { loadIdentityConfig } from "@pulse/config";
-import { createIdentityDatabase, PostgresF1ResultEntryPort } from "@pulse/db";
+import { getSharedIdentityDatabase, PostgresF1ResultEntryPort } from "@pulse/db";
 import { F1ResultEntryService } from "@pulse/domain";
 import { getIdentityService } from "../auth/_lib/runtime";
 import { createF1AdminHandlers } from "./f1-admin-handlers";
@@ -11,7 +11,7 @@ export function f1AdminHandlers() {
   if (!globalThis.__pulseF1ResultEntryService) {
     const config = loadIdentityConfig(process.env);
     globalThis.__pulseF1ResultEntryService = new F1ResultEntryService({
-      transaction: new PostgresF1ResultEntryPort(createIdentityDatabase(config.databaseUrl).sql),
+      transaction: new PostgresF1ResultEntryPort(getSharedIdentityDatabase(config.databaseUrl).sql),
       clock: { now: () => new Date() },
       ids: { next: () => randomUUID() },
     });

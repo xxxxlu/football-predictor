@@ -1,12 +1,14 @@
 import { loadIdentityConfig } from "@pulse/config";
 import { createAuthHandlers } from "./handlers";
 import { getIdentityService } from "./runtime";
+import { privacyRepository } from "../../_lib/privacy-runtime";
 
 export function getAuthHandlers() {
   const config = loadIdentityConfig(process.env);
   return createAuthHandlers(getIdentityService(), {
     rulesVersion: config.rulesVersion,
     secureCookie: usesSecureSessionCookie(process.env.APP_ENV),
+    privacyRecorder: privacyRepository(),
   });
 }
 

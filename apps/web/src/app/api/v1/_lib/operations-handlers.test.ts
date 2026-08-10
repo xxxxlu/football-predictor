@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { OperationError } from "@pulse/db";
-import { AuthError } from "@pulse/domain";
+import { encodeKeysetCursor } from "@pulse/domain";
 import { createOperationsHandlers } from "./operations-handlers.js";
 
 const get = (path: string) => new Request(`https://example.test${path}`, { headers: { cookie: "fp_session=token" } });
 const patch = (body: unknown) => new Request("https://example.test/api/v1/account/profile", { method: "PATCH", headers: { cookie: "fp_session=token", "content-type": "application/json" }, body: JSON.stringify(body) });
 function setup() {
-  const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }), requireCapability: vi.fn().mockResolvedValue({ id: "user-1" }) };
-  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), accountHistory: vi.fn().mockResolvedValue({ records: [] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), myTickets: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]), adminStatus: vi.fn() };
+  const identity = { authenticate: vi.fn().mockResolvedValue({ id: "user-1" }) };
+  const operations = { getProfile: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "Alice", roles: ["user"] }), updateNickname: vi.fn().mockResolvedValue({ id: "user-1", username: "alice", nickname: "New", roles: ["user"] }), accountHistory: vi.fn().mockResolvedValue({ records: [] }), submissionStatus: vi.fn(), ticketHistory: vi.fn().mockResolvedValue([]), myTickets: vi.fn().mockResolvedValue([]), ledger: vi.fn().mockResolvedValue({ entries: [] }), leaderboard: vi.fn().mockResolvedValue([]) };
   return { identity, operations, handlers: createOperationsHandlers(identity, operations) };
 }
 describe("operations API permissions", () => {
@@ -15,27 +15,16 @@ describe("operations API permissions", () => {
     const first = setup(); expect((await first.handlers.profilePatch(patch({ nickname: "New" }))).status).toBe(200); expect(first.operations.updateNickname).toHaveBeenCalledWith("user-1", "New");
     const second = setup(); expect((await second.handlers.profilePatch(patch({ nickname: "New", roles: ["super_admin"] }))).status).toBe(422); expect(second.operations.updateNickname).not.toHaveBeenCalled();
   });
-  it("does not weaken owner or operator denials", async () => {
+  it("does not weaken an owner-only denial", async () => {
     const owner = setup(); owner.operations.submissionStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await owner.handlers.submissionStatus(get("/x"), "room-1")).status).toBe(403);
-    const admin = setup(); admin.operations.adminStatus.mockRejectedValueOnce(new OperationError("FORBIDDEN", 403)); expect((await admin.handlers.adminStatus(get("/x"))).status).toBe(403);
   });
-  it("checks the operational-health capability at the route before reading anything", async () => {
-    const allowed = setup();
-    expect((await allowed.handlers.adminStatus(get("/api/v1/admin/status"))).status).toBe(200);
-    expect(allowed.identity.requireCapability).toHaveBeenCalledWith("token", "OPERATIONS_HEALTH_READ");
-
-    // A caller without the duty is refused at the boundary; the repository is never reached.
-    const denied = setup();
-    denied.identity.requireCapability.mockRejectedValueOnce(new AuthError("FORBIDDEN", 403, "You do not have permission for this operation."));
-    expect((await denied.handlers.adminStatus(get("/api/v1/admin/status"))).status).toBe(403);
-    expect(denied.operations.adminStatus).not.toHaveBeenCalled();
-
-    // No session at all: 401, still without touching the repository.
-    const anonymous = setup();
-    const response = await anonymous.handlers.adminStatus(new Request("https://example.test/api/v1/admin/status"));
-    expect(response.status).toBe(401);
-    expect(anonymous.identity.requireCapability).not.toHaveBeenCalled();
-    expect(anonymous.operations.adminStatus).not.toHaveBeenCalled();
+  it("exposes no operator surface: operational health lives behind the overview route", () => {
+    // /api/v1/admin/status was removed as an orphan — nothing fetched it, and
+    // the /admin/status page reads /api/v1/admin/overview. This suite must not
+    // grow an operator handler back without its own capability gate.
+    expect(Object.keys(setup().handlers)).toEqual([
+      "profileGet", "accountHistory", "profilePatch", "submissionStatus", "ticketHistory", "myTickets", "ledger", "leaderboard",
+    ]);
   });
   it("scopes tickets/mine to the authenticated caller, with or without a fixture filter", async () => {
     const subject = setup();
@@ -76,5 +65,38 @@ describe("operations API permissions", () => {
     expect(f1Event).toBeDefined();
     expect(f1Event?.members).toEqual([{ userId: "user-1", displayName: "甲", submitted: true }]);
     expect(JSON.stringify(body)).not.toMatch(/selection|stake|odds/i);
+  });
+});
+
+// The ledger route advertised a cursor its repository pinned to null, so a
+// member's history beyond the first page was unreachable through the product.
+describe("ledger paging contract", () => {
+  const cursor = encodeKeysetCursor({ createdAt: "2026-07-01T00:10:00.000Z", id: "00000000-0000-4000-8000-000000000010" });
+
+  it("reads page one without a cursor", async () => {
+    const subject = setup();
+    expect((await subject.handlers.ledger(get("/api/v1/rooms/room-1/ledger"), "room-1")).status).toBe(200);
+    expect(subject.operations.ledger).toHaveBeenCalledWith("room-1", "user-1");
+  });
+
+  it("passes a decoded cursor through to the repository", async () => {
+    const subject = setup();
+    expect((await subject.handlers.ledger(get(`/api/v1/rooms/room-1/ledger?cursor=${encodeURIComponent(cursor)}`), "room-1")).status).toBe(200);
+    expect(subject.operations.ledger).toHaveBeenCalledWith("room-1", "user-1", { cursor: { createdAt: "2026-07-01T00:10:00.000Z", id: "00000000-0000-4000-8000-000000000010" } });
+  });
+
+  it("refuses a malformed cursor instead of silently restarting at page one", async () => {
+    // Quietly serving page one for a bad cursor would read as "the ledger lost
+    // my older records" — the worst possible failure on a money screen.
+    const subject = setup();
+    const response = await subject.handlers.ledger(get("/api/v1/rooms/room-1/ledger?cursor=not-a-cursor"), "room-1");
+    expect(response.status).toBe(422);
+    expect(subject.operations.ledger).not.toHaveBeenCalled();
+  });
+
+  it("keeps the caller's own identity, never a query parameter", async () => {
+    const subject = setup();
+    await subject.handlers.ledger(get("/api/v1/rooms/room-1/ledger?cursor=&userId=user-2"), "room-1");
+    expect(subject.operations.ledger).toHaveBeenCalledWith("room-1", "user-1");
   });
 });

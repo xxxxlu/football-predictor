@@ -31,6 +31,9 @@ export type RoomMemberRecord = {
   userId: string;
   username: string;
   role: RoomRole;
+  /** Story 12.6: null when the member has no avatar, or the viewer blocked them. */
+  avatarUrl?: string | null;
+  avatarVersion?: number | null;
 };
 
 export type RoomBalanceRecord = {

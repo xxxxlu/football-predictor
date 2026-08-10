@@ -29,7 +29,12 @@ export const rooms = roomSchema.table("rooms", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 }, (table) => [
   unique("room_invite_token_hash_unique").on(table.inviteTokenHash),
-  index("room_public_discovery_idx").on(table.visibility, table.status, table.createdAt),
+  // 0031: carries `id` so the lobby's (created_at, id) keyset page is a clean
+  // index scan; supersedes the three-column room_public_discovery_idx.
+  index("room_public_discovery_keyset_idx").on(table.visibility, table.status, table.createdAt, table.id),
+  // 0031: serves both creation guards — the per-owner active cap and the
+  // per-owner rate window — from room.rooms itself, no event ledger needed.
+  index("room_owner_creation_idx").on(table.createdBy, table.createdAt),
 ]);
 
 /**

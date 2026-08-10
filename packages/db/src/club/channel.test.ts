@@ -146,7 +146,8 @@ describe("channel write path", () => {
       return [];
     }, log), clock);
     const message = await repository.sendMessage("user-1", "今晚谁夺冠？");
-    expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁夺冠？", createdAt: NOW });
+    // Story 12.6 added the author's avatar pair and nothing else.
+    expect(message).toEqual({ id: uuid(42), authorPulseId: "pulse_one", authorNickname: "阿伟", body: "今晚谁夺冠？", createdAt: NOW, authorAvatarUrl: null, authorAvatarVersion: null });
     // Count-then-insert gates need a per-user arbiter under READ COMMITTED:
     // the send transaction serializes on an advisory lock.
     expect(log.queries[0]).toContain("pg_advisory_xact_lock");
@@ -192,13 +193,27 @@ describe("lobby directory", () => {
       if (q.includes("u.show_in_lobby_directory")) return [{ pulseId: "pulse_two", nickname: "阿强" }];
       return [];
     }, log), clock);
-    await expect(repository.lobbyDirectory("viewer-1")).resolves.toEqual([{ pulseId: "pulse_two", nickname: "阿强" }]);
+    // Story 12.6 widened the public pair by the avatar pair, and by nothing else.
+    await expect(repository.lobbyDirectory("viewer-1")).resolves.toEqual([{ pulseId: "pulse_two", nickname: "阿强", avatarUrl: null, avatarVersion: null }]);
     const directory = log.queries.find((q) => q.includes("u.show_in_lobby_directory"))!;
     // Its own toggle, the lobby beat inside the TTL, blocks both ways.
     expect(directory).toContain("p.lobby_beat_at >");
     expect(directory).toContain("b.blocker_user_id = u.id");
     expect(directory).not.toContain("show_online_to_friends");
     expect(directory).not.toContain("last_seen_at");
+    // Only an approved avatar joins, and the storage location never leaves the server.
+    expect(directory).toContain("av.moderation_status = 'APPROVED'");
+    expect(directory).not.toContain("object_key");
+  });
+
+  it("derives the avatar path from the joined public id", async () => {
+    const repository = createClubChannelRepository(fakeSql((q) =>
+      q.includes("u.show_in_lobby_directory")
+        ? [{ pulseId: "pulse_two", nickname: "阿强", avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 2 }]
+        : []), clock);
+    await expect(repository.lobbyDirectory("viewer-1")).resolves.toEqual([
+      { pulseId: "pulse_two", nickname: "阿强", avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/2.webp", avatarVersion: 2 },
+    ]);
   });
 });
 
@@ -212,7 +227,7 @@ describe("friend activity", () => {
     }, log), clock);
     const activity = await repository.friendActivity("viewer-1", "2026-07-31");
     expect(activity.viewerAnswered).toBe(false);
-    expect(activity.friends).toEqual([{ pulseId: "pulse_two", nickname: null, online: true, inLobby: false, answeredToday: null }]);
+    expect(activity.friends).toEqual([{ pulseId: "pulse_two", nickname: null, online: true, inLobby: false, answeredToday: null, avatarUrl: null, avatarVersion: null }]);
     const friends = log.queries.find((q) => q.includes("FROM identity.friendships f"))!;
     // Presence keeps the 12.1 consent semantics; blocks filter both ways.
     // `inLobby` is the reader for 向好友展示「正在大厅」 — its own toggle, own beat.
