@@ -34,22 +34,26 @@ export function useAdminPrivacyData() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const fetchUsers = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const response = await fetch("/api/v1/admin/privacy/data", { credentials: "same-origin" });
-      if (!response.ok) throw new Error("无法加载用户数据");
-      const result = await response.json() as { data: UserDataSummary[] };
-      setUsers(result.data.filter((u) => u.consentCount > 0 || u.dataCount > 0));
-    } catch (reason) {
-      setError((reason as Error).message || "无法加载数据");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [reload, setReload] = useState(0);
 
-  useEffect(() => { void fetchUsers(); }, [fetchUsers]);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const response = await fetch("/api/v1/admin/privacy/data", { credentials: "same-origin" });
+        if (!response.ok) throw new Error("无法加载用户数据");
+        const result = await response.json() as { data: UserDataSummary[] };
+        if (!cancelled) setUsers(result.data.filter((u) => u.consentCount > 0 || u.dataCount > 0));
+      } catch (reason) {
+        if (!cancelled) setError((reason as Error).message || "无法加载数据");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [reload]);
+
+  const refresh = useCallback(() => { setLoading(true); setError(""); setReload((value) => value + 1); }, []);
 
   const getUserDetail = async (userId: string): Promise<UserDataDetail | null> => {
     try {
@@ -62,5 +66,5 @@ export function useAdminPrivacyData() {
     }
   };
 
-  return { users, loading, error, getUserDetail, refresh: fetchUsers };
+  return { users, loading, error, getUserDetail, refresh };
 }
