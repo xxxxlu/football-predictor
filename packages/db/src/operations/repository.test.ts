@@ -279,7 +279,7 @@ describe("room leaderboard", () => {
     const sql = fakeSql((query) => {
       queries.push(query);
       if (query.includes("room.members")) return [{ role: "MEMBER", preMatchStakeVisible: true, postMatchTicketVisible: true }];
-      if (query.includes("identity.users u")) return [{ userId: "user-1", displayName: "Alice", availablePoints: "10500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 4 }];
+      if (query.includes("identity.users u")) return [{ userId: "user-1", displayName: "Alice", availablePoints: "10500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 4 }];
       return [];
     }, seen);
     return { repository: new PostgresOperationsRepository(sql), queries, seen };
@@ -313,6 +313,10 @@ describe("room leaderboard", () => {
     const query = standingQuery(queries);
     expect(query).toContain("e.kind IN ('INITIAL_GRANT','OWNER_GRANT')");
     expect(query).toContain('AS "grantedPoints"');
+    // The UI's 补分 column gets its own per-kind sum — it must never be derived
+    // client-side by re-hardcoding the initial grant.
+    expect(query).toContain("e.kind='OWNER_GRANT'");
+    expect(query).toContain('AS "ownerGrantedPoints"');
     expect(query).not.toContain("10000");
   });
 

@@ -92,7 +92,7 @@ export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now
   };
 }
 
-export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; grantedPoints: string; settledTickets: number; avatarPublicId?: string | null; avatarVersion?: number | null };
+export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; grantedPoints: string; ownerGrantedPoints: string; settledTickets: number; avatarPublicId?: string | null; avatarVersion?: number | null };
 
 /**
  * Net points subtract every grant the account ever received — the initial
@@ -104,7 +104,7 @@ export function projectLeaderboard(rows: LeaderboardSourceRow[]) {
   return rows
     .map((row) => ({ ...row, net: Number(row.availablePoints) - Number(row.correctionDebt) - Number(row.grantedPoints) }))
     .sort((a, b) => b.net - a.net || a.displayName.localeCompare(b.displayName))
-    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, grantedPoints: Number(row.grantedPoints).toFixed(2), settledTickets: row.settledTickets, movement: null, ...avatarProjection(row) }));
+    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, grantedPoints: Number(row.grantedPoints).toFixed(2), ownerGrantedPoints: Number(row.ownerGrantedPoints).toFixed(2), settledTickets: row.settledTickets, movement: null, ...avatarProjection(row) }));
 }
 
 /** Entries per ledger page. Unchanged from the pre-paging cap, so page one
@@ -402,6 +402,7 @@ export class PostgresOperationsRepository {
       SELECT a.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",a.available_points::text AS "availablePoints",
         a.frozen_points::text AS "frozenPoints",a.correction_debt::text AS "correctionDebt",
         COALESCE((SELECT SUM(e.amount) FROM ledger.entries e WHERE e.room_id=a.room_id AND e.user_id=a.user_id AND e.kind IN ('INITIAL_GRANT','OWNER_GRANT')),0)::text AS "grantedPoints",
+        COALESCE((SELECT SUM(e.amount) FROM ledger.entries e WHERE e.room_id=a.room_id AND e.user_id=a.user_id AND e.kind='OWNER_GRANT'),0)::text AS "ownerGrantedPoints",
         (SELECT COUNT(*) FROM prediction.tickets t WHERE t.room_id=a.room_id AND t.user_id=a.user_id AND t.status='SETTLED')::int AS "settledTickets",
         ${avatarColumns(this.sql)}
       FROM ledger.point_accounts a JOIN identity.users u ON u.id=a.user_id

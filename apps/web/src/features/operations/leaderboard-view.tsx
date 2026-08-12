@@ -9,12 +9,12 @@ import { useRoomData } from "./use-room-data";
 
 /* Story 12.6: avatarUrl/avatarVersion are the only fields the projection gained;
    the leaderboard has no PULSE ID, so the fallback seeds off displayName. */
-type LeaderboardRow = { rank: number; userId: string; displayName: string; netPoints: string; availablePoints: string; frozenPoints: string; grantedPoints?: string; settledTickets: number; movement?: number | null; avatarUrl?: string | null; avatarVersion?: number | null };
+type LeaderboardRow = { rank: number; userId: string; displayName: string; netPoints: string; availablePoints: string; frozenPoints: string; grantedPoints?: string; ownerGrantedPoints?: string; settledTickets: number; movement?: number | null; avatarUrl?: string | null; avatarVersion?: number | null };
 
-/* Story 8.1 (FR45)：补分单独展示。发放总额里恒有 10,000 初始积分，
-   所以「补分」= grantedPoints − 10,000；净积分已在服务端把全部发放剔除。 */
+/* Story 8.1 (FR45)：补分单独展示。服务端按 kind 拆分投影，初始积分的数额
+   （可配置，不恒为 10,000）永远不混进这一列。 */
 function ownerGrantPoints(row: LeaderboardRow): number {
-  return Math.max(0, Number(row.grantedPoints ?? "10000") - 10_000);
+  return Number(row.ownerGrantedPoints ?? "0");
 }
 
 export function LeaderboardView() {

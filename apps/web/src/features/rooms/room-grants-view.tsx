@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { StatusMessage } from "@/components/status-message";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { formatPoints } from "@/lib/points";
+import { useVisibleInterval } from "@/lib/use-visible-interval";
 import {
   grantCreateRequest,
   grantDecisionRequest,
@@ -44,6 +45,11 @@ export function RoomGrantsPanel({ roomId, active, onBalanceChanged }: { roomId: 
     return () => controller.abort();
   }, [roomId, reload]);
 
+  // The story's notification decision leans on the room page's 30s cadence:
+  // the requester sees an approval (and the owner a new request) without a
+  // manual reload, but only while the tab is actually visible.
+  useVisibleInterval(refresh, 30_000);
+
   if (!list) {
     return <section className="surface p-5" aria-labelledby="room-grants-title">
       <h2 id="room-grants-title" className="display text-xl font-bold">房间补分</h2>
@@ -51,7 +57,7 @@ export function RoomGrantsPanel({ roomId, active, onBalanceChanged }: { roomId: 
     </section>;
   }
 
-  const { open, approved, minePending } = splitGrantList(list);
+  const { open, approved, minePending, mineDenied } = splitGrantList(list);
   const summary = summarizeApprovedGrants(approved);
 
   return <section className="surface p-5" aria-labelledby="room-grants-title">
@@ -67,7 +73,7 @@ export function RoomGrantsPanel({ roomId, active, onBalanceChanged }: { roomId: 
 
     {list.isOwner
       ? <OwnerQueue roomId={roomId} open={open} active={active} onDone={(message) => { setNotice(message); setError(""); refresh(); onBalanceChanged?.(); }} onError={(message) => { setError(message); setNotice(""); }}/>
-      : <MemberRequest roomId={roomId} pending={minePending} denied={list.requests.find((row) => row.status === "DENIED")} active={active} onDone={(message) => { setNotice(message); setError(""); refresh(); }} onError={(message) => { setError(message); setNotice(""); }}/>}
+      : <MemberRequest roomId={roomId} pending={minePending} denied={mineDenied} active={active} onDone={(message) => { setNotice(message); setError(""); refresh(); }} onError={(message) => { setError(message); setNotice(""); }}/>}
 
     <div className="mt-5">
       <h3 className="text-sm font-bold">已批准的补分（{approved.length} 次）</h3>

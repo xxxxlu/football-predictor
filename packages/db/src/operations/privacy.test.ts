@@ -43,8 +43,8 @@ describe("ticket history privacy", () => {
 describe("operations projections", () => {
   it("ranks by available points minus correction debt and excludes frozen points", () => {
     const result = projectLeaderboard([
-      { userId: "alice", displayName: "Alice", availablePoints: "9000.00", frozenPoints: "2000.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 0 },
-      { userId: "bob", displayName: "Bob", availablePoints: "9500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 0 },
+      { userId: "alice", displayName: "Alice", availablePoints: "9000.00", frozenPoints: "2000.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 0 },
+      { userId: "bob", displayName: "Bob", availablePoints: "9500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 0 },
     ]);
     expect(result.map((row) => [row.userId, row.netPoints])).toEqual([["bob", "-500.00"], ["alice", "-1000.00"]]);
   });
@@ -53,12 +53,12 @@ describe("operations projections", () => {
      the same amount, so net points — and the ranking — do not move. */
   it("keeps owner grants out of net points and reports them separately", () => {
     const result = projectLeaderboard([
-      { userId: "alice", displayName: "Alice", availablePoints: "14000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "15000.00", settledTickets: 0 },
-      { userId: "bob", displayName: "Bob", availablePoints: "9500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 0 },
+      { userId: "alice", displayName: "Alice", availablePoints: "14000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "15000.00", ownerGrantedPoints: "5000.00", settledTickets: 0 },
+      { userId: "bob", displayName: "Bob", availablePoints: "9500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 0 },
     ]);
-    expect(result.map((row) => [row.userId, row.netPoints, row.grantedPoints])).toEqual([
-      ["bob", "-500.00", "10000.00"],
-      ["alice", "-1000.00", "15000.00"],
+    expect(result.map((row) => [row.userId, row.netPoints, row.grantedPoints, row.ownerGrantedPoints])).toEqual([
+      ["bob", "-500.00", "10000.00", "0.00"],
+      ["alice", "-1000.00", "15000.00", "5000.00"],
     ]);
   });
 
@@ -66,14 +66,14 @@ describe("operations projections", () => {
      object key, no public id, and none of the balance internals it ranks on. */
   it("carries only the avatar pair onto a leaderboard row", () => {
     const [row] = projectLeaderboard([
-      { userId: "alice", displayName: "Alice", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 1, avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 5 },
+      { userId: "alice", displayName: "Alice", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 1, avatarPublicId: "7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607", avatarVersion: 5 },
     ]);
     expect(row).toMatchObject({ avatarUrl: "/api/v1/media/avatars/7f3a1c2b-4d5e-4f60-8a91-b2c3d4e5f607/5.webp", avatarVersion: 5 });
     expect(Object.keys(row!)).not.toContain("avatarPublicId");
     expect(Object.keys(row!)).not.toContain("objectKey");
 
     const [without] = projectLeaderboard([
-      { userId: "bob", displayName: "Bob", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 0 },
+      { userId: "bob", displayName: "Bob", availablePoints: "9000.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", ownerGrantedPoints: "0.00", settledTickets: 0 },
     ]);
     expect(without).toMatchObject({ avatarUrl: null, avatarVersion: null });
   });

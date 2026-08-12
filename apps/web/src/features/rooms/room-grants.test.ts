@@ -29,6 +29,12 @@ describe("grantErrorMessage", () => {
     expect(grantErrorMessage("NO_SUCH_CODE", "失败")).toBe("失败");
     expect(grantErrorMessage(undefined, "失败")).toBe("失败");
   });
+
+  it("covers the server's envelope codes so English messages never leak", () => {
+    for (const code of ["UNAUTHENTICATED", "INVALID_ORIGIN", "INVALID_REQUEST", "INTERNAL_ERROR"]) {
+      expect(grantErrorMessage(code, "Log in to continue.")).toMatch(/[一-鿿]/);
+    }
+  });
 });
 
 describe("splitGrantList", () => {
@@ -42,6 +48,21 @@ describe("splitGrantList", () => {
     const split = splitGrantList({ isOwner: true, requests: [record({})] });
     expect(split.minePending).toBeUndefined();
     expect(split.open).toHaveLength(1);
+  });
+
+  it("surfaces the member's latest denial only while no later request was approved", () => {
+    const denied = record({ id: "g-1", status: "DENIED", decidedAt: "2026-08-10T10:00:00.000Z", decisionNote: "本轮先不补" });
+    const olderDenied = record({ id: "g-0", status: "DENIED", decidedAt: "2026-08-01T10:00:00.000Z" });
+    // Standing denial: the newest DENIED row wins and is shown.
+    expect(splitGrantList({ isOwner: false, requests: [olderDenied, denied] }).mineDenied?.id).toBe("g-1");
+    // A later own approval retires the banner...
+    const approvedLater = record({ id: "g-2", status: "APPROVED", approvedAmount: "500.00", decidedAt: "2026-08-11T10:00:00.000Z" });
+    expect(splitGrantList({ isOwner: false, requests: [denied, approvedLater] }).mineDenied).toBeUndefined();
+    // ...but another member's approval does not.
+    const someoneElse = record({ id: "g-3", status: "APPROVED", approvedAmount: "500.00", decidedAt: "2026-08-11T10:00:00.000Z", requester: { userId: "bob", displayName: "Bob" } });
+    expect(splitGrantList({ isOwner: false, requests: [denied, someoneElse] }).mineDenied?.id).toBe("g-1");
+    // The owner surface never shows the member banner.
+    expect(splitGrantList({ isOwner: true, requests: [denied] }).mineDenied).toBeUndefined();
   });
 });
 

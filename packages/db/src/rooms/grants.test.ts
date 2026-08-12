@@ -94,6 +94,32 @@ describe("room grant repository — requests", () => {
     expect(inserted).toBe(true);
     expect(result).toMatchObject({ created: false, request: { id: uuid(1), status: "OPEN" } });
   });
+
+  it("retries once when the colliding OPEN row was decided before the read-back", async () => {
+    let inserts = 0;
+    const repository = createRoomGrantRepository(fakeSql((q) => {
+      if (isRoomProbe(q)) return [{ status: "ACTIVE" }];
+      if (q.includes("INSERT INTO room.grant_requests")) { inserts += 1; if (inserts === 1) throw uniqueViolation(); return []; }
+      if (q.includes("g.status = 'OPEN'")) return []; // the winner is already decided
+      if (isProjection(q)) return [grantRow({ id: uuid(5) })];
+      return [];
+    }));
+    const result = await repository.requestGrant({ id: uuid(5), roomId: uuid(9), requesterUserId: uuid(2), note: null, now: NOW });
+    expect(inserts).toBe(2);
+    expect(result).toMatchObject({ created: true, request: { id: uuid(5), status: "OPEN" } });
+  });
+
+  it("rethrows when the collision persists after the single retry", async () => {
+    let inserts = 0;
+    const repository = createRoomGrantRepository(fakeSql((q) => {
+      if (isRoomProbe(q)) return [{ status: "ACTIVE" }];
+      if (q.includes("INSERT INTO room.grant_requests")) { inserts += 1; throw uniqueViolation(); }
+      return [];
+    }));
+    await expect(repository.requestGrant({ id: uuid(5), roomId: uuid(9), requesterUserId: uuid(2), note: null, now: NOW }))
+      .rejects.toMatchObject({ code: "23505" });
+    expect(inserts).toBe(2);
+  });
 });
 
 describe("room grant repository — decisions", () => {
@@ -176,6 +202,16 @@ describe("room grant repository — decisions", () => {
     await expect(repository.decideGrant({ roomId: uuid(9), grantId: uuid(1), ownerId: uuid(3), action: "APPROVE", amount: "500.00", note: null, ledgerId: uuid(7), auditId: uuid(8), now: NOW }))
       .resolves.toMatchObject({ replayed: true, request: { status: "APPROVED" } });
   });
+
+  it("re-arbitrates the collision recovery: a divergent amount still answers 409, never the other outcome", async () => {
+    const { repository } = harness({
+      lock: [lockRow()],
+      projected: [grantRow({ status: "APPROVED", approvedAmount: "500.00", decidedAt: NOW })],
+      onLedgerInsert: () => { throw uniqueViolation(); },
+    });
+    await expect(repository.decideGrant({ roomId: uuid(9), grantId: uuid(1), ownerId: uuid(3), action: "APPROVE", amount: "800.00", note: null, ledgerId: uuid(7), auditId: uuid(8), now: NOW }))
+      .rejects.toMatchObject({ code: "GRANT_ALREADY_DECIDED", status: 409 });
+  });
 });
 
 describe("room grant repository — list", () => {
@@ -188,7 +224,7 @@ describe("room grant repository — list", () => {
     }, log));
     const result = await repository.listGrants(uuid(9), uuid(2));
     expect(result).toMatchObject({ isOwner: false });
-    const page = log.queries.find((q) => q.includes("ORDER BY g.requested_at DESC")) ?? "";
+    const page = log.queries.find((q) => q.includes("ORDER BY (g.status = 'OPEN') DESC, g.requested_at DESC")) ?? "";
     expect(page).toContain("g.status = 'APPROVED' OR g.requester_user_id =");
     expect(log.values).toContain(false); // the isOwner flag rides the query, not JS post-filtering
   });

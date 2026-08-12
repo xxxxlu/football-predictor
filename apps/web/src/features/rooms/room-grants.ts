@@ -24,6 +24,12 @@ export const GRANT_ERROR_MESSAGES: Record<string, string> = {
   ROOM_NOT_ACTIVE: "房间当前不在开放状态，暂不能申请或审批补分。",
   GRANT_NOT_FOUND: "找不到这条补分申请。",
   ROOM_NOT_FOUND: "找不到这个房间，或你已不再是成员。",
+  // 服务端兜底码不在补分闭集里，但一样不能把英文 message 漏给用户
+  //（11.x 认证错误映射的同款教训）。
+  UNAUTHENTICATED: "登录状态已失效，请重新登录。",
+  INVALID_ORIGIN: "请求来源校验未通过，刷新页面后重试。",
+  INVALID_REQUEST: "提交内容有误，请检查后重试。",
+  INTERNAL_ERROR: "服务暂时不可用，请稍后再试。",
 };
 
 export function grantErrorMessage(code: string | undefined, fallback: string): string {
@@ -70,7 +76,28 @@ export function splitGrantList(list: GrantList) {
   const open = list.requests.filter((row) => row.status === "OPEN");
   const approved = list.requests.filter((row) => row.status === "APPROVED");
   const denied = list.requests.filter((row) => row.status === "DENIED");
-  return { open, approved, denied, minePending: list.isOwner ? undefined : open[0] };
+  return {
+    open,
+    approved,
+    denied,
+    minePending: list.isOwner ? undefined : open[0],
+    mineDenied: list.isOwner ? undefined : latestStandingDenial(denied, approved),
+  };
+}
+
+/**
+ * The denial banner only reflects the member's CURRENT standing: their most
+ * recent denial, and only while no later own request was approved. Redaction
+ * guarantees every DENIED row a non-owner sees is their own; their own
+ * APPROVED rows are found by requester id among the public ones.
+ */
+function latestStandingDenial(denied: GrantRecord[], approved: GrantRecord[]): GrantRecord | undefined {
+  const latest = [...denied].sort((a, b) => (b.decidedAt ?? "").localeCompare(a.decidedAt ?? ""))[0];
+  if (!latest) return undefined;
+  const approvedLater = approved.some((row) =>
+    row.requester.userId === latest.requester.userId
+    && (row.decidedAt ?? "") > (latest.decidedAt ?? ""));
+  return approvedLater ? undefined : latest;
 }
 
 /** FR44: grants show publicly with per-member counts and totals. */

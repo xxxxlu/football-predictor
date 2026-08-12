@@ -56,6 +56,10 @@ describe("room grant HTTP handlers", () => {
     const badGrant = await handlers.decide(post(`/api/v1/rooms/${ROOM}/grants/xyz`, { action: "DENY" }), ROOM, "xyz");
     expect(badGrant.status).toBe(404);
     await expect(badGrant.json()).resolves.toMatchObject({ error: { code: "GRANT_NOT_FOUND" } });
+    // Ids fold to 404 before the body is read: a malformed id with a malformed
+    // body must not switch shape to 422.
+    const badBoth = await handlers.decide(post(`/api/v1/rooms/${ROOM}/grants/xyz`, { action: "ESCALATE" }), ROOM, "xyz");
+    expect(badBoth.status).toBe(404);
     expect(grants.list).not.toHaveBeenCalled();
     expect(grants.decide).not.toHaveBeenCalled();
   });

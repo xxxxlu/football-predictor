@@ -125,33 +125,38 @@ export function createRoomGrantRepository(sql: GrantSql): RoomGrantRepository {
 
   return {
     async requestGrant(input) {
-      try {
-        return await sql.begin(async (tx) => {
-          const [room] = await tx<Array<{ status: RoomStatus }>>`
-            SELECT r.status FROM room.rooms r
-            JOIN room.members m ON m.room_id = r.id AND m.user_id = ${input.requesterUserId}
-            WHERE r.id = ${input.roomId} LIMIT 1`;
-          if (!room) return null;
-          const refusal = grantRoomStatusRefusal(room.status);
-          if (refusal) throw refusal;
-          await tx`INSERT INTO room.grant_requests (id, room_id, requester_user_id, note, status, requested_at)
-            VALUES (${input.id}, ${input.roomId}, ${input.requesterUserId}, ${input.note}, 'OPEN', ${input.now.toISOString()}::timestamptz)`;
-          const request = await readGrant(tx, input.id);
-          if (!request) throw new Error("grant request insert did not persist");
-          return { request, created: true };
-        });
-      } catch (error) {
-        if (!isUniqueViolation(error)) throw error;
-        // The partial unique index is the final arbiter: a concurrent or
-        // repeated request converges on the existing OPEN row. Recovery runs
-        // OUTSIDE the transaction — a failed statement aborts its transaction
-        // (25P02), so the aborted tx cannot serve the read-back.
-        const [existing] = await sql<GrantRow[]>`
-          SELECT ${GRANT_PROJECTION(sql)} FROM room.grant_requests g
-          JOIN identity.users u ON u.id = g.requester_user_id
-          WHERE g.room_id = ${input.roomId} AND g.requester_user_id = ${input.requesterUserId} AND g.status = 'OPEN' LIMIT 1`;
-        if (!existing) throw error;
-        return { request: project(existing), created: false };
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          return await sql.begin(async (tx) => {
+            const [room] = await tx<Array<{ status: RoomStatus }>>`
+              SELECT r.status FROM room.rooms r
+              JOIN room.members m ON m.room_id = r.id AND m.user_id = ${input.requesterUserId}
+              WHERE r.id = ${input.roomId} LIMIT 1`;
+            if (!room) return null;
+            const refusal = grantRoomStatusRefusal(room.status);
+            if (refusal) throw refusal;
+            await tx`INSERT INTO room.grant_requests (id, room_id, requester_user_id, note, status, requested_at)
+              VALUES (${input.id}, ${input.roomId}, ${input.requesterUserId}, ${input.note}, 'OPEN', ${input.now.toISOString()}::timestamptz)`;
+            const request = await readGrant(tx, input.id);
+            if (!request) throw new Error("grant request insert did not persist");
+            return { request, created: true };
+          });
+        } catch (error) {
+          if (!isUniqueViolation(error)) throw error;
+          // The partial unique index is the final arbiter: a concurrent or
+          // repeated request converges on the existing OPEN row. Recovery runs
+          // OUTSIDE the transaction — a failed statement aborts its transaction
+          // (25P02), so the aborted tx cannot serve the read-back.
+          const [existing] = await sql<GrantRow[]>`
+            SELECT ${GRANT_PROJECTION(sql)} FROM room.grant_requests g
+            JOIN identity.users u ON u.id = g.requester_user_id
+            WHERE g.room_id = ${input.roomId} AND g.requester_user_id = ${input.requesterUserId} AND g.status = 'OPEN' LIMIT 1`;
+          if (existing) return { request: project(existing), created: false };
+          // The winning OPEN row was decided between the collision and the
+          // read-back — the slot is free again, so one retry files the
+          // request instead of surfacing a bare 23505 as a 500.
+          if (attempt > 0) throw error;
+        }
       }
     },
 
@@ -170,6 +175,11 @@ export function createRoomGrantRepository(sql: GrantSql): RoomGrantRepository {
           JOIN identity.users u ON u.id = g.requester_user_id
           WHERE g.id = ${input.grantId} AND g.room_id = ${input.roomId} AND g.status <> 'OPEN' LIMIT 1`;
         if (!existing) throw error;
+        // Re-arbitrate against the stored outcome: only a genuinely identical
+        // decision replays — a divergent one gets AC3's 409, never a 200 that
+        // silently reports the other decider's result.
+        const ruling = ruleOnGrantDecision({ current: { status: existing.status, approvedAmount: existing.approvedAmount }, action: input.action, amount: input.amount });
+        if (ruling.kind === "REFUSE") throw ruling.error;
         return { request: project(existing), replayed: true };
       }
     },
@@ -180,13 +190,15 @@ export function createRoomGrantRepository(sql: GrantSql): RoomGrantRepository {
       if (!membership) return null;
       const isOwner = membership.role === "OWNER";
       // Redaction lives in the WHERE clause: a non-owner's result set simply
-      // never contains another member's OPEN or DENIED rows.
+      // never contains another member's OPEN or DENIED rows. OPEN rows sort
+      // ahead of the recency cut — an undecided request must never fall off
+      // the owner's queue behind ${GRANT_LIST_MAX_ROWS} newer closed rows.
       const rows = await sql<GrantRow[]>`
         SELECT ${GRANT_PROJECTION(sql)} FROM room.grant_requests g
         JOIN identity.users u ON u.id = g.requester_user_id
         WHERE g.room_id = ${roomId}
           AND (${isOwner} OR g.status = 'APPROVED' OR g.requester_user_id = ${viewerUserId})
-        ORDER BY g.requested_at DESC, g.id LIMIT ${GRANT_LIST_MAX_ROWS}`;
+        ORDER BY (g.status = 'OPEN') DESC, g.requested_at DESC, g.id LIMIT ${GRANT_LIST_MAX_ROWS}`;
       return { isOwner, requests: rows.map(project) };
     },
   };

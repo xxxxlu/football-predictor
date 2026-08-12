@@ -57,16 +57,21 @@ export function createRoomGrantHandlers(identity: GrantIdentity, grants: RoomGra
     request: (request: Request, roomId: string) => execute(async () => {
       assertSameOrigin(request);
       const accountId = await userId(request);
+      // Ids fold to 404 before the body is read: a malformed resource id must
+      // answer the same shape whatever the payload looks like.
+      const targetRoom = room(roomId);
       const input = requestSchema.parse(await request.json());
-      return json({ data: await grants.request({ roomId: room(roomId), userId: accountId, note: input.note ?? null }) }, 201);
+      return json({ data: await grants.request({ roomId: targetRoom, userId: accountId, note: input.note ?? null }) }, 201);
     }),
     decide: (request: Request, roomId: string, grantId: string) => execute(async () => {
       assertSameOrigin(request);
       const accountId = await userId(request);
+      const targetRoom = room(roomId);
+      const targetGrant = grant(grantId);
       const input = decisionSchema.parse(await request.json());
       return json({
         data: await grants.decide({
-          roomId: room(roomId), grantId: grant(grantId), ownerId: accountId, action: input.action,
+          roomId: targetRoom, grantId: targetGrant, ownerId: accountId, action: input.action,
           ...(input.action === "APPROVE" ? { amount: input.amount } : {}), note: input.note ?? null,
         }),
       });
