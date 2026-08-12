@@ -9,7 +9,13 @@ import { useRoomData } from "./use-room-data";
 
 /* Story 12.6: avatarUrl/avatarVersion are the only fields the projection gained;
    the leaderboard has no PULSE ID, so the fallback seeds off displayName. */
-type LeaderboardRow = { rank: number; userId: string; displayName: string; netPoints: string; availablePoints: string; frozenPoints: string; settledTickets: number; movement?: number | null; avatarUrl?: string | null; avatarVersion?: number | null };
+type LeaderboardRow = { rank: number; userId: string; displayName: string; netPoints: string; availablePoints: string; frozenPoints: string; grantedPoints?: string; settledTickets: number; movement?: number | null; avatarUrl?: string | null; avatarVersion?: number | null };
+
+/* Story 8.1 (FR45)：补分单独展示。发放总额里恒有 10,000 初始积分，
+   所以「补分」= grantedPoints − 10,000；净积分已在服务端把全部发放剔除。 */
+function ownerGrantPoints(row: LeaderboardRow): number {
+  return Math.max(0, Number(row.grantedPoints ?? "10000") - 10_000);
+}
 
 export function LeaderboardView() {
   const room = useRoomData(); const [rows, setRows] = useState<LeaderboardRow[]>([]); const [loading, setLoading] = useState(false); const [error, setError] = useState("");
@@ -17,7 +23,7 @@ export function LeaderboardView() {
   if (room.loading) return <DataStatePanel state="loading" title="正在加载房间" description=""/>;
   if (room.error) return <DataStatePanel state="error" title="房间加载失败" description={room.error} action={<button onClick={room.retry} className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white">重试</button>}/>;
   if (!room.rooms.length) return <DataStatePanel state="empty" title="还没有房间排行榜" description="加入私人房间后，房间内的排名会显示在这里。"/>;
-  return <div><RoomFilter rooms={room.rooms} value={room.roomId} onChange={room.setRoomId}/><p className="mt-4 text-xs leading-5 text-[var(--muted)]">净积分 = 可用积分 − 更正债务 − 初始 10,000 分；尚未结算的冻结积分不参与排名。</p><div className="mt-6">{loading ? <DataStatePanel state="loading" title="正在加载排行" description=""/> : error ? <DataStatePanel state="error" title="排行榜暂不可用" description={error}/> : !rows.length ? <DataStatePanel state="empty" title="尚无可排名记录" description="完成结算后，成员的净积分与排名会出现在这里。"/> : <Standings rows={rows}/>}</div></div>;
+  return <div><RoomFilter rooms={room.rooms} value={room.roomId} onChange={room.setRoomId}/><p className="mt-4 text-xs leading-5 text-[var(--muted)]">净积分 = 可用积分 − 更正债务 − 全部发放积分（初始 10,000 分及房主补分）；补分单独展示，不计入净积分与排名；尚未结算的冻结积分不参与排名。</p><div className="mt-6">{loading ? <DataStatePanel state="loading" title="正在加载排行" description=""/> : error ? <DataStatePanel state="error" title="排行榜暂不可用" description={error}/> : !rows.length ? <DataStatePanel state="empty" title="尚无可排名记录" description="完成结算后，成员的净积分与排名会出现在这里。"/> : <Standings rows={rows}/>}</div></div>;
 }
 
 /* §15.2：前三名走海报式大卡，第四名以后才进高密度列表。此前所有名次共用
@@ -42,7 +48,7 @@ function PodiumSeat({ row }: { row: LeaderboardRow }) {
     <div>
       <h3 className="pulse-podium__name flex items-center gap-2"><Avatar src={row.avatarUrl} version={row.avatarVersion} nickname={row.displayName} size={40}/>{row.displayName}</h3>
       <strong className="pulse-podium__net">{formatPointsDelta(row.netPoints)}</strong>
-      <p className="pulse-podium__meta">可用 {formatPoints(row.availablePoints)} · 冻结 {formatPoints(row.frozenPoints)} · 已结算 {row.settledTickets}</p>
+      <p className="pulse-podium__meta">可用 {formatPoints(row.availablePoints)} · 冻结 {formatPoints(row.frozenPoints)} · 已结算 {row.settledTickets}{ownerGrantPoints(row) > 0 ? ` · 补分 ${formatPoints(String(ownerGrantPoints(row)))}` : ""}</p>
     </div>
   </article>;
 }
@@ -58,7 +64,7 @@ function Move({ movement, className = "" }: { movement?: number | null; classNam
   return <span className={`pulse-move ${className}`}><span aria-hidden="true">{movement > 0 ? "▲" : "▼"}{step}</span><span className="sr-only">较上轮{movement > 0 ? "上升" : "下降"} {step} 名</span></span>;
 }
 
-function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) { return <div className="surface overflow-hidden"><div className="hidden grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))] gap-3 border-b rule px-4 py-3 text-xs font-bold text-[var(--muted)] md:grid"><span>排名</span><span>成员</span><span className="text-right">净积分</span><span className="text-right">可用</span><span className="text-right">冻结</span><span className="text-right">已结算</span></div><ol>{rows.map(row => <li key={row.userId} className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 border-b rule p-4 last:border-0 md:grid-cols-[4rem_1fr_repeat(4,minmax(6rem,.65fr))]"><span aria-label={`第 ${row.rank} 名`} className="tabular grid size-9 shrink-0 place-items-center rounded-full bg-[var(--wash-neutral)] text-sm font-black text-[var(--ink)]">{row.rank}</span><div className="flex min-w-0 items-center gap-2"><Avatar src={row.avatarUrl} version={row.avatarVersion} nickname={row.displayName} size={32}/><div className="min-w-0"><p className="truncate font-bold">{row.displayName}</p><Move movement={row.movement} className="mt-1 text-[var(--muted)]"/></div></div><Metric mobile label="净积分" value={formatPointsDelta(row.netPoints)}/><Metric label="可用" value={formatPoints(row.availablePoints)}/><Metric label="冻结" value={formatPoints(row.frozenPoints)}/><Metric label="已结算" value={String(row.settledTickets)}/></li>)}</ol></div>; }
+function LeaderboardTable({ rows }: { rows: LeaderboardRow[] }) { return <div className="surface overflow-hidden"><div className="hidden grid-cols-[4rem_1fr_repeat(5,minmax(5.5rem,.6fr))] gap-3 border-b rule px-4 py-3 text-xs font-bold text-[var(--muted)] md:grid"><span>排名</span><span>成员</span><span className="text-right">净积分</span><span className="text-right">可用</span><span className="text-right">冻结</span><span className="text-right">补分</span><span className="text-right">已结算</span></div><ol>{rows.map(row => <li key={row.userId} className="grid grid-cols-[3rem_1fr_auto] items-center gap-3 border-b rule p-4 last:border-0 md:grid-cols-[4rem_1fr_repeat(5,minmax(5.5rem,.6fr))]"><span aria-label={`第 ${row.rank} 名`} className="tabular grid size-9 shrink-0 place-items-center rounded-full bg-[var(--wash-neutral)] text-sm font-black text-[var(--ink)]">{row.rank}</span><div className="flex min-w-0 items-center gap-2"><Avatar src={row.avatarUrl} version={row.avatarVersion} nickname={row.displayName} size={32}/><div className="min-w-0"><p className="truncate font-bold">{row.displayName}</p><Move movement={row.movement} className="mt-1 text-[var(--muted)]"/></div></div><Metric mobile label="净积分" value={formatPointsDelta(row.netPoints)}/><Metric label="可用" value={formatPoints(row.availablePoints)}/><Metric label="冻结" value={formatPoints(row.frozenPoints)}/><Metric label="补分" value={ownerGrantPoints(row) > 0 ? formatPoints(String(ownerGrantPoints(row))) : "—"}/><Metric label="已结算" value={String(row.settledTickets)}/></li>)}</ol></div>; }
 
 /* 手机上标签与数字上下堆叠，数字按 §7.3 取标签的 1.8 倍（10px → 18px）；
    桌面标签在表头，数字回到正文字号。 */

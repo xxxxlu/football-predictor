@@ -92,13 +92,19 @@ export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now
   };
 }
 
-export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; settledTickets: number; avatarPublicId?: string | null; avatarVersion?: number | null };
+export type LeaderboardSourceRow = { userId: string; displayName: string; availablePoints: string; frozenPoints: string; correctionDebt: string; grantedPoints: string; settledTickets: number; avatarPublicId?: string | null; avatarVersion?: number | null };
 
+/**
+ * Net points subtract every grant the account ever received — the initial
+ * grant and any owner grants (FR45: 补分不计入预测净收益和收益排名). For an
+ * account whose only grant is the initial 10,000 this is exactly the old
+ * hardcoded `- 10_000`, so zero-grant rooms rank identically to before.
+ */
 export function projectLeaderboard(rows: LeaderboardSourceRow[]) {
   return rows
-    .map((row) => ({ ...row, net: Number(row.availablePoints) - Number(row.correctionDebt) - 10_000 }))
+    .map((row) => ({ ...row, net: Number(row.availablePoints) - Number(row.correctionDebt) - Number(row.grantedPoints) }))
     .sort((a, b) => b.net - a.net || a.displayName.localeCompare(b.displayName))
-    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, settledTickets: row.settledTickets, movement: null, ...avatarProjection(row) }));
+    .map((row, index) => ({ rank: index + 1, userId: row.userId, displayName: row.displayName, netPoints: row.net.toFixed(2), availablePoints: row.availablePoints, frozenPoints: row.frozenPoints, grantedPoints: Number(row.grantedPoints).toFixed(2), settledTickets: row.settledTickets, movement: null, ...avatarProjection(row) }));
 }
 
 /** Entries per ledger page. Unchanged from the pre-paging cap, so page one
@@ -387,15 +393,21 @@ export class PostgresOperationsRepository {
     // scanned rows by each member's ticket history, and the GROUP BY existed
     // solely to undo that. `prediction_tickets_room_user_idx` serves the
     // subquery directly.
+    // Grants are a correlated subquery for the same reason the settled count
+    // is: ledger_entries_account_idx serves it per account, and the board is
+    // capped at LEADERBOARD_MAX_ROWS accounts. Subtracting the sum keeps FR45
+    // honest — the initial grant and every owner grant stay out of net points,
+    // so a zero-owner-grant account ranks exactly as under the old `- 10000`.
     const rows = await this.sql<LeaderboardSourceRow[]>`
       SELECT a.user_id AS "userId",COALESCE(u.nickname,u.username_canonical) AS "displayName",a.available_points::text AS "availablePoints",
         a.frozen_points::text AS "frozenPoints",a.correction_debt::text AS "correctionDebt",
+        COALESCE((SELECT SUM(e.amount) FROM ledger.entries e WHERE e.room_id=a.room_id AND e.user_id=a.user_id AND e.kind IN ('INITIAL_GRANT','OWNER_GRANT')),0)::text AS "grantedPoints",
         (SELECT COUNT(*) FROM prediction.tickets t WHERE t.room_id=a.room_id AND t.user_id=a.user_id AND t.status='SETTLED')::int AS "settledTickets",
         ${avatarColumns(this.sql)}
       FROM ledger.point_accounts a JOIN identity.users u ON u.id=a.user_id
       ${avatarJoinUnlessViewerBlocked(this.sql, userId)}
       WHERE a.room_id=${roomId}
-      ORDER BY (a.available_points - a.correction_debt) DESC,"displayName" LIMIT ${LEADERBOARD_MAX_ROWS}`;
+      ORDER BY (a.available_points - a.correction_debt - COALESCE((SELECT SUM(e.amount) FROM ledger.entries e WHERE e.room_id=a.room_id AND e.user_id=a.user_id AND e.kind IN ('INITIAL_GRANT','OWNER_GRANT')),0)) DESC,"displayName" LIMIT ${LEADERBOARD_MAX_ROWS}`;
     return projectLeaderboard(rows);
   }
 
@@ -429,7 +441,7 @@ function signed(value: string) { const number = Number(value); return `${number 
 function timestampDate(value: DbTimestamp) { return value instanceof Date ? value : new Date(value); }
 function timestampIso(value: DbTimestamp) { return timestampDate(value).toISOString(); }
 function ledgerType(row: Pick<LedgerSourceRow, "kind" | "outcome" | "hasPriorSettlement">) {
-  if (row.kind === "INITIAL_GRANT") return "GRANT";
+  if (row.kind === "INITIAL_GRANT" || row.kind === "OWNER_GRANT") return "GRANT";
   if (row.kind === "PREDICTION_FREEZE") return "FREEZE";
   if (row.kind === "SETTLEMENT_REVERSAL") return "REVERSAL";
   if (row.kind === "DEBT_OFFSET") return "DEBT_OFFSET";
@@ -438,7 +450,7 @@ function ledgerType(row: Pick<LedgerSourceRow, "kind" | "outcome" | "hasPriorSet
   return "RE_SETTLE";
 }
 function ledgerExplanation(row: Pick<LedgerSourceRow, "kind" | "outcome" | "availableDelta" | "frozenDelta" | "debtDelta" | "settlementVersion">, type: string) {
-  if (type === "GRANT") return "首次加入房间的初始积分。";
+  if (type === "GRANT") return row.kind === "OWNER_GRANT" ? "房主批准的补分；单独展示，不计入预测净收益与收益排名。" : "首次加入房间的初始积分。";
   if (type === "FREEZE") return "预测已接受，投入从可用积分转入冻结积分；结算前不计入排行榜净积分。";
   if (type === "VOID") return `比赛取消或走盘，本次退回冻结投入${row.settlementVersion ? `（赛果版本 ${row.settlementVersion}）` : ""}。`;
   if (type === "REVERSAL") {

@@ -11,6 +11,7 @@ export * from "./club/repository.js";
 export * from "./club/channel.js";
 export * from "./rooms/schema.js";
 export * from "./rooms/repository.js";
+export * from "./rooms/grants.js";
 export * from "./rooms/settlement-close.js";
 export * from "./rooms/chat.js";
 export * from "./rooms/mutes.js";

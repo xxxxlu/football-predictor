@@ -9,6 +9,7 @@ export * from "./club/index.js";
 export * from "./governance/index.js";
 export * from "./operations/index.js";
 export * from "./rooms/service.js";
+export * from "./rooms/grants.js";
 export * from "./rooms/submission-status.js";
 export * from "./rooms/chat.js";
 export * from "./rooms/keyset-cursor.js";

@@ -279,7 +279,7 @@ describe("room leaderboard", () => {
     const sql = fakeSql((query) => {
       queries.push(query);
       if (query.includes("room.members")) return [{ role: "MEMBER", preMatchStakeVisible: true, postMatchTicketVisible: true }];
-      if (query.includes("identity.users u")) return [{ userId: "user-1", displayName: "Alice", availablePoints: "10500.00", frozenPoints: "0.00", correctionDebt: "0.00", settledTickets: 4 }];
+      if (query.includes("identity.users u")) return [{ userId: "user-1", displayName: "Alice", availablePoints: "10500.00", frozenPoints: "0.00", correctionDebt: "0.00", grantedPoints: "10000.00", settledTickets: 4 }];
       return [];
     }, seen);
     return { repository: new PostgresOperationsRepository(sql), queries, seen };
@@ -300,8 +300,20 @@ describe("room leaderboard", () => {
   it("bounds the standing from the bottom of the ranking, not at an arbitrary row", async () => {
     const { repository, queries, seen } = harness();
     await repository.leaderboard("room-1", "user-1");
-    expect(standingQuery(queries)).toContain("ORDER BY (a.available_points - a.correction_debt) DESC");
+    expect(standingQuery(queries)).toContain("ORDER BY (a.available_points - a.correction_debt - COALESCE");
     expect(seen).toContain(LEADERBOARD_MAX_ROWS);
+  });
+
+  /* Story 8.1 (FR45): every grant — initial and owner — is subtracted from net
+     points in the SQL cut and in the projection, so an owner grant can never
+     move a ranking. */
+  it("subtracts the account's full grant sum, not a hardcoded initial grant", async () => {
+    const { repository, queries } = harness();
+    await repository.leaderboard("room-1", "user-1");
+    const query = standingQuery(queries);
+    expect(query).toContain("e.kind IN ('INITIAL_GRANT','OWNER_GRANT')");
+    expect(query).toContain('AS "grantedPoints"');
+    expect(query).not.toContain("10000");
   });
 
   it("still ranks by net points after the room's own scoring offset", async () => {

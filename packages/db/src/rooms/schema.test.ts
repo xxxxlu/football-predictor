@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { readFile } from "node:fs/promises";
-import { pointAccounts, pointLedgerEntries, roomAuditEvents, roomMembers, roomMessages, rooms } from "./schema.js";
+import { pointAccounts, pointLedgerEntries, roomAuditEvents, roomGrantRequests, roomMembers, roomMessages, rooms } from "./schema.js";
 
 describe("private room schema", () => {
   it("uses compound membership and point-account keys to isolate every room", () => {
@@ -100,5 +100,43 @@ describe("room public chat schema (Story 12.3)", () => {
     const memberMutes = migration.slice(migration.indexOf("member_mutes"));
     const reportIdLine = memberMutes.split("\n").find((line) => line.includes('"report_id"'))!;
     expect(reportIdLine).not.toContain("NOT NULL");
+  });
+});
+
+describe("room grant requests schema (Story 8.1)", () => {
+  it("makes a request from a non-member unrepresentable via the composite membership FK", () => {
+    const grants = getTableConfig(roomGrantRequests);
+    const membershipFk = grants.foreignKeys.find((fk) => fk.reference().foreignTable === roomMembers);
+    expect(membershipFk?.reference().columns.map((column) => column.name)).toEqual(["room_id", "requester_user_id"]);
+    // A grant decision references the very ledger row it minted.
+    const ledgerFk = grants.foreignKeys.find((fk) => fk.reference().foreignTable === pointLedgerEntries);
+    expect(ledgerFk?.reference().columns.map((column) => column.name)).toEqual(["ledger_id"]);
+  });
+
+  it("keeps one undecided request per member per room via the partial unique index", () => {
+    const grants = getTableConfig(roomGrantRequests);
+    const openUnique = grants.indexes.find((idx) => idx.config.name === "grant_requests_open_unique");
+    expect(openUnique?.config.unique).toBe(true);
+    expect(openUnique?.config.where).toBeDefined();
+  });
+
+  it("migration 0032 creates the table, the closure CHECK and both indexes", async () => {
+    const migration = await readFile(new URL("../../migrations/0032_room_grants.sql", import.meta.url), "utf8");
+    const statements = migration.split("\n").filter((line) => !line.trimStart().startsWith("--")).join("\n");
+    expect(statements).toContain('CREATE TABLE IF NOT EXISTS "room"."grant_requests"');
+    expect(statements).toContain("'OPEN', 'APPROVED', 'DENIED'");
+    // A decision and its evidence are one atomic fact — no grant without a
+    // decider, an amount and its ledger row; no denial that carries points.
+    expect(statements).toContain('"grant_requests_closure_consistent"');
+    expect(statements).toContain('"ledger_id" IS NOT NULL');
+    // Whole points, 1..20,000, aligned with the stake ceiling.
+    expect(statements).toContain('"approved_amount" >= 1 AND "approved_amount" <= 20000');
+    expect(statements).toContain('trunc("approved_amount")');
+    // The partial unique index is the final arbiter under concurrency.
+    expect(statements).toContain('CREATE UNIQUE INDEX IF NOT EXISTS "grant_requests_open_unique"');
+    expect(statements).toContain(`WHERE "status" = 'OPEN'`);
+    expect(statements).toContain('"grant_requests_room_status_idx"');
+    // The requester FK targets room.members, the point_accounts shape.
+    expect(statements).toContain('REFERENCES "room"."members"("room_id", "user_id")');
   });
 });

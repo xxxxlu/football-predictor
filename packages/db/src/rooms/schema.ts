@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, foreignKey, index, numeric, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, foreignKey, index, numeric, pgEnum, pgSchema, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { identityUsers } from "../identity/schema.js";
 
 export const roomSchema = pgSchema("room");
@@ -96,6 +96,36 @@ export const pointLedgerEntries = ledgerSchema.table("entries", {
   foreignKey({ columns: [table.roomId, table.userId], foreignColumns: [pointAccounts.roomId, pointAccounts.userId] }).onDelete("restrict"),
   unique("ledger_entries_idempotency_unique").on(table.idempotencyKey),
   index("ledger_entries_account_idx").on(table.roomId, table.userId, table.createdAt),
+]);
+
+/**
+ * Member grant requests (Story 8.1, FR43-FR45). The composite requester FK
+ * targets room.members — a request from a non-member is unrepresentable, the
+ * same shape as ledger.point_accounts. A decision closes the row it decides:
+ * the closure CHECK makes an OWNER_GRANT without decider/amount/ledger row (or
+ * a denial that somehow carries points) unrepresentable too.
+ */
+export const roomGrantRequests = roomSchema.table("grant_requests", {
+  id: uuid("id").primaryKey(),
+  roomId: uuid("room_id").notNull(),
+  requesterUserId: uuid("requester_user_id").notNull(),
+  note: text("note"),
+  status: text("status").notNull().default("OPEN"),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull(),
+  decidedBy: uuid("decided_by").references(() => identityUsers.id, { onDelete: "restrict" }),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  approvedAmount: numeric("approved_amount", { precision: 20, scale: 2 }),
+  decisionNote: text("decision_note"),
+  ledgerId: uuid("ledger_id").references(() => pointLedgerEntries.id, { onDelete: "restrict" }),
+}, (table) => [
+  foreignKey({ columns: [table.roomId, table.requesterUserId], foreignColumns: [roomMembers.roomId, roomMembers.userId] }).onDelete("restrict"),
+  uniqueIndex("grant_requests_open_unique").on(table.roomId, table.requesterUserId).where(sql`${table.status} = 'OPEN'`),
+  index("grant_requests_room_status_idx").on(table.roomId, table.status, table.requestedAt),
+  check("grant_requests_status_check", sql`${table.status} IN ('OPEN', 'APPROVED', 'DENIED')`),
+  check("grant_requests_note_length_check", sql`${table.note} IS NULL OR char_length(${table.note}) <= 200`),
+  check("grant_requests_decision_note_length_check", sql`${table.decisionNote} IS NULL OR char_length(${table.decisionNote}) <= 200`),
+  check("grant_requests_amount_range_check", sql`${table.approvedAmount} IS NULL OR (${table.approvedAmount} >= 1 AND ${table.approvedAmount} <= 20000 AND ${table.approvedAmount} = trunc(${table.approvedAmount}))`),
+  check("grant_requests_closure_consistent", sql`(${table.status} = 'OPEN' AND ${table.decidedBy} IS NULL AND ${table.decidedAt} IS NULL AND ${table.approvedAmount} IS NULL AND ${table.decisionNote} IS NULL AND ${table.ledgerId} IS NULL) OR (${table.status} = 'APPROVED' AND ${table.decidedBy} IS NOT NULL AND ${table.decidedAt} IS NOT NULL AND ${table.approvedAmount} IS NOT NULL AND ${table.ledgerId} IS NOT NULL) OR (${table.status} = 'DENIED' AND ${table.decidedBy} IS NOT NULL AND ${table.decidedAt} IS NOT NULL AND ${table.approvedAmount} IS NULL AND ${table.ledgerId} IS NULL)`),
 ]);
 
 export const roomAuditEvents = roomSchema.table("audit_events", {
