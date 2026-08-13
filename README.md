@@ -1,19 +1,52 @@
 # PULSE
 
-BMAD-planned TypeScript monorepo for PULSE — a non-cash multi-sport (football + Formula 1) prediction PWA.
+A non-cash prediction PWA for private friend groups, over football and Formula 1.
+Members join a room, receive a one-time 10,000-point account that never tops up
+with money, and predict match and session outcomes against real bookmaker odds.
+No cash enters or leaves the system — points are the whole economy, and no
+capability in the product can mint, move or edit them by hand.
+
+TypeScript monorepo: Next.js 16 (App Router) + PostgreSQL, with the domain rules
+in dependency-free packages and every authorization decision resolved in SQL
+rather than in the UI.
+
+**Why it might be worth reading.** The interesting parts are not the screens:
+
+- **Exact money.** Point arithmetic is integer/BigInt end to end with half-up
+  rounding applied exactly once — no float ever touches a balance
+  ([`settlement.ts`](packages/domain/src/settlement/settlement.ts)). Settle and
+  reverse are algebraic inverses, so a corrected result nets to zero.
+- **Capability-based authorization.** Duties are enumerated in one closed list,
+  re-read from storage on every request, and the sensitive ones additionally
+  demand a fresh re-authentication proof
+  ([`capabilities.ts`](packages/domain/src/identity/capabilities.ts)). No
+  capability can overwrite a balance or delete a ledger entry — by construction.
+- **Authorization in SQL.** A non-member's read matches zero rows and answers
+  404, so existence itself is never disclosed
+  ([`grants.ts`](packages/db/src/rooms/grants.ts)).
+- **Hardened image ingestion.** User avatars are decoded behind a pixel ceiling,
+  refused if SVG, and re-encoded so EXIF/GPS cannot survive
+  ([`image-pipeline.ts`](apps/web/src/features/avatar/image-pipeline.ts)).
+- **Idempotent everything.** Ticket submission, settlement, reversal and owner
+  grants each carry a scoped idempotency key with the unique constraint as final
+  arbiter, so a retry converges instead of double-paying.
+
+1241 unit tests, no TODOs, strict TypeScript across nine workspace projects.
+[`docs/architecture.md`](docs/architecture.md) records the decisions the code was
+built to.
 
 ## Prerequisites
 
-- Node.js 24 LTS (production and CI baseline)
+- Node.js 24.x — the production and CI baseline
 - pnpm 10.4.0
-
-The local machine may currently expose Node 25.5.0. It can be used for temporary checks, but it is not a supported production baseline because it is not an LTS line.
+- PostgreSQL 16+ (any reachable instance; `compose.yaml` brings one up locally)
 
 ## Setup
 
 ```bash
 cp .env.example .env
 pnpm install --frozen-lockfile
+pnpm db:migrate
 ```
 
 The web app can start without live supplier access. The worker and manual supplier prewarm require a server-only `API_FOOTBALL_KEY`.
@@ -37,7 +70,7 @@ The `SUPER_ADMIN_*` values are one-shot seed inputs, not a password source of tr
 
 ## Access control and admin governance
 
-Authorization is enforced on the server (domain services, repositories and SQL) — never by hiding UI. Room detail, members, balances, ledger, leaderboard and predictions require room membership; there is no super-admin bypass of private-room content. Prediction selections stay hidden from other members until kickoff. The two seeded super-admins can list and disable/restore normal users, moderate reported rooms (restrict/close/restore) and read system health, each sensitive write requiring a fresh same-origin re-authentication proof valid for at most five minutes. Super-admins cannot modify points, delete predictions or ledger entries, read passwords/recovery codes/session tokens, view pre-kickoff selections, or disable/replace another super-admin, and the product cannot mint a third. `GET /api/v1/admin/audit` returns a single time-ordered governance trail consolidated from the account, room and operations audit stores, with secret-bearing metadata redacted. See `docs/reviews/2026-07-15-admin-rbac-audit.md` for the full permission matrix and audit.
+Authorization is enforced on the server (domain services, repositories and SQL) — never by hiding UI. Room detail, members, balances, ledger, leaderboard and predictions require room membership; there is no super-admin bypass of private-room content. Prediction selections stay hidden from other members until kickoff. The two seeded super-admins can list and disable/restore normal users, moderate reported rooms (restrict/close/restore) and read system health, each sensitive write requiring a fresh same-origin re-authentication proof valid for at most five minutes. Super-admins cannot modify points, delete predictions or ledger entries, read passwords/recovery codes/session tokens, view pre-kickoff selections, or disable/replace another super-admin, and the product cannot mint a third. `GET /api/v1/admin/audit` returns a single time-ordered governance trail consolidated from the account, room and operations audit stores, with secret-bearing metadata redacted — including precise location, which never reaches an operator surface. The capability list itself is the specification: [`packages/domain/src/identity/capabilities.ts`](packages/domain/src/identity/capabilities.ts) enumerates every duty, which role holds it, and which ones additionally demand a fresh re-authentication proof.
 
 ## Rooms are scoped to one sport
 
@@ -100,14 +133,17 @@ product is working.
 ## Health endpoints
 
 - `GET /api/health/live`: process liveness only; never calls databases or suppliers.
-- `GET /api/health/ready`: validates runtime configuration, database reachability, and that the migration files shipped in the artifact match `app_schema_migrations` exactly; returns 503 when unready and never calls a supplier. That exact comparison is why a deploy must carry any new `.sql` file, not only the rebuilt app.
+- `GET /api/health/ready`: validates runtime configuration, database reachability, and that every migration shipped in the artifact has been applied; returns 503 when unready and never calls a supplier. A deploy must therefore carry any new `.sql` file, not only the rebuilt app. The check is deliberately not an equality test: a database that is *ahead* of the artifact is the normal state during a rolling deploy, and failing it there made every migration-bearing release report the still-serving old version as unready.
 
 ## Deployment and scheduled operations
 
-Production runs on Tencent CloudBase function-style hosting; the release
-procedure, verification steps and known failure modes are in
-[`docs/runbooks/cloudbase-production-deploy.md`](docs/runbooks/cloudbase-production-deploy.md).
-`render.yaml` and `vercel.json` are unused alternatives kept for portability.
+The reference deployment runs on Tencent CloudBase function-style hosting. The
+operator runbook for it is environment-specific and is not published with this
+repository; [`docs/runbooks/rapid-launch-2026-07-14.md`](docs/runbooks/rapid-launch-2026-07-14.md)
+covers the platform-neutral sequence — required variables, the one-shot
+super-admin seed, migration ordering and the post-deploy verification curls.
+`render.yaml`, `vercel.json` and the two Dockerfiles are working alternatives
+kept for portability.
 
 No resident worker runs in production. `.github/workflows/supplier-sync.yml` is
 the only production automation: every two hours it applies migrations, imports
@@ -126,3 +162,27 @@ starves settlement.
 - `packages/config`: shared runtime configuration validation.
 - `packages/contracts`: shared API schemas/contracts.
 - `packages/testkit`: shared test builders/fakes added only when needed.
+
+## Contributing
+
+Issues and pull requests are welcome. Two things to know before opening one:
+
+- **`pnpm typecheck && pnpm test` must pass.** Type-checking and the suite are
+  separate gates and neither substitutes for the other — a `tsc` pass does not
+  imply the build config agrees.
+- **Authorization belongs in the data layer.** A change that gates a room-scoped
+  read in a React component or an API handler, rather than in the query itself,
+  will be asked to move it. The same goes for point arithmetic in floats.
+
+## Non-cash by design
+
+This is not a gambling product and has no payment path. Points are granted once
+per room, cannot be purchased, transferred between rooms, or redeemed for
+anything. Registration requires confirming both an 18+ declaration and the
+non-cash rules, and the accepted rules version is stored with the account. If you
+deploy this, that framing is load-bearing — real-money betting is regulated
+activity in most jurisdictions and nothing here is built for it.
+
+## License
+
+[MIT](LICENSE) © xxxxlu
