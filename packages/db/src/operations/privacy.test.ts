@@ -25,6 +25,35 @@ describe("ticket history privacy", () => {
     expect(hidden).not.toHaveProperty("stakePoints"); expect(hidden).not.toHaveProperty("settlementVersion");
   });
 
+  /**
+   * The combination the other cases missed: a *settled* ticket hidden by the room
+   * switch. Every hidden case above carries `ticketStatus: "PENDING"`, whose badge
+   * is a harmless FROZEN, so nothing caught that the badge for a settled ticket was
+   * derived straight from `outcome` — handing a non-owner the win/loss of every
+   * other member's ticket while `postMatchTicketVisible` was off.
+   */
+  it("never puts another member's outcome in the badge of a hidden settled ticket", () => {
+    const settled = { ...row, ticketStatus: "SETTLED", grossReturnPoints: "2100.00", settlementVersion: "result-v3" };
+    const off = { ...defaults, postMatchTicketVisible: false };
+    const after = new Date("2026-07-13T12:00:00Z");
+
+    for (const outcome of ["WIN", "LOSS", "PUSH", "CANCEL"] as const) {
+      const hidden = redactTicketHistory({ ...settled, outcome }, "alice", after, off);
+      expect(hidden).toMatchObject({ visibility: "PRIVATE", status: "SETTLED" });
+      // The badge must be identical whatever happened, or its value is the leak.
+      expect(hidden.status).not.toBe("WON");
+      expect(hidden.status).not.toBe("LOST");
+      expect(hidden).not.toHaveProperty("outcome");
+      expect(hidden).not.toHaveProperty("returnPoints");
+      expect(hidden).not.toHaveProperty("netPoints");
+    }
+
+    // The owner still sees their own result, and so does everyone once the room
+    // chooses to reveal settled tickets.
+    expect(redactTicketHistory({ ...settled, outcome: "WIN" }, "bob", after, off)).toMatchObject({ status: "WON" });
+    expect(redactTicketHistory({ ...settled, outcome: "LOSS" }, "alice", after, defaults)).toMatchObject({ status: "LOST" });
+  });
+
   it("explains a settled ticket with confirmed terms, return, net and result version", () => {
     const result = redactTicketHistory({ ...row, ticketStatus: "SETTLED", outcome: "WIN", grossReturnPoints: "2100.00", settlementVersion: "result-v3" }, "bob", new Date("2026-07-13T10:01:00Z"), defaults);
     expect(result).toMatchObject({
