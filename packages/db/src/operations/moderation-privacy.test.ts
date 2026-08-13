@@ -84,6 +84,37 @@ describe("account anonymization clears the avatar", () => {
     ).resolves.toMatchObject({ anonymizedName: "已删除用户-12345678" });
     expect(log.some((query) => query.includes("INSERT INTO identity.avatar_object_deletions"))).toBe(false);
   });
+
+  /**
+   * The privacy centre holds the most sensitive material in the product —
+   * precise coordinates, device fingerprints, request IP and user agent. The
+   * 0029 foreign keys cascade on a user *row* delete, which anonymization
+   * deliberately never does, so nothing removed these rows and a completed
+   * ACCOUNT_DELETION left them readable against the same user_id. That is the
+   * failure this asserts against.
+   */
+  it("purges the privacy centre's collected data and consent rows", async () => {
+    const log: string[] = [];
+    const tx = fakeTx((query) => (query.includes("SELECT is_super_admin") ? [{ superAdmin: false, username: "alice" }] : []), log);
+
+    await anonymizeAccountWithin(tx, {
+      userId: "12345678-abcd-0000-0000-000000000000",
+      actorUserId: "ops-1",
+      auditId: "audit-1",
+      privacyRequestId: "request-1",
+      occurredAt: "2026-08-07T10:00:00.000Z",
+    });
+
+    const collectedIndex = log.findIndex((query) => query.includes("DELETE FROM privacy.collected_data"));
+    const consentIndex = log.findIndex((query) => query.includes("DELETE FROM privacy.consent"));
+    const auditIndex = log.findIndex((query) => query.includes("'ACCOUNT_ANONYMIZED'"));
+    expect(collectedIndex).toBeGreaterThan(-1);
+    expect(consentIndex).toBeGreaterThan(-1);
+    // collected_data references consent, so it has to go first, and both have to
+    // land before the audit row closes the transaction out.
+    expect(collectedIndex).toBeLessThan(consentIndex);
+    expect(consentIndex).toBeLessThan(auditIndex);
+  });
 });
 
 describe("governance audit redaction", () => {

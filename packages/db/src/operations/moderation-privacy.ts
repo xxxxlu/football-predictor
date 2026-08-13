@@ -43,6 +43,17 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
   // Dropping only the database reference would leave the member's face readable
   // in the bucket after their account was deleted (Story 12.6).
   await clearAvatarWithin(tx, input.userId, input.occurredAt);
+  // Everything the privacy centre collected goes with the identity, for the same
+  // reason the avatar does — this is the most sensitive material the product
+  // holds (precise coordinates, device fingerprints, request IP and user agent),
+  // and none of it is needed to keep the ledger verifiable. The 0029 foreign
+  // keys cascade on a user *row* delete, which anonymization deliberately never
+  // does, so the cascade would never have fired: the rows have to be removed
+  // here. Consent rows go too — a choice about collection is meaningless once
+  // there is nothing collected and no account to collect for — and collected_data
+  // is deleted first because its consent_id references them.
+  await tx`DELETE FROM privacy.collected_data WHERE user_id=${input.userId}`;
+  await tx`DELETE FROM privacy.consent WHERE user_id=${input.userId}`;
   await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
     VALUES (${input.auditId},${input.actorUserId},'ACCOUNT_ANONYMIZED','USER',${input.userId},'SUCCESS',${JSON.stringify({ privacyRequestId: input.privacyRequestId, ...(input.reason ? { reason: input.reason } : {}) })}::text::jsonb,${input.occurredAt})`;
   return { anonymizedName };

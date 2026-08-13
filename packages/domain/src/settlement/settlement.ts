@@ -184,12 +184,32 @@ export class SettlementService {
     const scope = { ticketId, settlementVersion, operation: "SETTLE" as const };
     return this.transaction.run(scope, async (transaction) => {
       const replay = await transaction.findOperation(scope);
-      if (replay) {
-        if (replay.status !== "SETTLED") throw new SettlementError("SETTLEMENT_CONFLICT");
-        return replay;
-      }
       const state = await transaction.getState(ticketId);
       if (!state) throw new SettlementError("TICKET_NOT_FOUND");
+      if (replay) {
+        if (replay.status !== "SETTLED") throw new SettlementError("SETTLEMENT_CONFLICT");
+        /*
+         * A stored receipt only stands in for this operation while its effects are
+         * still the live ones. `settlementVersion` is a content hash of the
+         * supplier's result (api-football/src/index.ts `versionOf`), with no
+         * monotonic component — so a supplier that corrects a result and later
+         * reverts it presents a version that was already settled once and has since
+         * been reversed. Returning the old receipt there wrote nothing at all: the
+         * reversal had already put the stake back into `frozen`, the ticket stayed
+         * PENDING, and the sweep counted it PROCESSED. The stake stayed frozen with
+         * no payout, forever, and every later sweep replayed the same no-op because
+         * `active_settlement_id IS NULL` keeps the ticket in the candidate set.
+         *
+         * Refusing is not the whole repair — re-applying this version needs a
+         * ledger idempotency key that can distinguish a second attempt from the
+         * first, which is a schema decision — but it turns a silent, permanent
+         * freeze into a failure the sweep reports and an operator can retry.
+         */
+        if (state.activeSettlement?.settlementVersion !== settlementVersion) {
+          throw new SettlementError("SETTLEMENT_CONFLICT");
+        }
+        return replay;
+      }
       if (state.activeSettlement !== null) throw new SettlementError("SETTLEMENT_CONFLICT");
       if (!Number.isSafeInteger(state.ticket.stakePoints) || state.ticket.stakePoints <= 0 || state.account.frozenPoints < state.ticket.stakePoints) {
         throw new SettlementError("INSUFFICIENT_FROZEN");

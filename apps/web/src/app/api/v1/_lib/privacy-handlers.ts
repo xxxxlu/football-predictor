@@ -29,16 +29,36 @@ const locationSchema = z
   })
   .strict();
 
+/** One ceiling for the photo, matching what the schema already declared. */
+const PHOTO_MAX_BYTES = 2 * 1024 * 1024;
+/** Base64 inflates by 4/3, plus the `data:image/...;base64,` prefix and CRLFs. */
+const PHOTO_MAX_DATA_URL_CHARS = Math.ceil((PHOTO_MAX_BYTES * 4) / 3) + 1024;
+
+/** Decoded byte count of a base64 data URL payload, without decoding it. */
+function dataUrlByteLength(dataUrl: string): number {
+  const payload = dataUrl.slice(dataUrl.indexOf(",") + 1).replace(/[\r\n]/g, "");
+  const padding = payload.endsWith("==") ? 2 : payload.endsWith("=") ? 1 : 0;
+  return Math.floor((payload.length * 3) / 4) - padding;
+}
+
 const photoSchema = z
   .object({
     fileName: z.string().max(255).optional(),
-    fileSize: z.number().int().positive().max(2 * 1024 * 1024).optional(),
+    fileSize: z.number().int().positive().max(PHOTO_MAX_BYTES).optional(),
     fileType: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]).optional(),
     dataUrl: z.string()
-      .max(3_000_000)
+      .max(PHOTO_MAX_DATA_URL_CHARS)
       .regex(/^data:image\/(?:jpeg|png|webp|gif);base64,[A-Za-z0-9+/=\r\n]+$/),
   })
-  .strict();
+  .strict()
+  // `fileSize` is client-declared and optional, so it bounded nothing: a 2 MB
+  // declaration could accompany a 2.25 MB payload, and omitting the field bounded
+  // even less. The ceiling is enforced on the bytes that actually get stored.
+  .superRefine((input, ctx) => {
+    if (dataUrlByteLength(input.dataUrl) > PHOTO_MAX_BYTES) {
+      ctx.addIssue({ code: "custom", path: ["dataUrl"], message: "Photo exceeds the maximum size." });
+    }
+  });
 
 interface Identity {
   authenticate(token: string): Promise<{ id: string } | null>;
@@ -128,7 +148,10 @@ export function createPrivacyHandlers(identity: Identity, repository: PostgresPr
         const result = await repository.storeCollectedData(
           id, "PHOTO", {
             fileName: input.fileName,
-            fileSize: input.fileSize,
+            // The measured byte count, not the client's claim about it: the stored
+            // record is what an operator reads, so it must describe the payload
+            // that is actually there rather than whatever the uploader asserted.
+            fileSize: dataUrlByteLength(input.dataUrl),
             fileType: input.fileType,
             // dataUrl is stored as-is; in production you'd upload to blob storage
             dataUrl: input.dataUrl,
@@ -192,7 +215,11 @@ async function execute(operation: () => Promise<Response>) {
     if (error instanceof z.ZodError || error instanceof SyntaxError) {
       return failure("INVALID_REQUEST", 422);
     }
-    console.error("[privacy] unexpected failure", error);
+    // Only the error's shape is logged, never the error itself. A postgres.js
+    // error carries the failing statement and its bound parameters, which on this
+    // module's write paths are exactly the coordinates, device fingerprint and
+    // photo bytes the endpoint exists to protect. Same rule as the avatar module.
+    console.error("[privacy] unexpected failure", error instanceof Error ? error.name : typeof error);
     return failure("INTERNAL_ERROR", 500);
   }
 }
@@ -208,6 +235,7 @@ function failure(code: string, status: number) {
     : code === "INVALID_REQUEST" ? "Check the submitted fields and try again."
     : code === "INVALID_ORIGIN" ? "Reload this page and try again."
     : code === "FORBIDDEN" ? "You do not have permission to perform this action."
+    : code === "RATE_LIMITED" ? "You have submitted this too many times. Try again later."
     : "The request could not be completed.";
   return Response.json({ error: { code, message } }, { status, headers: { "cache-control": "no-store" } });
 }
