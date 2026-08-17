@@ -1,27 +1,20 @@
 import { AuthError } from "@pulse/domain";
+import { isSameOrigin as check } from "@pulse/guardrails";
 
 /**
  * Same-origin guard for state-changing API requests.
  *
- * Compares the browser `Origin` header against the origin the browser actually
- * addressed — derived from the `Host` header (honoring a trusted
- * `x-forwarded-host` / `x-forwarded-proto` pair when behind a reverse proxy) —
- * rather than Next's canonical `request.url`. Next reports `request.url` with a
- * `localhost` host even when the browser used `127.0.0.1`, so comparing against
- * `new URL(request.url).origin` rejects every legitimate same-origin write in
- * local development and behind proxies that rewrite the host. Centralizing the
- * check keeps every mutation endpoint on identical logic.
+ * The comparison itself — and the reason it cannot be `new URL(request.url)` —
+ * lives in `@pulse/guardrails`. Centralizing the call here keeps every mutation
+ * endpoint on identical logic and gives the whole app one place to tighten.
+ *
+ * No `trustedHosts` yet, which means a forwarded host is believed. That is the
+ * behaviour this app has always had and it is only safe because `SameSite=Lax`
+ * carries the real load; the list is the upgrade, and it needs the deployment's
+ * public hostnames to be configuration before it can be turned on.
  */
 export function isSameOrigin(request: Request): boolean {
-  const origin = request.headers.get("origin");
-  if (!origin) return true;
-  const requestUrl = new URL(request.url);
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const host = forwardedHost || request.headers.get("host");
-  const forwardedProtocol = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
-  const protocol = forwardedProtocol || requestUrl.protocol.slice(0, -1);
-  const expectedOrigin = host ? `${protocol}://${host}` : requestUrl.origin;
-  return origin === expectedOrigin;
+  return check(request);
 }
 
 export function assertSameOrigin(request: Request, action = "Reload this page and try again."): void {

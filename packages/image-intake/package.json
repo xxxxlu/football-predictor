@@ -1,5 +1,5 @@
 {
-  "name": "@pulse/domain",
+  "name": "@pulse/image-intake",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,6 +16,6 @@
     "typecheck": "tsc -b --pretty false"
   },
   "dependencies": {
-    "@pulse/guardrails": "workspace:*"
+    "sharp": "0.35.3"
   }
 }

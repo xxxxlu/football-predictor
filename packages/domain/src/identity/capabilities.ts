@@ -1,3 +1,5 @@
+import { createCapabilityModel } from "@pulse/guardrails";
+
 /**
  * Capability-based operator authorization (FR80, FR81).
  *
@@ -93,21 +95,28 @@ export const REAUTH_REQUIRED_CAPABILITIES = [
   "COMPETITION_RESULT_ENTRY",
 ] as const satisfies readonly Capability[];
 
-const REAUTH_REQUIRED = new Set<Capability>(REAUTH_REQUIRED_CAPABILITIES);
+/**
+ * The tables above are the policy; the resolution mechanism is
+ * `@pulse/guardrails`. Splitting them is what keeps this file readable as a
+ * specification — everything here is a statement about *this* product, and none
+ * of it is set arithmetic.
+ */
+const MODEL = createCapabilityModel<OperatorRole, Capability>({
+  roleCapabilities: ROLE_CAPABILITIES,
+  reauthRequired: REAUTH_REQUIRED_CAPABILITIES,
+});
 
 /** Resolves the effective capability set for a set of held roles. */
 export function capabilitiesFor(roles: readonly OperatorRole[]): Set<Capability> {
-  const capabilities = new Set<Capability>();
-  for (const role of roles) for (const capability of ROLE_CAPABILITIES[role] ?? []) capabilities.add(capability);
-  return capabilities;
+  return MODEL.capabilitiesFor(roles);
 }
 
 export function hasCapability(roles: readonly OperatorRole[], capability: Capability): boolean {
-  return roles.some((role) => (ROLE_CAPABILITIES[role] ?? []).includes(capability));
+  return MODEL.hasCapability(roles, capability);
 }
 
 export function requiresReauthentication(capability: Capability): boolean {
-  return REAUTH_REQUIRED.has(capability);
+  return MODEL.requiresReauthentication(capability);
 }
 
 export function isGrantableOperatorRole(value: unknown): value is GrantableOperatorRole {

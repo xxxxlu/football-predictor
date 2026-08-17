@@ -24,8 +24,9 @@
     "close-settled-rooms": "node scripts/close-settled-rooms.mjs"
   },
   "dependencies": {
-    "@pulse/domain": "workspace:*",
     "@node-rs/argon2": "2.0.2",
+    "@pulse/domain": "workspace:*",
+    "@pulse/guardrails": "workspace:*",
     "drizzle-orm": "0.45.2",
     "postgres": "3.4.9"
   }

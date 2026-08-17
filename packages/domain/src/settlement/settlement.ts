@@ -1,3 +1,5 @@
+import { DecimalError, multiplyByDecimal } from "@pulse/guardrails";
+
 export type MatchSettlementStatus = "FINAL" | "CANCELLED" | "POSTPONED" | "SUSPENDED" | "SCHEDULED" | "LIVE";
 export type SettlementOutcome = "WIN" | "LOSS" | "PUSH" | "CANCEL";
 export type SettlementOperation = "SETTLE" | "REVERSAL";
@@ -140,21 +142,22 @@ function resolveOutcome(input: SettleTicketInput): SettlementOutcome | HeldSettl
   return input.outcome;
 }
 
-/** Multiplies integer points by decimal-string odds and rounds half up exactly once. */
+/**
+ * Multiplies integer points by decimal-string odds and rounds half up exactly once.
+ *
+ * The arithmetic is `@pulse/guardrails`; what stays here is the error contract.
+ * Every way the multiplication can refuse — a malformed rate, a stake that is not
+ * a non-negative safe integer, a product past the safe-integer ceiling — is one
+ * thing to a settlement: odds it will not price. Anything that is *not* a refusal
+ * is rethrown untouched rather than dressed up as INVALID_ODDS.
+ */
 export function calculateWinReturnPoints(stakePoints: number, decimalOdds: string): number {
-  if (!Number.isSafeInteger(stakePoints) || stakePoints < 0 || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(decimalOdds)) {
-    throw new SettlementError("INVALID_ODDS");
+  try {
+    return multiplyByDecimal(stakePoints, decimalOdds);
+  } catch (error) {
+    if (error instanceof DecimalError) throw new SettlementError("INVALID_ODDS");
+    throw error;
   }
-  const [integerPart = "0", fractionPart = ""] = decimalOdds.split(".");
-  if (`${integerPart}${fractionPart}`.replace(/0/g, "").length === 0) throw new SettlementError("INVALID_ODDS");
-  const denominator = 10n ** BigInt(fractionPart.length);
-  const numerator = BigInt(`${integerPart}${fractionPart}`);
-  const product = BigInt(stakePoints) * numerator;
-  const quotient = product / denominator;
-  const remainder = product % denominator;
-  const rounded = quotient + (remainder * 2n >= denominator ? 1n : 0n);
-  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) throw new SettlementError("INVALID_ODDS");
-  return Number(rounded);
 }
 
 function grossReturn(state: SettlementState, outcome: SettlementOutcome): number {

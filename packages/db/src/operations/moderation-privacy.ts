@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { REDACTION_MARKER, resolveAuditActions, type AuditQuery, type Capability } from "@pulse/domain";
+import { createKeyRedactor } from "@pulse/guardrails";
 import { clearAvatarWithin } from "../identity/avatar-projection.js";
 import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { OperationError } from "./repository.js";
@@ -72,25 +73,15 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
  * camelCase `reporterIpAddress` and a snake_case `reporter_ip_address` are the
  * same key.
  */
-const SENSITIVE_AUDIT_KEY = /(token|password|secret|recovery|invite|proof|hash|credential|otp|apikey|api_key)/i;
-const LOCATION_AUDIT_KEY = /(^|_)(ip|address|lat|latitude|lng|longitude|geo|coord|coords|location|placename)(_|$)/;
-
-function isSensitiveAuditKey(key: string): boolean {
-  if (SENSITIVE_AUDIT_KEY.test(key)) return true;
-  const snake = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
-  return LOCATION_AUDIT_KEY.test(snake);
-}
-export function redactAuditMetadata(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactAuditMetadata);
-  if (value && typeof value === "object") {
-    const output: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      output[key] = isSensitiveAuditKey(key) ? REDACTION_MARKER : redactAuditMetadata(entry);
-    }
-    return output;
-  }
-  return value;
-}
+export const redactAuditMetadata = createKeyRedactor({
+  // Secret-ish words compound freely (`apiKey`, `refreshToken`, `passwordHash`),
+  // so these match anywhere in the key.
+  substrings: ["token", "password", "secret", "recovery", "invite", "proof", "hash", "credential", "otp", "apikey", "api_key"],
+  // Location words are short and hide inside ordinary ones — `ip` sits in
+  // `description` and `recipient` — so these match only as a whole word.
+  words: ["ip", "address", "lat", "latitude", "lng", "longitude", "geo", "coord", "coords", "location", "placename"],
+  marker: REDACTION_MARKER,
+});
 
 /**
  * Audit metadata must be written as `${JSON.stringify(value)}::text::jsonb`.
