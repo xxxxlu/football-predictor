@@ -6,7 +6,7 @@ import { analyzeAccessibility, blockingViolations, gotoForScan } from "./support
 //   1. /matches/f1 (race weekend list)
 //   2. /matches/f1/<sessionId> (session detail, browse mode)
 //   3. /matches/f1/<sessionId>?roomId=… with the F1 Prediction Slip engaged
-//   4. /rooms/<roomId> after an F1 ticket exists (成员投入记录 with an F1 row)
+//   4. /rooms/<roomId> after an F1 ticket exists (post-submission room state)
 //
 // These journeys need a persisting session. The session cookie's Secure flag
 // keys on APP_ENV, so they run REAL against `next dev` and against the CI
@@ -109,9 +109,10 @@ test.describe("F1 surfaces accessibility", () => {
     await expectNoBlockingViolations(page, "F1 prediction slip");
   });
 
-  test("no serious or critical a11y violations: room investment wall with an F1 ticket", async () => {
+  test("no serious or critical a11y violations: room page with an F1 ticket placed", async () => {
     skipUnlessSeeded();
-    // Submit a real ticket through the slip so 成员投入记录 renders an F1 row.
+    // Submit a real ticket through the slip so the room renders its post-submission
+    // state — the slip shows placed, and the points region shows the stake frozen.
     await gotoForScan(page, `/matches/f1/${predictableSessionId}?roomId=${roomId}`);
     const slip = page.getByRole("form", { name: "F1 判断凭证" });
     await expect(slip).toBeVisible();
@@ -121,10 +122,18 @@ test.describe("F1 surfaces accessibility", () => {
     await expect(page.getByText("判断已记录")).toBeVisible();
 
     await gotoForScan(page, `/rooms/${roomId}`);
-    await expect(page.getByRole("heading", { name: "成员投入记录" })).toBeVisible();
-    // The F1 ticket row must be on the wall (weekend · session title), otherwise
-    // this scan silently degrades to the football-only surface.
+    // This used to assert the 成员投入记录 wall. That surface is gone: a room no
+    // longer stacks past predictions, and points at personal history instead
+    // ("轮次结束后不在群组内堆叠旧竞猜记录"). The assertion outlived it, and because
+    // skipUnlessSeeded() had been skipping this test in CI, a blocking gate never
+    // reported that — it only surfaced on a fully seeded local run.
+    await expect(page.getByRole("heading", { name: "个人历史与结算凭证" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "查看我的战绩" })).toHaveAttribute("href", "/history");
+    // The room must actually be showing its F1 identity and the placed ticket,
+    // otherwise this scan silently degrades to a surface without either.
     await expect(page.getByText(/GRAND PRIX · /).first()).toBeVisible();
-    await expectNoBlockingViolations(page, "room investment wall with an F1 ticket");
+    // `exact` matters: without it this also matches the 9,500 available balance.
+    await expect(page.getByRole("region", { name: "房间积分" }).getByText("500", { exact: true })).toBeVisible();
+    await expectNoBlockingViolations(page, "room page with an F1 ticket placed");
   });
 });
