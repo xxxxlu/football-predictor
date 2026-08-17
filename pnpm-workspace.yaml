@@ -12,5 +12,44 @@ ignoredBuiltDependencies:
 # looked wrong; they are guardrails against a future resolution dropping below a
 # patched version, and a guardrail that is not read is not a guardrail.
 overrides:
-  next>postcss: '>=8.5.10'
+  # Unscoped, and raised from the old `next>postcss: '>=8.5.10'` on both counts.
+  # 8.5.10 was already satisfied by the resolved 8.5.18 and so bounded nothing, and
+  # scoping it to `next>` left the vitest→vite→postcss path on the vulnerable
+  # version — the same advisory, reached by the other consumer.
+  postcss: '>=8.5.23'
   next>sharp: '>=0.35.0'
+  # 23 advisories, 17 of them high, on the only axios in the tree — and it is a
+  # production dependency: @cloudbase/node-sdk is the avatar object store. It also
+  # fails `pnpm audit --audit-level high`, which CI blocks on, so this was not a
+  # someday decision but a red pipeline.
+  #
+  # Upgrading the SDK does not fix it. Every published version pins axios 0.27.2 —
+  # 3.18.3 (latest), 3.18.5 (release-v3) and even 4.0.3 (next) all do.
+  #
+  # 0.33.0 is the highest floor any of the 23 advisories asks for and the last 0.x
+  # release: the terminus of the security-backport line for callers who cannot move
+  # to 1.x. Staying inside 0.x is the point — the SDK talks to axios, not us, and a
+  # major bump would be a change to an API surface we do not control.
+  #
+  # Pinned exactly, not as `>=0.33.0`: that range is also satisfied by 1.x, and pnpm
+  # duly resolved it to axios 1.19.0 — the major bump this override exists to avoid.
+  '@cloudbase/node-sdk>axios': 0.33.0
+  js-yaml: '>=4.3.1'
+  nanoid@3: '>=3.3.18'
+
+auditConfig:
+  # GHSA-p6mc-m468-83gw — prototype pollution in `lodash.set`, reached through
+  # @cloudbase/node-sdk > @cloudbase/database. It has NO patched version: the
+  # standalone `lodash.set` package is deprecated, so `patched_versions` is
+  # `<0.0.0` and no override can satisfy it.
+  #
+  # Ignored rather than lowering the whole gate to `moderate`, which would have
+  # hidden every future high finding as well. It is also not on any execution path
+  # here: this workspace uses the CloudBase *storage* API only (uploadFile,
+  # deleteFile, getTempFileURL) and references @cloudbase/database nowhere, so the
+  # vulnerable function is shipped but never called.
+  #
+  # Revisit when the avatar store moves off @cloudbase/node-sdk, and delete this
+  # entry with it — an ignore list nobody re-reads becomes a blindfold.
+  ignoreGhsas:
+    - GHSA-p6mc-m468-83gw
