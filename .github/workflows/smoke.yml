@@ -34,8 +34,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Resolve the target base URL
@@ -49,6 +49,26 @@ jobs:
             echo "::error::No base URL. Pass one to the workflow or set the PRODUCTION_BASE_URL repository variable."
             exit 1
           fi
+          # Validated before it reaches a step output. Only two things are actually
+          # required: a real scheme, and no whitespace — a newline would let the
+          # value write extra key=value pairs of its own into GITHUB_OUTPUT. Shell
+          # metacharacters are deliberately NOT rejected; the next step passes this
+          # through the environment, so they are inert there, and blocklisting them
+          # would refuse a legitimate URL carrying a query string.
+          case "$BASE_URL" in
+            https://*|http://*) ;;
+            *) echo "::error::base_url must start with http:// or https://"; exit 1 ;;
+          esac
+          case "$BASE_URL" in
+            *[[:space:]]*) echo "::error::base_url must not contain whitespace"; exit 1 ;;
+          esac
           echo "base_url=$BASE_URL" >> "$GITHUB_OUTPUT"
       - name: Smoke test the deployed service
-        run: node scripts/smoke-test.mjs "${{ steps.target.outputs.base_url }}"
+        # The URL reaches the script through the environment, never interpolated
+        # into the shell line. `${{ }}` is substituted by Actions *before* the shell
+        # parses the command, so a crafted base_url injected commands into the
+        # runner — and because the value arrives via a step output rather than
+        # `inputs.` directly, static analysis does not flag the interpolated form.
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: node scripts/smoke-test.mjs "$BASE_URL"

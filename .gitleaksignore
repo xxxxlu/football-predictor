@@ -1,0 +1,6 @@
+# Historical findings audited 2026-07-23: both are deliberate throwaway e2e
+# test passwords (never real credentials). The VALID_PASSWORD line no longer
+# exists in the current tree; E2E_PASSWORD is additionally allowlisted by
+# literal in .gitleaks.toml.
+ad96c41c5e812ad1d37d2c664c2fff807cf99c19:apps/web/tests/e2e/support/actors.ts:generic-api-key:4
+923308c40e052ba2f982756d1e6fe60603213778:apps/web/tests/e2e/f1-accessibility.spec.ts:generic-api-key:17
