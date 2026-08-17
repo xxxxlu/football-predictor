@@ -41,6 +41,37 @@ export function outcomeForCandidate(candidate: SettlementCandidate): "WIN" | "LO
 
 type Dependencies = { candidates: SettlementCandidatePort; settlement: SettlementApplicationPort };
 
+/**
+ * Why a settlement candidate did not settle.
+ *
+ * The catch here used to be bare: the ticket id went into `failedTicketIds` and
+ * the error itself was dropped, so a whole sweep could fail on every candidate
+ * and leave nothing to diagnose it with — an operator saw a list of ids and no
+ * reason. `SettlementError` carries the reason in `code` (SETTLEMENT_CONFLICT,
+ * INSUFFICIENT_FROZEN, INVALID_ODDS …), which is exactly what distinguishes
+ * "this needs a retry" from "this ticket is wedged and needs a decision".
+ *
+ * The convention-correct form is the injected structured `write` the worker
+ * runtime already threads for its own events; this writes to stderr instead so
+ * the change stays inside one file. Both end up in the same container log. Only
+ * codes and ids are emitted — never balances, stakes or the error object.
+ */
+function reportCandidateFailure(candidate: SettlementCandidate, error: unknown): void {
+  const reason = error instanceof Error
+    ? (error as Error & { code?: string }).code ?? error.name
+    : typeof error;
+  process.stderr.write(`${JSON.stringify({
+    event: "settlement.candidate_failed",
+    timestamp: new Date().toISOString(),
+    outcome: "failure",
+    ticketId: candidate.ticketId,
+    settlementVersion: candidate.settlementVersion,
+    activeSettlementVersion: candidate.activeSettlementVersion,
+    matchStatus: candidate.matchStatus,
+    reason,
+  })}\n`);
+}
+
 async function processCandidate(dependencies: Dependencies, candidate: SettlementCandidate): Promise<"PROCESSED" | "HELD"> {
   if (!candidate.resultConfirmed || (candidate.matchStatus !== "FINISHED" && candidate.matchStatus !== "CANCELLED")) return "HELD";
   const outcome = outcomeForCandidate(candidate);
@@ -70,8 +101,9 @@ export function createSettlementJobHandler(dependencies: Dependencies) {
           const result = await processCandidate(dependencies, candidate);
           if (result === "PROCESSED") processed += 1;
           else held += 1;
-        } catch {
+        } catch (error) {
           failedTicketIds.push(candidate.ticketId);
+          reportCandidateFailure(candidate, error);
         }
       }
       return { outcome: failedTicketIds.length ? "RETRY" as const : "SUCCESS" as const, processed, held, failedTicketIds };
@@ -87,7 +119,11 @@ export function createSettlementRetryService(dependencies: Dependencies) {
       try {
         const result = await processCandidate(dependencies, candidate);
         return { outcome: result === "PROCESSED" ? "SUCCESS" as const : "HELD" as const, ticketId };
-      } catch {
+      } catch (error) {
+        // Operator-triggered, so the reason matters even more here: the caller
+        // gets RETRY either way and cannot tell a transient write failure from a
+        // ticket that will refuse every retry until someone decides something.
+        reportCandidateFailure(candidate, error);
         return { outcome: "RETRY" as const, ticketId };
       }
     },

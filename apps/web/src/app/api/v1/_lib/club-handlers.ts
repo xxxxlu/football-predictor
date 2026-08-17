@@ -119,7 +119,9 @@ async function execute(operation: () => Promise<Response>) {
   } catch (error) {
     if (error instanceof AuthError || error instanceof OperationError) return failure(error.code, error.status);
     if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422);
-    console.error("[club] unexpected failure", error);
+    // Shape only: the club channel's write path binds the member's message text
+    // as a statement parameter, and a postgres.js error carries both.
+    console.error("[club] unexpected failure", error instanceof Error ? error.name : typeof error);
     return failure("INTERNAL_ERROR", 500);
   }
 }

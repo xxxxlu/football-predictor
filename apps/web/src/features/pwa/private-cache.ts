@@ -11,10 +11,35 @@
 import { hasOfflineDrafts, purgeOfflineDrafts } from "./offline-draft";
 
 const PRIVATE_CACHE_PREFIX = "pulse-private-";
+const PRIVATE_CACHE_NAME = `${PRIVATE_CACHE_PREFIX}v1`;
 const OWNER_MARKER_PATH = "/__pulse-private-owner";
 
 function cachesAvailable(): boolean {
   return typeof window !== "undefined" && "caches" in window;
+}
+
+type OwnerMarker = { owner: string; epoch: string | null };
+
+/** Parse a marker body. Current format is JSON {owner, epoch}; markers written
+ *  before the epoch mechanism were the plain userId (epoch: null). */
+function parseOwnerMarker(text: string): OwnerMarker | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (typeof parsed !== "object" || parsed === null) return { owner: trimmed, epoch: null };
+    const record = parsed as { owner?: unknown; epoch?: unknown };
+    if (typeof record.owner !== "string" || !record.owner) return null;
+    return { owner: record.owner, epoch: typeof record.epoch === "string" && record.epoch ? record.epoch : null };
+  } catch {
+    return { owner: trimmed, epoch: null };
+  }
+}
+
+function newEpoch(): string {
+  const cryptoObj = globalThis.crypto as Crypto | undefined;
+  if (cryptoObj?.randomUUID) return cryptoObj.randomUUID();
+  return `epoch-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 /** Delete every private cache and offline draft (logout, or ownership change).
@@ -39,21 +64,26 @@ export async function syncPrivateCacheOwner(userId: string): Promise<void> {
   try {
     const keys = await window.caches.keys();
     const privateKeys = keys.filter((key) => key.startsWith(PRIVATE_CACHE_PREFIX));
-    let previousOwner: string | null = null;
+    let previous: OwnerMarker | null = null;
     let hasEntries = false;
     for (const key of privateKeys) {
       const cache = await window.caches.open(key);
       const marker = await cache.match(OWNER_MARKER_PATH);
-      if (marker) previousOwner = previousOwner ?? ((await marker.text()).trim() || null);
+      if (marker && previous === null) previous = parseOwnerMarker(await marker.text());
       if (!hasEntries && (await cache.keys()).length > 0) hasEntries = true;
     }
-    // A different owner — or content of UNKNOWN ownership (marker missing) — never survives.
-    // Offline drafts count as content too: marker-less drafts are foreign (7.3b).
-    if ((previousOwner !== null && previousOwner !== userId) || (previousOwner === null && (hasEntries || hasOfflineDrafts()))) {
+    // A different owner — or content of UNKNOWN ownership (marker missing/unparseable) —
+    // never survives. Offline drafts count as content too: marker-less drafts are foreign (7.3b).
+    const sameOwner = previous !== null && previous.owner === userId;
+    if ((previous !== null && !sameOwner) || (previous === null && (hasEntries || hasOfflineDrafts()))) {
       await purgePrivateCaches();
     }
-    // (Re)write the marker into the versioned cache the SW writes to.
-    const cache = await window.caches.open(`${PRIVATE_CACHE_PREFIX}v1`);
-    await cache.put(OWNER_MARKER_PATH, new Response(userId, { headers: { "content-type": "text/plain" } }));
+    // (Re)write the marker into the versioned cache the SW writes to. The epoch is minted
+    // per binding and only survives a same-owner re-confirm: the SW re-reads the marker
+    // body around each write and self-annuls when it changed, so any rebind (or purge)
+    // invalidates in-flight writes instead of letting them resurrect the cache.
+    const epoch = sameOwner && previous?.epoch ? previous.epoch : newEpoch();
+    const cache = await window.caches.open(PRIVATE_CACHE_NAME);
+    await cache.put(OWNER_MARKER_PATH, new Response(JSON.stringify({ owner: userId, epoch }), { headers: { "content-type": "application/json" } }));
   } catch { /* 缓存所有权同步失败不阻断页面 —— 最坏情况是下次登录再清一次。 */ }
 }

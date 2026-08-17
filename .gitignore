@@ -20,3 +20,15 @@ test-results/
 
 # Playwright MCP debug artifacts
 .playwright-mcp/
+
+# Vendored BMAD framework and its skill library. Installed tooling, not project
+# source: it is upstream's content under upstream's licence, and at 275 files it
+# outnumbered every package in this workspace. `.claude/launch.json` stays — that
+# one is this project's own dev-server config and a contributor wants it.
+.claude/skills/
+_bmad/
+
+# Internal planning and process artifacts: PRD, product brief, PRD-validation and
+# readiness reports, per-story implementation records. The architecture note a
+# contributor actually needs is checked in as docs/architecture.md.
+_bmad-output/

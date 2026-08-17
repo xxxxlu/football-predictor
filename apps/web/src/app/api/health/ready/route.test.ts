@@ -33,6 +33,24 @@ describe("database readiness probe", () => {
     expect(close).toHaveBeenCalledOnce();
   });
 
+  /*
+   * The pre-deploy migration step puts the database ahead of the version still
+   * serving traffic. Treating that as unready took the outgoing version down on
+   * every deploy that carried a migration.
+   */
+  it("stays ready when the database is ahead of this build's manifest", async () => {
+    const close = vi.fn(async () => undefined);
+    const factory: DatabaseProbeFactory = () => ({ ping: async () => undefined, appliedMigrations: async () => ["0001.sql", "0002.sql", "0003.sql"], close });
+    await expect(probeDatabase(environment.DATABASE_URL, ["0001.sql", "0002.sql"], factory)).resolves.toMatchObject({ expectedCount: 2, appliedCount: 3, latestApplied: "0003.sql" });
+  });
+
+  it("is unready while a migration this build needs is missing", async () => {
+    const close = vi.fn(async () => undefined);
+    const factory: DatabaseProbeFactory = () => ({ ping: async () => undefined, appliedMigrations: async () => ["0001.sql"], close });
+    await expect(probeDatabase(environment.DATABASE_URL, ["0001.sql", "0002.sql"], factory)).rejects.toThrow("MIGRATIONS_OUT_OF_DATE");
+    expect(close).toHaveBeenCalledOnce();
+  });
+
   it("releases the connection when ping or migration validation fails", async () => {
     const close = vi.fn(async () => undefined);
     const factory: DatabaseProbeFactory = () => ({ ping: async () => { throw new Error("timeout"); }, appliedMigrations: async () => [], close });

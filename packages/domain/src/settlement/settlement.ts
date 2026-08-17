@@ -1,3 +1,5 @@
+import { DecimalError, multiplyByDecimal } from "@pulse/guardrails";
+
 export type MatchSettlementStatus = "FINAL" | "CANCELLED" | "POSTPONED" | "SUSPENDED" | "SCHEDULED" | "LIVE";
 export type SettlementOutcome = "WIN" | "LOSS" | "PUSH" | "CANCEL";
 export type SettlementOperation = "SETTLE" | "REVERSAL";
@@ -140,21 +142,22 @@ function resolveOutcome(input: SettleTicketInput): SettlementOutcome | HeldSettl
   return input.outcome;
 }
 
-/** Multiplies integer points by decimal-string odds and rounds half up exactly once. */
+/**
+ * Multiplies integer points by decimal-string odds and rounds half up exactly once.
+ *
+ * The arithmetic is `@pulse/guardrails`; what stays here is the error contract.
+ * Every way the multiplication can refuse — a malformed rate, a stake that is not
+ * a non-negative safe integer, a product past the safe-integer ceiling — is one
+ * thing to a settlement: odds it will not price. Anything that is *not* a refusal
+ * is rethrown untouched rather than dressed up as INVALID_ODDS.
+ */
 export function calculateWinReturnPoints(stakePoints: number, decimalOdds: string): number {
-  if (!Number.isSafeInteger(stakePoints) || stakePoints < 0 || !/^(?:0|[1-9]\d*)(?:\.\d+)?$/.test(decimalOdds)) {
-    throw new SettlementError("INVALID_ODDS");
+  try {
+    return multiplyByDecimal(stakePoints, decimalOdds);
+  } catch (error) {
+    if (error instanceof DecimalError) throw new SettlementError("INVALID_ODDS");
+    throw error;
   }
-  const [integerPart = "0", fractionPart = ""] = decimalOdds.split(".");
-  if (`${integerPart}${fractionPart}`.replace(/0/g, "").length === 0) throw new SettlementError("INVALID_ODDS");
-  const denominator = 10n ** BigInt(fractionPart.length);
-  const numerator = BigInt(`${integerPart}${fractionPart}`);
-  const product = BigInt(stakePoints) * numerator;
-  const quotient = product / denominator;
-  const remainder = product % denominator;
-  const rounded = quotient + (remainder * 2n >= denominator ? 1n : 0n);
-  if (rounded > BigInt(Number.MAX_SAFE_INTEGER)) throw new SettlementError("INVALID_ODDS");
-  return Number(rounded);
 }
 
 function grossReturn(state: SettlementState, outcome: SettlementOutcome): number {
@@ -184,12 +187,32 @@ export class SettlementService {
     const scope = { ticketId, settlementVersion, operation: "SETTLE" as const };
     return this.transaction.run(scope, async (transaction) => {
       const replay = await transaction.findOperation(scope);
-      if (replay) {
-        if (replay.status !== "SETTLED") throw new SettlementError("SETTLEMENT_CONFLICT");
-        return replay;
-      }
       const state = await transaction.getState(ticketId);
       if (!state) throw new SettlementError("TICKET_NOT_FOUND");
+      if (replay) {
+        if (replay.status !== "SETTLED") throw new SettlementError("SETTLEMENT_CONFLICT");
+        /*
+         * A stored receipt only stands in for this operation while its effects are
+         * still the live ones. `settlementVersion` is a content hash of the
+         * supplier's result (api-football/src/index.ts `versionOf`), with no
+         * monotonic component — so a supplier that corrects a result and later
+         * reverts it presents a version that was already settled once and has since
+         * been reversed. Returning the old receipt there wrote nothing at all: the
+         * reversal had already put the stake back into `frozen`, the ticket stayed
+         * PENDING, and the sweep counted it PROCESSED. The stake stayed frozen with
+         * no payout, forever, and every later sweep replayed the same no-op because
+         * `active_settlement_id IS NULL` keeps the ticket in the candidate set.
+         *
+         * Refusing is not the whole repair — re-applying this version needs a
+         * ledger idempotency key that can distinguish a second attempt from the
+         * first, which is a schema decision — but it turns a silent, permanent
+         * freeze into a failure the sweep reports and an operator can retry.
+         */
+        if (state.activeSettlement?.settlementVersion !== settlementVersion) {
+          throw new SettlementError("SETTLEMENT_CONFLICT");
+        }
+        return replay;
+      }
       if (state.activeSettlement !== null) throw new SettlementError("SETTLEMENT_CONFLICT");
       if (!Number.isSafeInteger(state.ticket.stakePoints) || state.ticket.stakePoints <= 0 || state.account.frozenPoints < state.ticket.stakePoints) {
         throw new SettlementError("INSUFFICIENT_FROZEN");

@@ -145,7 +145,10 @@ async function execute(operation: () => Promise<Response>) {
     if (error instanceof AuthError) return failure(error.code, error.status, error.action);
     if (error instanceof OperationError) return failure(error.code, error.status, undefined, error.details);
     if (error instanceof z.ZodError || error instanceof SyntaxError) return failure("INVALID_REQUEST", 422);
-    console.error("room chat handler failed", error);
+    // Shape only, never the error object: a postgres.js error carries the failing
+    // statement together with its bound parameters, and on the send path those
+    // parameters are the message body a member wrote in a private room.
+    console.error("room chat handler failed", error instanceof Error ? error.name : typeof error);
     return failure("INTERNAL_ERROR", 500);
   }
 }

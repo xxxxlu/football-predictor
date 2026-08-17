@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type postgres from "postgres";
 import { REDACTION_MARKER, resolveAuditActions, type AuditQuery, type Capability } from "@pulse/domain";
+import { createKeyRedactor } from "@pulse/guardrails";
 import { clearAvatarWithin } from "../identity/avatar-projection.js";
 import { readOperatorAuthorization, type OperatorSql } from "../identity/operator-roles.js";
 import { OperationError } from "./repository.js";
@@ -43,6 +44,17 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
   // Dropping only the database reference would leave the member's face readable
   // in the bucket after their account was deleted (Story 12.6).
   await clearAvatarWithin(tx, input.userId, input.occurredAt);
+  // Everything the privacy centre collected goes with the identity, for the same
+  // reason the avatar does — this is the most sensitive material the product
+  // holds (precise coordinates, device fingerprints, request IP and user agent),
+  // and none of it is needed to keep the ledger verifiable. The 0029 foreign
+  // keys cascade on a user *row* delete, which anonymization deliberately never
+  // does, so the cascade would never have fired: the rows have to be removed
+  // here. Consent rows go too — a choice about collection is meaningless once
+  // there is nothing collected and no account to collect for — and collected_data
+  // is deleted first because its consent_id references them.
+  await tx`DELETE FROM privacy.collected_data WHERE user_id=${input.userId}`;
+  await tx`DELETE FROM privacy.consent WHERE user_id=${input.userId}`;
   await tx`INSERT INTO ops.audit_events (id,actor_user_id,action,target_type,target_id,result,metadata,occurred_at)
     VALUES (${input.auditId},${input.actorUserId},'ACCOUNT_ANONYMIZED','USER',${input.userId},'SUCCESS',${JSON.stringify({ privacyRequestId: input.privacyRequestId, ...(input.reason ? { reason: input.reason } : {}) })}::text::jsonb,${input.occurredAt})`;
   return { anonymizedName };
@@ -61,25 +73,15 @@ export async function anonymizeAccountWithin(tx: OperatorSql, input: { userId: s
  * camelCase `reporterIpAddress` and a snake_case `reporter_ip_address` are the
  * same key.
  */
-const SENSITIVE_AUDIT_KEY = /(token|password|secret|recovery|invite|proof|hash|credential|otp|apikey|api_key)/i;
-const LOCATION_AUDIT_KEY = /(^|_)(ip|address|lat|latitude|lng|longitude|geo|coord|coords|location|placename)(_|$)/;
-
-function isSensitiveAuditKey(key: string): boolean {
-  if (SENSITIVE_AUDIT_KEY.test(key)) return true;
-  const snake = key.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase();
-  return LOCATION_AUDIT_KEY.test(snake);
-}
-export function redactAuditMetadata(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactAuditMetadata);
-  if (value && typeof value === "object") {
-    const output: Record<string, unknown> = {};
-    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-      output[key] = isSensitiveAuditKey(key) ? REDACTION_MARKER : redactAuditMetadata(entry);
-    }
-    return output;
-  }
-  return value;
-}
+export const redactAuditMetadata = createKeyRedactor({
+  // Secret-ish words compound freely (`apiKey`, `refreshToken`, `passwordHash`),
+  // so these match anywhere in the key.
+  substrings: ["token", "password", "secret", "recovery", "invite", "proof", "hash", "credential", "otp", "apikey", "api_key"],
+  // Location words are short and hide inside ordinary ones — `ip` sits in
+  // `description` and `recipient` — so these match only as a whole word.
+  words: ["ip", "address", "lat", "latitude", "lng", "longitude", "geo", "coord", "coords", "location", "placename"],
+  marker: REDACTION_MARKER,
+});
 
 /**
  * Audit metadata must be written as `${JSON.stringify(value)}::text::jsonb`.

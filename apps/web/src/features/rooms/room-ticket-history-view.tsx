@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { formatEventTitle } from "@/features/matchday/selection-label";
-import { toTicketHistoryView, type TicketHistoryRecord, type TicketStatus } from "./room-ticket-history";
+import { toTicketHistoryView, type AnyTicketStatus, type TicketHistoryRecord } from "./room-ticket-history";
 
-const statusLabels: Record<TicketStatus, string> = { FROZEN: "待结算", WON: "命中", LOST: "未命中", VOID: "取消 / 走盘" };
+// SETTLED only ever reaches a hidden ticket: the round is over, and that is all a
+// non-owner may be told while the room keeps settled tickets private.
+const statusLabels: Record<AnyTicketStatus, string> = { FROZEN: "待结算", SETTLED: "已结束", WON: "命中", LOST: "未命中", VOID: "取消 / 走盘" };
 
 export function RoomTicketHistoryView({ roomId, isOwner, initialPostMatchTicketVisible }: { roomId: string; isOwner: boolean; initialPostMatchTicketVisible: boolean }) {
   const [records, setRecords] = useState<TicketHistoryRecord[] | null>(null);

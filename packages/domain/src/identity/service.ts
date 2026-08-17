@@ -285,7 +285,7 @@ export class IdentityService {
     assertPassword(input.newPassword);
     await this.assertNotRateLimited("RECOVERY", usernameCanonical, input.sourceKey);
     const account = await this.repository.findAccountByUsername(usernameCanonical);
-    const valid = account?.status === "ACTIVE" && account.recoveryCodeHash === this.tokens.hash(input.recoveryCode);
+    const valid = account?.status === "ACTIVE" && constantTimeEquals(account.recoveryCodeHash, this.tokens.hash(input.recoveryCode));
     if (!valid) {
       await this.repository.recordFailure("RECOVERY", usernameCanonical, input.sourceKey, this.now());
       throw new AuthError("INVALID_RECOVERY_REQUEST", 400, "Check the recovery details or wait before trying again.");
@@ -349,6 +349,32 @@ function assertPassword(password: string) {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function isUuid(value: string) {
   return UUID_PATTERN.test(value);
+}
+
+/**
+ * Compares two token digests without leaking how far the match got.
+ *
+ * `===` on strings short-circuits at the first differing character. The recovery
+ * path is the one place that compares a secret's digest in JS — passwords go
+ * through Argon2's own constant-time verify and session tokens are matched in
+ * SQL — so it was also the one place where response time carried a per-character
+ * signal. An attacker cannot choose a digest directly, but they can grind
+ * candidate codes until one's digest shares a leading character, which turns a
+ * single 160-bit guess into a character-at-a-time search given enough samples.
+ *
+ * Accumulating XOR over every position rather than calling `timingSafeEqual`
+ * keeps this comparison inside the domain layer's existing dependencies — these
+ * are fixed-length lowercase hex digests from one hash function, so there is no
+ * encoding step to get wrong. A length mismatch answers false without comparing;
+ * a digest's length is not the secret.
+ */
+function constantTimeEquals(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let difference = 0;
+  for (let index = 0; index < left.length; index += 1) {
+    difference |= left.charCodeAt(index) ^ right.charCodeAt(index);
+  }
+  return difference === 0;
 }
 
 /**

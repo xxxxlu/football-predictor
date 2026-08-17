@@ -320,18 +320,28 @@ describe("user security console writes", () => {
     expect(rewrite).toContain("status='DISABLED'");
     expect(log.queries.some((query) => query.includes("UPDATE identity.sessions") && query.includes("revoked_at IS NULL"))).toBe(true);
     expect(log.queries.some((query) => query.includes("'ACCOUNT_ANONYMIZED'"))).toBe(true);
+    // FR70 forbids hard-deleting the account's *traceability* records. The
+    // carve-outs are the tables holding personal content rather than record, and
+    // they share one rationale: anonymizing the name while leaving the member's
+    // face in the bucket — or their GPS history, device fingerprint and request
+    // IP in the database — would defeat the whole exercise. The avatar row was
+    // the first (12.6); the privacy centre's two tables are the same category,
+    // nothing in the ledger or predictions joins to them, and an ACCOUNT_DELETION
+    // request that leaves them behind has not deleted the account's data.
+    //
+    // Kept as an explicit allowlist so the guard still has teeth: a DELETE
+    // against any other table fails this test, which is how it should read.
+    const deletableTables = ["identity.user_avatars", "privacy.collected_data", "privacy.consent"];
     for (const query of log.queries) {
-      // FR70 forbids hard-deleting the account's records — with exactly one
-      // carve-out since 12.6. An avatar is published personal content, not a
-      // traceability record: anonymizing the name while leaving the member's
-      // face in the bucket would defeat the whole exercise, so the avatar row
-      // goes and its object is queued for deletion.
-      if (!query.includes("DELETE FROM identity.user_avatars")) {
+      if (!deletableTables.some((table) => query.includes(`DELETE FROM ${table}`))) {
         expect(query).not.toContain("DELETE FROM");
       }
       for (const forbidden of ["ledger", "room.tickets", "SET available_points", "predictions"]) expect(query).not.toContain(forbidden);
     }
-    // ...and that carve-out really does schedule the bucket copy for removal.
-    expect(log.queries.some((query) => query.includes("DELETE FROM identity.user_avatars"))).toBe(true);
+    // ...and every carve-out really does run: the bucket copy gets scheduled for
+    // removal and the collected privacy data goes with it.
+    for (const table of deletableTables) {
+      expect(log.queries.some((query) => query.includes(`DELETE FROM ${table}`))).toBe(true);
+    }
   });
 });

@@ -71,12 +71,27 @@ export function redactTicketHistory(row: TicketHistoryRow, viewerId: string, now
       ? settings.postMatchTicketVisible ? "REVEALED" : "PRIVATE"
       : settings.preMatchStakeVisible ? "STAKE_ONLY" : "PRIVATE";
   const returnPoints = row.grossReturnPoints ?? null;
+  const settled = row.ticketStatus === "SETTLED";
   const common = {
     ticketId: row.ticketId, matchId: row.matchId, homeTeam: row.homeTeam, awayTeam: row.awayTeam,
     kickoffAt: timestampIso(row.kickoffAt), submitted: true,
     owner: { userId: row.ownerUserId, displayName: row.displayName, isCurrentUser },
     visibility,
-    status: row.ticketStatus !== "SETTLED" ? "FROZEN" : row.outcome === "WIN" ? "WON" : row.outcome === "LOSS" ? "LOST" : "VOID",
+    /**
+     * A hidden ticket reports the round's stage, never its result.
+     *
+     * This used to read the badge straight off `outcome`, which handed every
+     * member the WON/LOST of every other member's ticket on every fixture — the
+     * one thing `postMatchTicketVisible = false` exists to prevent. Everything
+     * else was redacted below and this single field walked past it, because the
+     * redaction happens by *omitting keys after* `common` is built and `status`
+     * was already inside `common`.
+     *
+     * `SETTLED` is safe to disclose where the outcome is not: a finished match is
+     * public, so "this member's ticket has been settled" follows from the fixture
+     * alone and adds nothing. The unsettled case stays `FROZEN` for every viewer.
+     */
+    status: !settled ? "FROZEN" : visibility === "PRIVATE" ? "SETTLED" : row.outcome === "WIN" ? "WON" : row.outcome === "LOSS" ? "LOST" : "VOID",
   };
   if (visibility === "PRIVATE") return common;
   const stake = { ...common, submittedAt: timestampIso(row.submittedAt), stakePoints: row.stakePoints };

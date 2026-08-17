@@ -32,16 +32,38 @@ export async function expectedMigrations(cwd: string = process.cwd()): Promise<s
   throw new Error("MIGRATION_MANIFEST_UNAVAILABLE");
 }
 
+/**
+ * Ready when every migration this build needs has been applied.
+ *
+ * The danger this guards against is one-directional: code that queries a table
+ * or column its migration has not created. A database that is *ahead* of the
+ * build is not that failure — and it is the normal state during a deployment.
+ * `render.yaml` runs `pnpm db:migrate` as the pre-deploy step, before any new
+ * instance starts, while the previous version is still taking traffic; that
+ * version's manifest cannot contain the migration that just ran. Demanding exact
+ * equality therefore made the *outgoing* version fail `healthCheckPath` on every
+ * deploy that carried a migration — the one moment the service is meant to stay
+ * up. Reversing the deploy order does not help: then the incoming version is the
+ * unready one until migrations land.
+ *
+ * Presence, not position: the runner applies the whole sorted set inside one
+ * transaction (packages/db/scripts/migrate.mjs), so ordering is guaranteed by
+ * construction and an index-wise comparison only added a second way to fail.
+ */
 export async function probeDatabase(databaseUrl: string, expected: string[], factory: DatabaseProbeFactory = createPostgresProbe): Promise<MigrationState> {
   if (expected.length === 0) throw new Error("MIGRATION_MANIFEST_EMPTY");
   const probe = factory(databaseUrl);
   try {
     await probe.ping();
     const applied = await probe.appliedMigrations();
-    const latestExpected = expected.at(-1)!;
-    const latestApplied = applied.at(-1) ?? null;
-    if (applied.length !== expected.length || latestApplied !== latestExpected || applied.some((name, index) => name !== expected[index])) throw new Error("MIGRATIONS_OUT_OF_DATE");
-    return { expectedCount: expected.length, appliedCount: applied.length, latestExpected, latestApplied };
+    const appliedNames = new Set(applied);
+    if (expected.some((name) => !appliedNames.has(name))) throw new Error("MIGRATIONS_OUT_OF_DATE");
+    return {
+      expectedCount: expected.length,
+      appliedCount: applied.length,
+      latestExpected: expected.at(-1)!,
+      latestApplied: applied.at(-1) ?? null,
+    };
   } finally {
     await probe.close();
   }

@@ -152,6 +152,31 @@ describe("settlement idempotency, retry and correction", () => {
     expect(fake.ledger).toHaveLength(1);
   });
 
+  /*
+   * `settlementVersion` is a content hash of the supplier's result, so a result
+   * that is corrected and then reverted presents a version that was already
+   * settled and has since been reversed. The stored receipt must not stand in for
+   * the settlement in that state: doing so wrote nothing, left the reversal's
+   * re-frozen stake in place with no payout, and reported success — every sweep,
+   * forever, because the ticket stays a candidate while it has no active
+   * settlement.
+   */
+  it("refuses a stored receipt whose settlement was since reversed", async () => {
+    const { service, fake } = setup();
+    const settled = { ticketId: "ticket-1", matchStatus: "FINAL" as const, resultConfirmed: true };
+    await service.settle({ ...settled, settlementVersion: "hash-of-2-1", outcome: "WIN" });
+    await service.correct({ ...settled, previousSettlementVersion: "hash-of-2-1", settlementVersion: "hash-of-3-1", outcome: "LOSS" });
+
+    // The supplier reverts to the first result, so the hash is the first one again.
+    await expect(service.correct({ ...settled, previousSettlementVersion: "hash-of-3-1", settlementVersion: "hash-of-2-1", outcome: "WIN" }))
+      .rejects.toBeInstanceOf(SettlementError);
+
+    // The refusal is loud rather than silent, but the stake is still sitting in
+    // frozen where the reversal put it — the repair belongs to the caller/operator.
+    expect(fake.state.activeSettlement).toBeNull();
+    expect(fake.state.account.frozenPoints).toBe(1_000);
+  });
+
   it("can retry safely after a transient persistence failure", async () => {
     const { service, fake } = setup();
     fake.failNextSettlement = true;

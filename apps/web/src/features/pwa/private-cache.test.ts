@@ -4,7 +4,8 @@ import { purgePrivateCaches, syncPrivateCacheOwner } from "./private-cache";
 /** Minimal in-memory CacheStorage: just what private-cache.ts touches. */
 class FakeCache {
   store = new Map<string, Response>();
-  async match(path: string) { return this.store.get(path); }
+  // Real Cache.match returns a fresh copy each call — clone so bodies stay readable.
+  async match(path: string) { return this.store.get(path)?.clone(); }
   async put(path: string, response: Response) { this.store.set(path, response); }
   async keys() { return Array.from(this.store.keys()); }
 }
@@ -42,10 +43,17 @@ afterEach(() => {
   delete (globalThis as Record<string, unknown>).window;
 });
 
+/** Seeds the LEGACY marker format (plain userId) — sync must stay compatible with it. */
 async function seedPrivateCache(owner: string | null, entries: string[]) {
   const cache = await storage.open("pulse-private-v1");
   if (owner !== null) await cache.put("/__pulse-private-owner", new Response(owner));
   for (const entry of entries) await cache.put(entry, new Response("cached"));
+}
+
+async function readMarker(): Promise<{ owner: string; epoch: string } | null> {
+  const cache = await storage.open("pulse-private-v1");
+  const marker = await cache.match("/__pulse-private-owner");
+  return marker ? JSON.parse(await marker.text()) : null;
 }
 
 describe("private cache owner discipline (7.3a)", () => {
@@ -56,12 +64,14 @@ describe("private cache owner discipline (7.3a)", () => {
     expect(await storage.keys()).toEqual(["pulse-shell-v2"]);
   });
 
-  it("keeps the cache when the same owner confirms a session", async () => {
+  it("keeps the cache when the same owner confirms a session (legacy marker upgraded)", async () => {
     await seedPrivateCache("user-a", ["/api/v1/rooms"]);
     await syncPrivateCacheOwner("user-a");
     const cache = await storage.open("pulse-private-v1");
     expect(await cache.match("/api/v1/rooms")).toBeDefined();
-    expect(await (await cache.match("/__pulse-private-owner"))!.text()).toBe("user-a");
+    const marker = await readMarker();
+    expect(marker?.owner).toBe("user-a");
+    expect(marker?.epoch).toBeTruthy();
   });
 
   it("purges another user's cache before rebinding (no cross-account reads)", async () => {
@@ -70,7 +80,7 @@ describe("private cache owner discipline (7.3a)", () => {
     const cache = await storage.open("pulse-private-v1");
     expect(await cache.match("/api/v1/rooms")).toBeUndefined();
     expect(await cache.match("/rooms")).toBeUndefined();
-    expect(await (await cache.match("/__pulse-private-owner"))!.text()).toBe("user-b");
+    expect((await readMarker())?.owner).toBe("user-b");
   });
 
   it("treats marker-less content as foreign and purges it", async () => {
@@ -78,7 +88,26 @@ describe("private cache owner discipline (7.3a)", () => {
     await syncPrivateCacheOwner("user-b");
     const cache = await storage.open("pulse-private-v1");
     expect(await cache.match("/api/v1/rooms")).toBeUndefined();
-    expect(await (await cache.match("/__pulse-private-owner"))!.text()).toBe("user-b");
+    expect((await readMarker())?.owner).toBe("user-b");
+  });
+
+  it("preserves the epoch across a same-owner re-confirm (#22)", async () => {
+    await syncPrivateCacheOwner("user-a");
+    const first = await readMarker();
+    await syncPrivateCacheOwner("user-a");
+    const second = await readMarker();
+    expect(first?.epoch).toBeTruthy();
+    expect(second).toEqual(first);
+  });
+
+  it("mints a fresh epoch when the owner changes (#22 — invalidates in-flight SW writes)", async () => {
+    await syncPrivateCacheOwner("user-a");
+    const first = await readMarker();
+    await syncPrivateCacheOwner("user-b");
+    const second = await readMarker();
+    expect(second?.owner).toBe("user-b");
+    expect(second?.epoch).toBeTruthy();
+    expect(second?.epoch).not.toBe(first?.epoch);
   });
 
   it("purge deletes offline drafts too (7.3b — drafts are private data)", async () => {
@@ -101,8 +130,7 @@ describe("private cache owner discipline (7.3a)", () => {
     localStorage.setItem("pulse-draft-v1:r:m", DRAFT);
     await syncPrivateCacheOwner("user-b");
     expect(localStorage.getItem("pulse-draft-v1:r:m")).toBeNull();
-    const cache = await storage.open("pulse-private-v1");
-    expect(await (await cache.match("/__pulse-private-owner"))!.text()).toBe("user-b");
+    expect((await readMarker())?.owner).toBe("user-b");
   });
 
   it("the same owner's drafts survive a session confirm (7.3b)", async () => {
@@ -116,7 +144,6 @@ describe("private cache owner discipline (7.3a)", () => {
     await storage.open("pulse-shell-v2");
     await syncPrivateCacheOwner("user-a");
     expect(await storage.keys()).toContain("pulse-shell-v2");
-    const cache = await storage.open("pulse-private-v1");
-    expect(await (await cache.match("/__pulse-private-owner"))!.text()).toBe("user-a");
+    expect((await readMarker())?.owner).toBe("user-a");
   });
 });

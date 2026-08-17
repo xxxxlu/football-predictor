@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { hash, verify } from "@node-rs/argon2";
 import { loadIdentityConfig } from "@pulse/config";
 import { DrizzleIdentityRepository, getSharedIdentityDatabase } from "@pulse/db";
@@ -47,9 +47,27 @@ export function getIdentityService() {
   return service;
 }
 
+/**
+ * The rate-limit bucket for "where this attempt came from".
+ *
+ * `countRecentFailures` matches `accountKey OR sourceKey`, so every attempt that
+ * shares a source key shares one budget. A single literal fallback therefore put
+ * the whole site in one bucket whenever no client-IP header was present: five bad
+ * passwords from anyone locked out every account for the fifteen-minute window.
+ * Every real deployment target sets `x-forwarded-for`, which is exactly why the
+ * hole would only ever open somewhere nobody was looking — a direct container
+ * port, a proxy that stopped forwarding, a local run.
+ *
+ * An unknown source gets a per-attempt key instead. Attempts we cannot attribute
+ * are indistinguishable from each other, so grouping them was never information
+ * we had; what it did produce was a shared-fate lockout. Per-account limiting is
+ * unaffected — `accountKey` still carries it, so brute force against one account
+ * is still stopped at five.
+ */
 export function sourceKey(request: Request) {
   const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
-  const raw = forwarded || request.headers.get("x-real-ip") || "unknown";
+  const raw = forwarded || request.headers.get("x-real-ip");
+  if (!raw) return `source:unattributed:${randomUUID()}`;
   return `source:${createHash("sha256").update(raw).digest("hex")}`;
 }
 
