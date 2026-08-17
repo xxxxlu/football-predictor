@@ -37,13 +37,21 @@ export async function registerActor(page: Page, username: string, password: stri
   await expect(page.getByText("账户已准备好")).toBeVisible();
 }
 
-/** Log in through the real UI and wait for the post-login redirect (/rooms). */
+/** Log in through the real UI and wait for the post-login redirect (/rooms).
+ *
+ *  The privacy consent box is `required`, so leaving it unchecked does not produce a
+ *  failed login — it produces no submit at all, because the browser's own validation
+ *  stops the form. The wait below then times out inside whatever `beforeAll` called
+ *  this, and every test in that describe is reported at 0ms as though it never ran.
+ *  That is exactly how the privacy centre took out five e2e specs: the feature added
+ *  a required gate to the login form and this helper was never taught about it. */
 export async function loginActor(page: Page, username: string, password: string = E2E_PASSWORD) {
   await gotoHydrated(page, "/login");
   await fillStable([
     [page.getByLabel("用户名"), username],
     [page.getByLabel("密码"), password],
   ]);
+  await page.locator('input[name="privacyConsent"]').check();
   await page.getByRole("button", { name: "登录" }).click();
   // Login success is a fetch + router.replace("/rooms"), not a navigation —
   // wait for the URL to actually leave /login before touching the session.

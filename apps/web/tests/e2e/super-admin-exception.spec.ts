@@ -38,6 +38,9 @@ test("super admin disables and then restores a normal user", async ({ page }) =>
     for (const [label, value] of [["用户名", adminUser!], ["密码", password]] as const) {
       if ((await page.getByLabel(label).inputValue()) !== value) await page.getByLabel(label).fill(value);
     }
+    // Required consent gate — unchecked means the browser blocks the submit outright,
+    // so the race below would time out on both branches (see support/actors.ts).
+    await page.locator('input[name="privacyConsent"]').check();
     await page.getByRole("button", { name: "登录" }).click();
     return Promise.race([
       page.waitForURL(/\/change-password/, { timeout: 10_000 }).then(() => "change-password" as const),
