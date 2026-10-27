@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-const DISMISS_KEY = "pulse_a2hs_dismissed_until";
+const A2HS_DISMISS_PREF_NAME = "pulse_a2hs_dismissed_until";
 
 export function shouldShowInstallPrompt(input: {
   isStandalone: boolean;
@@ -45,7 +45,7 @@ export function InstallPrompt() {
       (window.navigator as unknown as { standalone?: boolean }).standalone === true ||
       window.matchMedia("(display-mode: standalone)").matches;
 
-    const dismissedUntil = localStorage.getItem(DISMISS_KEY);
+    const dismissedUntil = localStorage.getItem(A2HS_DISMISS_PREF_NAME);
     const dismissedUntilMs = dismissedUntil ? Number(dismissedUntil) : null;
 
     if (!shouldShowInstallPrompt({ isStandalone, dismissedUntilMs })) {
@@ -71,7 +71,7 @@ export function InstallPrompt() {
   const handleDismiss = (days: number = 7) => {
     setShowPrompt(false);
     try {
-      localStorage.setItem(DISMISS_KEY, String(Date.now() + days * 86400000));
+      localStorage.setItem(A2HS_DISMISS_PREF_NAME, String(Date.now() + days * 86400000));
     } catch {}
   };
 

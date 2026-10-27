@@ -9,4 +9,4 @@ useDefault = true
 
 [allowlist]
 description = "Deliberate throwaway e2e test credential — not a real secret"
-regexes = ['''Passw0rd-e2e-journeys''']
+regexes = ['''Passw0rd-e2e-journeys''', '''Passw0rd-e2e-f1-a11y''']

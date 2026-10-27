@@ -4,3 +4,5 @@
 # literal in .gitleaks.toml.
 ad96c41c5e812ad1d37d2c664c2fff807cf99c19:apps/web/tests/e2e/support/actors.ts:generic-api-key:4
 923308c40e052ba2f982756d1e6fe60603213778:apps/web/tests/e2e/f1-accessibility.spec.ts:generic-api-key:17
+4f9a68e98325568a738331a4975ef8ebdf55f41f:apps/web/tests/e2e/f1-accessibility.spec.ts:generic-api-key:17
+cbba72f10caee81aadb307eff5501aa3ff6c30ac:apps/web/src/features/pwa/install-prompt.tsx:generic-api-key:5

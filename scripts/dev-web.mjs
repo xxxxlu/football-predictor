@@ -8,7 +8,7 @@ try {
   if (error?.code !== "ENOENT") throw error;
 }
 
-const child = spawn(process.execPath, [resolve("apps/web/node_modules/next/dist/bin/next"), "dev", "--webpack", "-H", "127.0.0.1", "-p", "3001"], {
+const child = spawn(process.execPath, [resolve("apps/web/node_modules/next/dist/bin/next"), "dev", "-H", "127.0.0.1", "-p", "3001"], {
   cwd: "apps/web",
   stdio: "inherit",
   env: process.env,
