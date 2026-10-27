@@ -302,10 +302,10 @@ export function ClubLobbyView() {
             <h3 className="text-sm font-bold">{t("room.chat.reportTitle")}</h3>
             <p className="mt-1 truncate text-xs text-[var(--muted)]">“{reportTarget.body}”</p>
             <label htmlFor="channel-report-reason" className="mt-3 block text-xs font-bold">{t("room.chat.reportReasonLabel")}</label>
-            <textarea id="channel-report-reason" ref={reportReasonRef} value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+            <textarea id="channel-report-reason" ref={reportReasonRef} value={reportReason} onChange={(event) => setReportReason(event.target.value)} rows={3} className="mt-2 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" required/>
             <div className="mt-3 flex gap-2">
               <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.reportSubmit")}</button>
-              <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setReportTarget(null)}>{t("room.chat.cancel")}</button>
+              <button type="button" className="min-h-10 rounded-full border border-white/20 px-4 text-sm font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => setReportTarget(null)}>{t("room.chat.cancel")}</button>
             </div>
           </form>}
 
@@ -321,8 +321,8 @@ export function ClubLobbyView() {
               <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                 <p className="text-sm"><b>{entry.status === "failed" ? t("room.chat.sendFailed") : t("room.chat.sending")}</b></p>
                 {entry.status === "failed" && <span className="flex shrink-0 gap-2">
-                  <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => retry(entry)}>{t("room.chat.retry")}</button>
-                  <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => setPending((current) => removePending(current, entry.localId))}>{t("room.chat.discard")}</button>
+                  <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => retry(entry)}>{t("room.chat.retry")}</button>
+                  <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => setPending((current) => removePending(current, entry.localId))}>{t("room.chat.discard")}</button>
                 </span>}
               </div>
               {entry.status === "failed" && entry.error && <p className="mt-1 text-xs text-[var(--coral)]" role="alert">{entry.error}</p>}
@@ -336,7 +336,7 @@ export function ClubLobbyView() {
                   <span className="ml-2 text-xs text-[var(--muted)]">{new Date(message.createdAt).toLocaleString()}</span>
                 </p>
                 <span className="flex shrink-0 gap-2" aria-label={t("room.chat.actions")}>
-                  <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => { setReportTarget(message); setReportReason(""); setNotice(null); }}>{t("room.chat.report")}</button>
+                  <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => { setReportTarget(message); setReportReason(""); setNotice(null); }}>{t("room.chat.report")}</button>
                 </span>
               </div>
               <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
@@ -345,21 +345,21 @@ export function ClubLobbyView() {
           </div>
 
           {!channel.rulesConfirmed
-            ? <div className="mt-4 rounded-lg border-2 border-[var(--ink)] p-4">
-                <h3 className="text-sm font-bold">{t("club.lobby.rulesTitle")}</h3>
-                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-[var(--muted)]">
+            ? <div className="mt-4 rounded-lg border border-white/20 bg-[#121418] p-4">
+                <h3 className="text-sm font-bold text-white">{t("club.lobby.rulesTitle")}</h3>
+                <ul className="mt-2 list-disc space-y-1 pl-5 text-xs leading-5 text-zinc-300">
                   <li>{t("club.lobby.rulesPoint1")}</li>
                   <li>{t("club.lobby.rulesPoint2")}</li>
                   <li>{t("club.lobby.rulesPoint3")}</li>
                 </ul>
-                <button type="button" disabled={confirmingRules} onClick={() => void confirmRules()} className="mt-3 min-h-11 rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)] disabled:opacity-55">{t("club.lobby.rulesConfirm")}</button>
+                <button type="button" disabled={confirmingRules} onClick={() => void confirmRules()} className="mt-3 min-h-11 rounded-full bg-[#FF2A3B] px-5 text-sm font-bold text-white transition hover:bg-[#FF4252] disabled:opacity-55">{t("club.lobby.rulesConfirm")}</button>
               </div>
             : muted && channel.mutedUntil
               ? <p className="mt-4 rounded-lg border border-[var(--line)] px-4 py-3 text-sm" role="status">{t("club.lobby.mutedUntil")} {new Date(channel.mutedUntil).toLocaleString()}</p>
               : <form className="mt-4" onSubmit={(event) => { event.preventDefault(); submitDraft(); }}>
                   <label htmlFor="channel-draft" className="block text-xs font-bold">{t("room.chat.inputLabel")}</label>
                   <div className="mt-2 flex gap-2">
-                    <input id="channel-draft" value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm" maxLength={CHAT_MESSAGE_MAX * 2} autoComplete="off"/>
+                    <input id="channel-draft" value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-11 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 text-sm text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" maxLength={CHAT_MESSAGE_MAX * 2} autoComplete="off"/>
                     <button type="submit" disabled={!canSubmit} className="min-h-11 shrink-0 rounded-full bg-[var(--field)] px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.send")}</button>
                   </div>
                   <p className={`mt-1 text-xs ${remaining < 0 ? "font-bold text-[var(--coral)]" : "text-[var(--muted)]"}`}>{remaining < 0 ? t("room.chat.tooLong") : `${chatMessageLength(draft.trim())}/${CHAT_MESSAGE_MAX}`}</p>

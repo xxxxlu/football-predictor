@@ -15,9 +15,9 @@ export function AppShell({ children, username, sessionPending = false }: { child
       <div className="pd-header-inner">
         <BrandMark tone="light" />
         <PulseHeaderNav />
-        <div className="ml-auto flex items-center gap-3 sm:gap-4">
+        <div className="ml-auto flex items-center gap-2 sm:gap-4">
           <LanguageSwitcher compact />
-          {sessionPending ? <span className="text-xs text-white/60">{t("auth.sessionPending")}</span> : username ? <nav aria-label={t("nav.account")} className="flex items-center gap-3 sm:gap-4"><Link href="/rooms" className="whitespace-nowrap text-sm font-bold text-white underline-offset-4 hover:underline">{t("auth.enterRoom")}</Link><Link href="/account" className="btn-volt !min-h-0 !px-4 !py-2 text-sm">{username}</Link></nav> : <nav aria-label={t("nav.account")} className="flex items-center gap-3 sm:gap-4"><Link href="/login" className="text-sm font-bold text-white underline-offset-4 hover:underline">{t("auth.login")}</Link><Link href="/register" className="btn-volt !min-h-0 !px-4 !py-2 text-sm">{t("auth.register")}</Link></nav>}
+          {sessionPending ? <span className="text-xs text-white/60">{t("auth.sessionPending")}</span> : username ? <nav aria-label={t("nav.account")} className="flex items-center gap-2 sm:gap-4"><Link href="/rooms" className="whitespace-nowrap text-xs sm:text-sm font-bold text-white underline-offset-4 hover:underline">{t("auth.enterRoom")}</Link><Link href="/account" className="btn-volt !min-h-0 !px-3 sm:!px-4 !py-1.5 sm:!py-2 text-xs sm:text-sm max-w-[84px] sm:max-w-none truncate">{username}</Link></nav> : <nav aria-label={t("nav.account")} className="flex items-center gap-2 sm:gap-4"><Link href="/login" className="whitespace-nowrap text-xs sm:text-sm font-bold text-white underline-offset-4 hover:underline">{t("auth.login")}</Link><Link href="/register" className="btn-volt !min-h-0 !px-3 sm:!px-4 !py-1.5 sm:!py-2 text-xs sm:text-sm whitespace-nowrap">{t("auth.register")}</Link></nav>}
         </div>
       </div>
     </header>

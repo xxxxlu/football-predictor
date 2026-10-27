@@ -96,7 +96,7 @@ export function PrivacyPhotoUpload({ onCollect, collected }: { onCollect: (photo
           type="button"
           disabled={uploading}
           onClick={() => galleryInputRef.current?.click()}
-          className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-4 text-xs font-bold transition hover:bg-[var(--ink)] hover:text-white disabled:opacity-45"
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e] disabled:opacity-45"
         >
           {uploading ? "上传中…" : preview ? "重新选择照片" : "从相册选择"}
         </button>
@@ -104,7 +104,7 @@ export function PrivacyPhotoUpload({ onCollect, collected }: { onCollect: (photo
           type="button"
           disabled={uploading}
           onClick={() => cameraInputRef.current?.click()}
-          className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-4 text-xs font-bold transition hover:bg-[var(--ink)] hover:text-white disabled:opacity-45"
+          className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/20 bg-white/5 px-4 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e] disabled:opacity-45"
         >
           拍照上传
         </button>

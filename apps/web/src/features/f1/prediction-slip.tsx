@@ -196,7 +196,7 @@ export function F1PredictionSlip({ roomId, detail, interactive, onRefresh }: {
         {markets.map((market) => (
           <button key={market.id} type="button" role="tab" aria-selected={market.id === active?.id}
             onClick={() => { setMarketId(market.id); setSelection(undefined); setError(""); setReceipt(""); }}
-            className={`min-h-10 rounded-full border-2 px-4 text-sm font-bold transition ${market.id === active?.id ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}>
+            className={`min-h-10 rounded-full border px-4 text-sm font-bold transition ${market.id === active?.id ? "border-[#FF2A3B] bg-[#FF2A3B] text-white shadow-[0_0_15px_rgba(255,42,59,0.35)]" : "border-white/10 bg-[#0B0D10] text-zinc-300 hover:border-white/30 hover:text-white"}`}>
             {MARKET_KIND_LABELS[market.kind]}{placed.has(market.id) ? " ✓已投" : ""}
           </button>
         ))}
@@ -209,10 +209,10 @@ export function F1PredictionSlip({ roomId, detail, interactive, onRefresh }: {
           {active && <OutcomePicker key={`${active.id}:${receipt}`} market={active} drivers={detail.drivers} selection={selection} disabled={closed || pending} onSelect={(value) => { setSelection(value); setError(""); setReceipt(""); }} />}
 
           <div>
-            <label htmlFor={`f1-stake-${detail.session.id}`} className="mb-2 block text-sm font-bold">投入积分</label>
-            <input id={`f1-stake-${detail.session.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={(event) => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular" />
+            <label htmlFor={`f1-stake-${detail.session.id}`} className="mb-2 block text-sm font-bold text-zinc-200">投入积分</label>
+            <input id={`f1-stake-${detail.session.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={(event) => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 tabular text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none focus:ring-1 focus:ring-[#FF2A3B]" />
             <div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map((value) => (
-              <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>
+              <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-white/15 bg-[#0B0D10] px-3 py-1 text-xs font-bold text-zinc-300 transition hover:border-[#FF2A3B] hover:text-white">{Number(value).toLocaleString()}</button>
             ))}</div>
           </div>
 
@@ -221,7 +221,7 @@ export function F1PredictionSlip({ roomId, detail, interactive, onRefresh }: {
               <span className="text-[var(--muted)]">预计返还（含投入）</span>
               {outcome && <span className="pulse-confirm__lock">已锁定 {outcome.decimalOdds}x</span>}
             </span>
-            <strong key={`${outcome?.selection ?? "none"}-${projected}`} className="pulse-confirm__value tabular">{projected}</strong>
+            <strong key={`${outcome?.selection ?? "none"}-${projected}`} className="pulse-confirm__value tabular text-[#FF2A3B]">{projected}</strong>
           </div>
         </>}
       {draft && draftVerdict && <StatusMessage tone={draftVerdict === "UNCHANGED" ? "info" : "error"} title={draftVerdict === "UNCHANGED" ? "已恢复离线草稿" : "离线草稿需要处理"}>
@@ -231,7 +231,7 @@ export function F1PredictionSlip({ roomId, detail, interactive, onRefresh }: {
           {draftVerdict === "MARKET_CHANGED" && "离线期间市场已更换，这份草稿无法提交，请重新选择或丢弃。"}
           {draftVerdict === "EVENT_CLOSED" && "本场次已封盘，这份离线草稿无法提交，请丢弃。"}
         </span>
-        <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--field)] hover:text-[var(--field)]">丢弃草稿</button>
+        <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-white/20 bg-[#0B0D10] px-3 text-xs font-bold text-zinc-300 transition hover:border-[#FF2A3B] hover:text-white">丢弃草稿</button>
       </StatusMessage>}
       {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
       {receipt && <div className="pulse-stamp"><StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage></div>}
@@ -253,7 +253,7 @@ function OutcomePicker({ market, drivers, selection, disabled, onSelect }: {
 }) {
   const driverIndex = useMemo(() => new Map(drivers.map((driver) => [driver.code, driver])), [drivers]);
   const buttonClass = (selected: boolean) =>
-    `pulse-pick rounded-lg border-2 px-2 py-2 text-left text-sm font-bold transition ${selected ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`;
+    `pulse-pick rounded-lg border px-2 py-2 text-left text-sm font-bold transition ${selected ? "border-[#FF2A3B] bg-[#FF2A3B] text-white shadow-[0_0_15px_rgba(255,42,59,0.35)]" : "border-white/10 bg-[#0B0D10] text-zinc-200 hover:border-white/30 hover:bg-[#121418] hover:text-white"}`;
 
   if (market.kind === "POLE" || market.kind === "WINNER") {
     return <fieldset disabled={disabled}>
@@ -364,7 +364,7 @@ function ExactPodiumComposer({ market, drivers, driverIndex, selection, disabled
               aria-label={`${label} ${code}，点击撤销`}>
               <span className="text-[10px] opacity-90">{label}</span><span className="tabular">{code}</span><span aria-hidden>×</span>
             </button>
-          : <span key={label} className="inline-flex min-h-9 items-center gap-2 rounded-full border-2 border-dashed border-[var(--line)] px-3 text-sm font-bold text-[var(--muted)]">
+          : <span key={label} className="inline-flex min-h-9 items-center gap-2 rounded-full border-2 border-dashed border-white/15 bg-[#0B0D10]/50 px-3 text-sm font-bold text-zinc-400">
               <span className="text-[10px]">{label}</span><span>待选</span>
             </span>;
       })}

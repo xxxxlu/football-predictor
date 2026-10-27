@@ -1,11 +1,13 @@
 "use client";
 
 import { useLocale } from "./locale-provider";
-import type { Locale } from "@/lib/i18n/messages";
+import type { Locale, MessageKey } from "@/lib/i18n/messages";
 
-const options: { locale: Locale; key: "language.zh" | "language.en" }[] = [
-  { locale: "zh-CN", key: "language.zh" },
-  { locale: "en", key: "language.en" },
+const options: { locale: Locale; label: string; key: MessageKey }[] = [
+  { locale: "zh-CN", label: "中", key: "language.zh" },
+  { locale: "en", label: "EN", key: "language.en" },
+  { locale: "de", label: "DE", key: "language.de" },
+  { locale: "es", label: "ES", key: "language.es" },
 ];
 
 export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
@@ -22,7 +24,7 @@ export function LanguageSwitcher({ compact = false }: { compact?: boolean }) {
           aria-label={`${t("language.current")}: ${t(option.key)}`}
           disabled={active}
           onClick={() => setLocale(option.locale)}
-        >{option.locale === "zh-CN" ? "中" : "EN"}</button>;
+        >{option.label}</button>;
       })}
     </div>
   );

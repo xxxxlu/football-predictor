@@ -122,8 +122,8 @@ function MemberRequest({ roomId, pending, denied, active, onDone, onError }: {
     {denied && !active ? null : denied ? <div className="mb-3"><StatusMessage tone="info" title="上一条申请未获批准">{denied.decisionNote ? `房主说明：“${denied.decisionNote}”。` : ""}你可以再次申请。</StatusMessage></div> : null}
     {active
       ? <div>
-          <label htmlFor="grant-note" className="block text-xs font-bold">申请说明（可选，200 字以内）</label>
-          <textarea id="grant-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={200} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" placeholder="例如：积分已用完，想继续参与本轮预测"/>
+          <label htmlFor="grant-note" className="block text-xs font-bold text-zinc-300">申请说明（可选，200 字以内）</label>
+          <textarea id="grant-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={200} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-[#0B0D10] text-white px-3 py-2 text-sm placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" placeholder="例如：积分已用完，想继续参与本轮预测"/>
           <button type="button" onClick={() => void submit()} disabled={submitting} className="mt-3 inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--field)] px-5 font-bold text-white transition hover:brightness-95 disabled:opacity-55">{submitting ? "正在提交…" : "申请补分"}</button>
         </div>
       : <p className="text-sm text-[var(--muted)]">房间当前不在开放状态，暂不能申请补分。</p>}
@@ -164,8 +164,8 @@ function OwnerQueue({ roomId, open, active, onDone, onError }: {
         <p className="text-sm"><b>{row.requester.displayName}</b> 申请补分 · {new Date(row.requestedAt).toLocaleString("zh-CN")}</p>
         {row.note && <p className="mt-1 text-sm text-[var(--muted)]">“{row.note}”</p>}
         <div className="mt-3 flex flex-wrap items-center gap-3">
-          <label htmlFor={`grant-amount-${row.id}`} className="text-xs font-bold">补分数量</label>
-          <input id={`grant-amount-${row.id}`} inputMode="numeric" value={amount} onChange={(event) => setAmounts((prev) => ({ ...prev, [row.id]: event.target.value }))} placeholder="1 – 20,000" className="w-32 min-h-11 rounded-lg border border-[var(--line)] bg-white px-3 text-sm"/>
+          <label htmlFor={`grant-amount-${row.id}`} className="text-xs font-bold text-zinc-300">补分数量</label>
+          <input id={`grant-amount-${row.id}`} inputMode="numeric" value={amount} onChange={(event) => setAmounts((prev) => ({ ...prev, [row.id]: event.target.value }))} placeholder="1 – 20,000" className="w-32 min-h-11 rounded-lg border border-white/15 bg-[#0B0D10] text-white px-3 text-sm focus:border-[#FF2A3B] focus:outline-none"/>
           <button type="button" disabled={!valid || busy === row.id} onClick={() => void decide(row, { action: "APPROVE", amount: parsed })} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[var(--field)] px-5 font-bold text-white transition hover:brightness-95 disabled:opacity-55">{busy === row.id ? "处理中…" : "批准"}</button>
           <button type="button" disabled={busy === row.id} onClick={() => void decide(row, { action: "DENY" })} className="inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--coral)] px-5 font-bold text-[var(--coral)] transition hover:bg-[var(--coral)] hover:text-white disabled:opacity-55">拒绝</button>
         </div>

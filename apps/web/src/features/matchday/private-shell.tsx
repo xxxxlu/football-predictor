@@ -7,13 +7,13 @@ import { PulseHeaderNav, MobileBottomNav } from "@/components/pulse-nav";
 import { PulseLine } from "@/components/pulse";
 import { PulseMotion } from "@/components/pulse-motion";
 import { PulseTransition } from "@/components/pulse-transition";
-import { sharedPageCopy } from "@/lib/i18n/messages";
+import { getLocalizedPageCopy } from "@/lib/i18n/messages";
 import { SessionGuard } from "@/features/auth/session-guard";
 import { PresenceHeartbeat } from "@/features/friends/presence-heartbeat";
 
 export function PrivateShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
   const { locale, t } = useLocale();
-  const localizedCopy = locale === "en" ? sharedPageCopy[title] : undefined;
+  const localizedCopy = getLocalizedPageCopy(title, locale);
   const displayTitle = localizedCopy?.title ?? title;
   const displayDescription = localizedCopy?.description ?? description;
   const section = title === "F1 赛程" ? t("page.section.f1") : t("page.section.events");
@@ -37,7 +37,7 @@ export function PrivateShell({ title, description, children }: { title: string; 
           <div className="flex flex-wrap items-end justify-between gap-6">
             <div>
               <p className="pd-page-lead__index">FIELD NOTE / {section}</p>
-              <h1 className="kinetic mt-3 text-[clamp(3.25rem,9vw,7rem)]">{displayTitle}</h1>
+              <h1 className="kinetic mt-3 text-[clamp(2.25rem,8vw,6rem)]">{displayTitle}</h1>
             </div>
             <p className="max-w-md leading-7 text-white/65">{displayDescription}</p>
           </div>

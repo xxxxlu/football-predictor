@@ -63,10 +63,28 @@ export function WeekendList({ roomId }: { roomId?: string }) {
     } />;
   }
   if (weekends === null) {
-    return <div aria-live="polite" aria-busy="true" className="grid gap-4 lg:grid-cols-2">
-      {[1, 2, 3].map((number) => <div key={number} className="pitch-skeleton h-56 rounded-xl" />)}
-      <span className="sr-only">正在加载 F1 赛程</span>
-    </div>;
+    return (
+      <div aria-live="polite" aria-busy="true" className="grid gap-6 xl:grid-cols-2">
+        {[1, 2].map((number) => (
+          <div key={number} className="overflow-hidden rounded-xl border border-black/5 bg-[var(--pulse-paper)] p-6 animate-pulse">
+            <div className="flex gap-4">
+              <div className="size-20 rounded-lg bg-[var(--wash-neutral)]" />
+              <div className="flex-1 space-y-2.5">
+                <div className="h-3 w-28 rounded bg-[var(--wash-neutral)]" />
+                <div className="h-6 w-44 rounded bg-[var(--wash-neutral)]" />
+                <div className="h-3 w-36 rounded bg-[var(--wash-neutral)]" />
+              </div>
+            </div>
+            <div className="mt-6 space-y-2">
+              {[1, 2, 3].map((item) => (
+                <div key={item} className="h-12 rounded-lg bg-[var(--wash-neutral)]" />
+              ))}
+            </div>
+          </div>
+        ))}
+        <span className="sr-only">正在加载 F1 赛程</span>
+      </div>
+    );
   }
   if (!weekends.length) return <DataStatePanel state="empty" title="目前没有 F1 分站" description="赛程发布后，Race Weekend 会出现在这里。" />;
 
@@ -82,7 +100,7 @@ export function WeekendList({ roomId }: { roomId?: string }) {
           type="button"
           aria-pressed={phase === value}
           onClick={() => setPhase(value)}
-          className={`min-h-10 rounded-full border-2 px-5 text-sm font-bold transition ${phase === value ? "border-[var(--ink)] bg-[var(--ink)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--ink)]"}`}
+          className={`pressable-btn cursor-pointer min-h-10 rounded-full border px-5 text-sm font-bold transition ${phase === value ? "border-[#FF2A3B] bg-[#FF2A3B] text-white shadow-[0_0_16px_rgba(255,42,59,0.35)]" : "border-white/10 bg-[#121418] text-white/70 hover:border-white/30"}`}
         >{label}</button>
       ))}
     </div>

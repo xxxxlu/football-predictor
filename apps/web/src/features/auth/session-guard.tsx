@@ -6,12 +6,12 @@ import { SessionVerificationOverlay } from "@/components/session-verification-ov
 import { StatusMessage } from "@/components/status-message";
 import { syncPrivateCacheOwner } from "@/features/pwa/private-cache";
 import { loginHref } from "./navigation";
-import { loadSession, type SessionState } from "./session-client";
+import { getCachedSession, loadSession, type SessionState } from "./session-client";
 
 export function SessionGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [session, setSession] = useState<SessionState>();
+  const [session, setSession] = useState<SessionState | undefined>(getCachedSession);
 
   useEffect(() => {
     let active = true;

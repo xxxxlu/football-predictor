@@ -148,7 +148,7 @@ export function LineupMap({ matchId }: { matchId: string }) {
       <section aria-label="比赛阵容">
         <StatusMessage tone="error" title="暂时无法取得阵容">{error}</StatusMessage>
         <div className="mt-4">
-          <button type="button" onClick={() => { setError(""); setLoading(true); setRetry((value) => value + 1); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white">
+          <button type="button" onClick={() => { setError(""); setLoading(true); setRetry((value) => value + 1); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-5 font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]">
             <SoccerBall className="size-4" />重试
           </button>
         </div>

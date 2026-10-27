@@ -229,24 +229,24 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
         {mutableMembers.map((member) => <option key={member.userId} value={member.userId}>{member.username}</option>)}
       </select>
       <label htmlFor="chat-mute-hours" className="mt-3 block text-xs font-bold">{t("room.chat.muteDuration")}</label>
-      <select id="chat-mute-hours" value={muteHours} onChange={(event) => setMuteHours(Number(event.target.value))} className="mt-2 min-h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm">
-        {MUTE_DURATION_OPTIONS.map((option) => <option key={option.hours} value={option.hours}>{t(option.labelKey)}</option>)}
+      <select id="chat-mute-hours" value={muteHours} onChange={(event) => setMuteHours(Number(event.target.value))} className="mt-2 min-h-10 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 text-sm text-white">
+        {MUTE_DURATION_OPTIONS.map((option) => <option key={option.hours} value={option.hours} className="bg-[#121418] text-white">{t(option.labelKey)}</option>)}
       </select>
       <label htmlFor="chat-mute-reason" className="mt-3 block text-xs font-bold">{t("room.chat.muteReasonLabel")}</label>
-      <textarea id="chat-mute-reason" ref={muteReasonRef} value={muteReason} onChange={(event) => setMuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+      <textarea id="chat-mute-reason" ref={muteReasonRef} value={muteReason} onChange={(event) => setMuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" required/>
       <div className="mt-3 flex gap-2">
         <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--coral)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.muteSubmit")}</button>
-        <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setMuteTarget(null)}>{t("room.chat.cancel")}</button>
+        <button type="button" className="min-h-10 rounded-full border border-white/20 px-4 text-sm font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => setMuteTarget(null)}>{t("room.chat.cancel")}</button>
       </div>
     </form>}
 
     {unmuteTarget && page.isOwner && <form className="mt-4 rounded-lg border border-[var(--line)] p-4" onSubmit={(event) => { event.preventDefault(); void act(unmuteMemberRequest(roomId, unmuteTarget.muteId, unmuteReason.trim()), t("room.chat.unmuteDone")); }}>
       <h3 className="text-sm font-bold">{t("room.chat.unmute")} · {unmuteTarget.pulseId}</h3>
       <label htmlFor="chat-unmute-reason" className="mt-3 block text-xs font-bold">{t("room.chat.unmuteReasonLabel")}</label>
-      <textarea id="chat-unmute-reason" ref={unmuteReasonRef} value={unmuteReason} onChange={(event) => setUnmuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm" required/>
+      <textarea id="chat-unmute-reason" ref={unmuteReasonRef} value={unmuteReason} onChange={(event) => setUnmuteReason(event.target.value)} rows={2} className="mt-2 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 py-2 text-sm text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" required/>
       <div className="mt-3 flex gap-2">
         <button type="submit" disabled={busy} className="min-h-10 rounded-full bg-[var(--field)] px-4 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.unmute")}</button>
-        <button type="button" className="min-h-10 rounded-full border border-[var(--line)] px-4 text-sm font-bold" onClick={() => setUnmuteTarget(null)}>{t("room.chat.cancel")}</button>
+        <button type="button" className="min-h-10 rounded-full border border-white/20 px-4 text-sm font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => setUnmuteTarget(null)}>{t("room.chat.cancel")}</button>
       </div>
     </form>}
 
@@ -255,7 +255,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
       <ul className="mt-2 divide-y divide-[var(--line)]">
         {page.mutes.map((mute) => <li key={mute.muteId} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
           <span><b>{mute.nickname || mute.pulseId}</b><span className="ml-2 text-xs text-[var(--muted)]">{t("room.chat.muteListUntil")} {new Date(mute.mutedUntil).toLocaleString()}</span></span>
-          <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => { setUnmuteTarget({ muteId: mute.muteId, pulseId: mute.pulseId }); setUnmuteReason(""); setNotice(null); }}>{t("room.chat.unmute")}</button>
+          <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => { setUnmuteTarget({ muteId: mute.muteId, pulseId: mute.pulseId }); setUnmuteReason(""); setNotice(null); }}>{t("room.chat.unmute")}</button>
         </li>)}
       </ul>
     </div>}
@@ -272,8 +272,8 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-sm"><b>{entry.status === "failed" ? t("room.chat.sendFailed") : t("room.chat.sending")}</b></p>
           {entry.status === "failed" && <span className="flex shrink-0 gap-2">
-            <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => retry(entry)}>{t("room.chat.retry")}</button>
-            <button type="button" className="min-h-8 rounded-full border border-[var(--line)] px-3 text-xs font-bold transition hover:border-[var(--ink)]" onClick={() => setPending((current) => removePending(current, entry.localId))}>{t("room.chat.discard")}</button>
+            <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => retry(entry)}>{t("room.chat.retry")}</button>
+            <button type="button" className="min-h-8 rounded-full border border-white/20 bg-white/5 px-3 text-xs font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]" onClick={() => setPending((current) => removePending(current, entry.localId))}>{t("room.chat.discard")}</button>
           </span>}
         </div>
         {entry.status === "failed" && entry.error && <p className="mt-1 text-xs text-[var(--coral)]" role="alert">{entry.error}</p>}
@@ -290,7 +290,7 @@ export function RoomChatView({ roomId, members }: { roomId: string; members: Mem
         : <form className="mt-4" onSubmit={(event) => { event.preventDefault(); submitDraft(); }}>
             <label htmlFor="chat-draft" className="block text-xs font-bold">{t("room.chat.inputLabel")}</label>
             <div className="mt-2 flex gap-2">
-              <input id="chat-draft" value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-11 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm" maxLength={CHAT_MESSAGE_MAX * 2} autoComplete="off"/>
+              <input id="chat-draft" value={draft} onChange={(event) => setDraft(event.target.value)} className="min-h-11 w-full rounded-lg border border-white/15 bg-[#0B0D10] px-3 text-sm text-white placeholder-zinc-500 focus:border-[#FF2A3B] focus:outline-none" maxLength={CHAT_MESSAGE_MAX * 2} autoComplete="off"/>
               <button type="submit" disabled={!canSubmit} className="min-h-11 shrink-0 rounded-full bg-[var(--field)] px-5 text-sm font-bold text-white transition hover:brightness-95 disabled:opacity-55">{t("room.chat.send")}</button>
             </div>
             <p className={`mt-1 text-xs ${remaining < 0 ? "font-bold text-[var(--coral)]" : "text-[var(--muted)]"}`}>{remaining < 0 ? t("room.chat.tooLong") : `${chatMessageLength(draft.trim())}/${CHAT_MESSAGE_MAX}`}</p>

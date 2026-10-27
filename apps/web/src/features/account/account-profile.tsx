@@ -89,8 +89,8 @@ export function AccountProfile() {
         <h2 className="display mt-1 text-2xl font-bold">改一个房间里的名字</h2>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">昵称会显示给同一房间的成员；用户名不会变，登录仍然用它。</p>
         <form onSubmit={save} className="mt-6">
-          <label htmlFor="nickname" className="mb-2 block text-sm font-bold">昵称</label>
-          <input id="nickname" name="nickname" required minLength={2} maxLength={32} value={nickname} onChange={event => setNickname(event.target.value)} className="min-h-12 w-full rounded-xl border border-[var(--line)] bg-white px-3"/>
+          <label htmlFor="nickname" className="mb-2 block text-sm font-bold text-zinc-200">昵称</label>
+          <input id="nickname" name="nickname" required minLength={2} maxLength={32} value={nickname} onChange={event => setNickname(event.target.value)} className="min-h-12 w-full rounded-xl border border-white/15 bg-[#0B0D10] text-white px-3 focus:border-[#FF2A3B] focus:outline-none"/>
           <p className="mt-2 text-xs text-[var(--muted)]">2–32 个字符</p>
           <button disabled={saving || nickname.trim() === profile.nickname} className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[var(--field)] px-6 font-bold text-white transition hover:brightness-95 disabled:opacity-45">{saving ? "正在保存…" : "保存昵称"}</button>
         </form>
@@ -100,8 +100,8 @@ export function AccountProfile() {
           <h3 className="mt-1 font-bold">好友与在场</h3>
           <p className="mt-2 text-xs leading-5 text-[var(--muted)]">好友通过你的 PULSE ID（会员号）添加。在线与在大厅的展示默认关闭，只有你主动开启后，互为好友的成员才能看到。</p>
           <div className="mt-4 flex flex-wrap items-center gap-3">
-            <Link href="/friends" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">好友列表与申请</Link>
-            <Link href="/club/daily" className="rounded-full border-2 border-[var(--ink)] px-4 py-2 text-sm font-bold no-underline">每日挑战</Link>
+            <Link href="/friends" className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-bold text-white no-underline transition hover:bg-white hover:text-[#0b0c0e]">好友列表与申请</Link>
+            <Link href="/club/daily" className="rounded-full border border-white/20 bg-white/5 px-4 py-2 text-sm font-bold text-white no-underline transition hover:bg-white hover:text-[#0b0c0e]">每日挑战</Link>
           </div>
           {privacy && <div className="mt-4 space-y-3">
             <label className="flex min-h-11 cursor-pointer items-center gap-3 text-sm">

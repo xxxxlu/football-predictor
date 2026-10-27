@@ -63,4 +63,53 @@ describe("MatchCard", () => {
     expect(html).not.toContain("英格兰胜");
     expect(html).not.toContain("阿根廷胜");
   });
+
+  it("renders live score, minute, odds trend arrows, and goal alert when liveItem is present", () => {
+    const match: MatchView = {
+      id: "live-match-1",
+      competitionName: "欧冠",
+      homeTeam: "拜仁慕尼黑",
+      awayTeam: "皇家马德里",
+      kickoffAt: "2026-07-14T19:00:00.000Z",
+      state: "OPEN",
+      market: { id: "market-1", version: "2", home: "2.40", draw: "3.50", away: "2.90" },
+    };
+
+    const liveItem = {
+      matchId: "live-match-1",
+      status: "LIVE" as const,
+      minute: 73,
+      score: { home: 2, away: 1 },
+      odds: { HOME: "2.40", DRAW: "3.50", AWAY: "2.90" },
+      oddsMovement: {
+        HOME: "UP" as const,
+        AWAY: "DOWN" as const,
+        DRAW: "FLAT" as const,
+      },
+      recentEvents: [
+        {
+          id: "ev-1",
+          type: "GOAL" as const,
+          team: "HOME" as const,
+          minute: 72,
+          description: "拜仁慕尼黑 进球!",
+        },
+      ],
+      updatedAt: "2026-07-14T20:15:00.000Z",
+    };
+
+    const html = renderToStaticMarkup(createElement(MatchCard, { match, liveItem }));
+
+    // LIVE indicator
+    expect(html).toContain("LIVE 73&#x27;");
+    // Live score
+    expect(html).toContain("2");
+    expect(html).toContain("1");
+    expect(html).toContain("73&#x27; 比赛中");
+    // Odds trend indicators
+    expect(html).toContain("▲");
+    expect(html).toContain("▼");
+    // Goal alert
+    expect(html).toContain("进球速报：拜仁慕尼黑 进球!");
+  });
 });

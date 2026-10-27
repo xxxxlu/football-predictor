@@ -8,6 +8,7 @@ import { formatPoints } from "@/lib/points";
 import { scoreChipLabel } from "./selection-label";
 import { matchViewFromDetailPayload } from "./types";
 import type { ApiFailure, MatchView, OddsSelection } from "./types";
+import type { LiveFeedItem } from "@pulse/domain";
 
 const ticketErrors: Record<string, string> = {
   ODDS_CHANGED: "积分倍率已经变化，请查看最新倍率并再次确认。",
@@ -29,7 +30,23 @@ const MARKET_LABELS: Record<MarketKind, string> = { "1X2": "胜平负", CS: "买
 /** 一人一注：每个盘口只能提交一次判断，已投的盘口只等待结算。已投盘口集合由
  *  房间列表统一拉取（每张卡片各拉一次会在一屏比赛上打出几十个请求），提交成功
  *  或服务端回 409 时就地补上。 */
-export function PredictionSlip({ roomId, match, advanced = false, placedMarketIds, onAccepted }: { roomId: string; match: MatchView; advanced?: boolean; placedMarketIds?: ReadonlySet<string>; onAccepted?: () => void }) {
+export function PredictionSlip({
+  roomId,
+  match,
+  liveItem,
+  advanced = false,
+  placedMarketIds,
+  initialSelection,
+  onAccepted,
+}: {
+  roomId: string;
+  match: MatchView;
+  liveItem?: LiveFeedItem;
+  advanced?: boolean;
+  placedMarketIds?: ReadonlySet<string>;
+  initialSelection?: OddsSelection;
+  onAccepted?: () => void;
+}) {
   // match 是父组件的静态 prop；遇到 ODDS_CHANGED 时用重拉的最新赔率覆盖它，
   // 否则再次提交仍带旧版本号，会永远撞 ODDS_CHANGED。
   const [freshMatch, setFreshMatch] = useState<MatchView>();
@@ -39,7 +56,12 @@ export function PredictionSlip({ roomId, match, advanced = false, placedMarketId
   const canBuyScore = Boolean(correctScore);
 
   const [marketChoice, setMarket] = useState<MarketKind>();
-  const [selection, setSelection] = useState<OddsSelection>();
+  const [selection, setSelection] = useState<OddsSelection | undefined>(initialSelection);
+  const [prevInitial, setPrevInitial] = useState(initialSelection);
+  if (initialSelection !== prevInitial) {
+    setPrevInitial(initialSelection);
+    if (initialSelection) setSelection(initialSelection);
+  }
   const [scoreSelection, setScoreSelection] = useState<string>();
   const [stake, setStake] = useState("1000");
   const [pending, setPending] = useState(false);
@@ -167,22 +189,22 @@ export function PredictionSlip({ roomId, match, advanced = false, placedMarketId
   }
 
   return <form onSubmit={submit} className="space-y-4">
-    {canBuyScore && <div className="grid grid-cols-2 gap-2">{([["1X2", MARKET_LABELS["1X2"], oneXTwo?.id], ["CS", MARKET_LABELS.CS, correctScore?.id]] as const).map(([value, label, id]) => <button key={value} type="button" aria-pressed={market === value} onClick={() => { setMarket(value); setError(""); setReceipt(""); }} className={`min-h-10 rounded-full border-2 px-4 text-sm font-bold transition ${market === value ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}>{label}{isPlaced(id) ? " ✓已投" : ""}</button>)}</div>}
+    {canBuyScore && <div className="grid grid-cols-2 gap-2">{([["1X2", MARKET_LABELS["1X2"], oneXTwo?.id], ["CS", MARKET_LABELS.CS, correctScore?.id]] as const).map(([value, label, id]) => <button key={value} type="button" aria-pressed={market === value} onClick={() => { setMarket(value); setError(""); setReceipt(""); }} className={`pressable-btn cursor-pointer min-h-10 rounded-full border px-4 text-sm font-bold transition ${market === value ? "border-[#FF2A3B] bg-[#FF2A3B] text-white shadow-[0_0_16px_rgba(255,42,59,0.4)]" : "border-white/10 bg-[#0B0D10] text-zinc-300 hover:border-white/30"}`}>{label}{isPlaced(id) ? " ✓已投" : ""}</button>)}</div>}
 
     {activePlaced
       ? <StatusMessage tone="info" title={`${MARKET_LABELS[market]}已提交判断`}>本盘口只能提交一次判断，积分已冻结；赛果确认后自动结算，无需任何操作。</StatusMessage>
       : <>
         {market === "CS" && correctScore
-          ? <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold">选择最终比分（主队 : 客队）</legend><div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{correctScore.outcomes.map((outcome) => <button key={outcome.selection} type="button" aria-pressed={scoreSelection === outcome.selection} onClick={() => setScoreSelection(outcome.selection)} className={`pulse-pick flex min-h-14 flex-col items-center justify-center rounded-lg border-2 px-1 text-sm font-bold transition ${scoreSelection === outcome.selection ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}><span>{scoreChipLabel(outcome.selection)}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></button>)}</div></fieldset>
-          : <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold">选择你的判断</legend><div className="grid grid-cols-3 gap-2"><OddsButton selection="HOME" label="主胜" odds={oneXTwo?.home || "—"} selected={selection === "HOME"} onSelect={setSelection}/><OddsButton selection="DRAW" label="平局" odds={oneXTwo?.draw || "—"} selected={selection === "DRAW"} onSelect={setSelection}/><OddsButton selection="AWAY" label="客胜" odds={oneXTwo?.away || "—"} selected={selection === "AWAY"} onSelect={setSelection}/></div></fieldset>}
+          ? <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold text-zinc-300">选择最终比分（主队 : 客队）</legend><div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{correctScore.outcomes.map((outcome) => <button key={outcome.selection} type="button" aria-pressed={scoreSelection === outcome.selection} onClick={() => setScoreSelection(outcome.selection)} className={`pulse-pick pressable-btn cursor-pointer flex min-h-14 flex-col items-center justify-center rounded-xl border px-1 text-sm font-bold transition ${scoreSelection === outcome.selection ? "border-[#FF2A3B] bg-[#160809] text-white shadow-[0_0_14px_rgba(255,42,59,0.3)]" : "border-white/10 bg-[#0B0D10] text-zinc-300 hover:border-white/20"}`}><span>{scoreChipLabel(outcome.selection)}</span><span className="tabular text-xs font-black opacity-90">{outcome.decimalOdds}</span></button>)}</div></fieldset>
+          : <fieldset disabled={closed || pending}><legend className="mb-2 text-sm font-bold text-zinc-300">选择你的判断</legend><div className="grid grid-cols-3 gap-2"><OddsButton selection="HOME" label="主胜" odds={oneXTwo?.home || "—"} trend={liveItem?.oddsMovement?.HOME} selected={selection === "HOME"} onSelect={setSelection}/><OddsButton selection="DRAW" label="平局" odds={oneXTwo?.draw || "—"} trend={liveItem?.oddsMovement?.DRAW} selected={selection === "DRAW"} onSelect={setSelection}/><OddsButton selection="AWAY" label="客胜" odds={oneXTwo?.away || "—"} trend={liveItem?.oddsMovement?.AWAY} selected={selection === "AWAY"} onSelect={setSelection}/></div></fieldset>}
 
-        <div><label htmlFor={`stake-${match.id}`} className="mb-2 block text-sm font-bold">投入积分</label><input id={`stake-${match.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={event => setStake(event.target.value)} className="min-h-12 w-full rounded-lg border border-[var(--line)] bg-white px-3 tabular"/><div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map(value => <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="rounded-full border border-[var(--line)] px-3 py-1 text-xs font-bold transition hover:border-[var(--field)] hover:text-[var(--field)]">{Number(value).toLocaleString()}</button>)}</div></div>
+        <div><label htmlFor={`stake-${match.id}`} className="mb-2 block text-sm font-bold text-zinc-300">投入积分</label><input id={`stake-${match.id}`} disabled={closed || pending} type="number" inputMode="numeric" min="1" max="20000" step="1" required value={stake} onChange={event => setStake(event.target.value)} className="min-h-12 w-full rounded-xl border border-white/10 bg-[#0B0D10] text-white px-3 tabular focus:border-[#FF2A3B] focus:outline-none"/><div className="mt-2 flex flex-wrap gap-2">{["500", "1000", "2000"].map(value => <button key={value} disabled={closed || pending} type="button" onClick={() => setStake(value)} className="pressable-btn cursor-pointer rounded-full border border-white/10 bg-[#0B0D10] px-3 py-1 text-xs font-bold text-zinc-300 transition hover:border-[#FF2A3B] hover:text-[#FF2A3B]">{Number(value).toLocaleString()}</button>)}</div></div>
         <div className={`pulse-confirm text-sm ${active?.selection && active.decimalOdds ? "is-armed" : ""}`}>
           <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
             <span className="text-[var(--muted)]">预计返还（含投入）</span>
             {active?.selection && active.decimalOdds && <span className="pulse-confirm__lock">已锁定 {active.decimalOdds}x</span>}
           </span>
-          <strong key={`${active?.selection ?? "none"}-${projected}`} className="pulse-confirm__value tabular">{projected}</strong>
+          <strong key={`${active?.selection ?? "none"}-${projected}`} className="pulse-confirm__value tabular text-[#FF2A3B]">{projected}</strong>
         </div>
       </>}
     {draft && draftVerdict && <StatusMessage tone={draftVerdict === "UNCHANGED" ? "info" : "error"} title={draftVerdict === "UNCHANGED" ? "已恢复离线草稿" : "离线草稿需要处理"}>
@@ -192,11 +214,32 @@ export function PredictionSlip({ roomId, match, advanced = false, placedMarketId
         {draftVerdict === "MARKET_CHANGED" && "离线期间盘口已更换，这份草稿无法提交，请重新选择或丢弃。"}
         {draftVerdict === "EVENT_CLOSED" && "比赛已封盘，这份离线草稿无法提交，请丢弃。"}
       </span>
-      <button type="button" onClick={clearDraft} className="mt-2 inline-flex min-h-8 items-center rounded-full border border-[var(--line)] bg-white px-3 text-xs font-bold text-[var(--ink)] transition hover:border-[var(--field)] hover:text-[var(--field)]">丢弃草稿</button>
+      <button type="button" onClick={clearDraft} className="pressable-btn cursor-pointer mt-2 inline-flex min-h-8 items-center rounded-full border border-white/20 bg-[#0B0D10] px-3 text-xs font-bold text-zinc-300 transition hover:border-[#FF2A3B] hover:text-white">丢弃草稿</button>
     </StatusMessage>}
     {error && <StatusMessage tone="error" title="未提交">{error}</StatusMessage>}
-    {receipt && <div className="pulse-stamp"><StatusMessage tone="success" title="判断已记录">票号：<span className="tabular">{receipt}</span></StatusMessage></div>}
-    {!activePlaced && <button disabled={unavailable || pending || !active?.selection || !stake} className={`inline-flex min-h-12 w-full items-center justify-center rounded-full bg-[var(--field)] px-4 font-bold text-white transition hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-45 ${active?.selection && active.decimalOdds && !unavailable ? "pulse-submit-armed" : ""}`}>{pending ? "正在复核倍率与封盘状态…" : !online ? "离线中，提交已禁用" : unavailable ? "当前不可提交" : "确认最新倍率并提交"}</button>}
+    {receipt && <div className="pulse-stamp"><StatusMessage tone="success" title="判断已记录">票号：<span className="tabular font-mono font-bold">{receipt}</span></StatusMessage></div>}
+    {!activePlaced && (
+      <button
+        disabled={unavailable || pending || !active?.selection || !stake}
+        className={`btn-super-pill pressable-btn inline-flex min-h-14 w-full items-center justify-center gap-2 rounded-full bg-[#FF2A3B] px-6 text-base font-black uppercase tracking-wider text-white transition hover:bg-[#FF4252] disabled:cursor-not-allowed disabled:opacity-45 shadow-[0_8px_24px_rgba(255,42,59,0.4)] ${active?.selection && active.decimalOdds && !unavailable ? "pulse-submit-armed" : ""}`}
+      >
+        {pending ? (
+          <span className="inline-flex items-center gap-2">
+            <svg className="size-4 animate-spin text-white" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span>正在核验倍率并提交…</span>
+          </span>
+        ) : !online ? (
+          "离线中，提交已禁用"
+        ) : unavailable ? (
+          "当前不可提交"
+        ) : (
+          "确认最新倍率并提交"
+        )}
+      </button>
+    )}
     <p className="text-xs leading-5 text-[var(--muted)]">投入必须为整数。服务端将复核实际开球、封盘和积分倍率；失败时不冻结积分，单张上限 20,000 分。每个盘口只能提交一次判断，提交后等待结算。{market === "CS" ? "买比分每场只能持有一张未结算预测。" : ""}</p>
   </form>;
 }

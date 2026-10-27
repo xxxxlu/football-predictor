@@ -1,4 +1,4 @@
-export const SUPPORTED_LOCALES = ["zh-CN", "en"] as const;
+export const SUPPORTED_LOCALES = ["zh-CN", "en", "de", "es"] as const;
 
 export type Locale = (typeof SUPPORTED_LOCALES)[number];
 
@@ -25,7 +25,13 @@ const zhCN = {
   "language.switcher": "切换语言",
   "language.zh": "中文",
   "language.en": "English",
+  "language.de": "Deutsch",
+  "language.es": "Español",
   "language.current": "当前语言",
+  "odds.format": "赔率格式",
+  "odds.decimal": "小数",
+  "odds.fractional": "分数",
+  "odds.american": "美式",
   "page.section.events": "赛事",
   "page.section.f1": "F1",
   "auth.backHome": "返回首页",
@@ -243,7 +249,31 @@ const zhCN = {
   "club.lobby.sectionUnavailable": "该区块暂时不可用，稍后自动恢复。",
   "club.lobby.loading": "正在加载大厅…",
   "club.lobby.unavailable": "大厅暂不可用",
+  "pro.title": "PULSE PRO 专家数据看板",
+  "pro.subtitle": "深度量化看板",
+  "pro.badge": "PULSE PRO",
+  "pro.activeVip": "VIP 专属",
+  "pro.activatedNotice": "🎉 恭喜！您已成功激活 PULSE PRO 专家权益，全部高级指标已实时解锁。",
+  "pro.monteCarlo": "AI 蒙特卡洛胜率预测模型 v4.2",
+  "pro.basedOn": "基于近 20 场历史数据",
+  "pro.xgTitle": "预期进球走势分析 (Expected Goals xG)",
+  "pro.xgDesc": "预期进球 xG",
+  "pro.sharpTitle": "机构盘口异动与资金流向预警 (Sharp Action Detector)",
+  "pro.unlockTitle": "解锁 PULSE PRO 专家级量化指标",
+  "pro.unlockDesc": "实时掌握机构资金流向、伤停权重与冷门预警",
+  "pro.trialBtn": "免费体验 PULSE PRO (试用 7 天)",
+  "pro.monthlyPlan": "月度会员 (5,000 积分/月)",
+  "pro.annualPlan": "年度特惠 (38,000 积分/年 · 立省 36%)",
+  "pro.subscribeBtn": "立即使用积分开通",
+  "pro.disclaimer": "量化分析仅供赛事研判参考 · 不构成投资建议",
+  "pro.defenseShift": "客胜赔率防守下调",
+  "pro.defenseVal": "-0.18 离散收窄",
+  "pro.injuryRisk": "主力前锋伤停风险指数",
+  "pro.injuryVal": "中等偏高 (Impact 68)",
+  "pro.sharpPick": "高价值推荐盘口",
+  "pro.sharpVal": "客队 +0.5 让胜",
 } as const;
+
 
 export type MessageKey = keyof typeof zhCN;
 
@@ -269,7 +299,13 @@ const en = {
   "language.switcher": "Change language",
   "language.zh": "中文",
   "language.en": "English",
+  "language.de": "Deutsch",
+  "language.es": "Español",
   "language.current": "Current language",
+  "odds.format": "Odds format",
+  "odds.decimal": "Decimal",
+  "odds.fractional": "Fractional",
+  "odds.american": "American",
   "page.section.events": "EVENTS",
   "page.section.f1": "F1",
   "auth.backHome": "Back to home",
@@ -487,11 +523,40 @@ const en = {
   "club.lobby.sectionUnavailable": "This section is temporarily unavailable and will recover on its own.",
   "club.lobby.loading": "Loading the lobby…",
   "club.lobby.unavailable": "The lobby is unavailable",
+  "pro.title": "PULSE PRO Insights",
+  "pro.subtitle": "Quant Intelligence Dashboard",
+  "pro.badge": "PULSE PRO",
+  "pro.activeVip": "VIP Exclusive",
+  "pro.activatedNotice": "🎉 Congratulations! You have unlocked PULSE PRO. Advanced quantitative indicators are live.",
+  "pro.monteCarlo": "Monte Carlo Win Probability Model v4.2",
+  "pro.basedOn": "Based on last 20 fixtures",
+  "pro.xgTitle": "Expected Goals (xG) Matrix",
+  "pro.xgDesc": "Expected Goals xG",
+  "pro.sharpTitle": "Sharp Money & Value Detector",
+  "pro.unlockTitle": "Unlock PULSE PRO Quantitative Indicators",
+  "pro.unlockDesc": "Real-time sharp action tracking, injury impact, and market value alerts",
+  "pro.trialBtn": "Try PULSE PRO Free (7 Days)",
+  "pro.monthlyPlan": "Monthly (5,000 Points/mo)",
+  "pro.annualPlan": "Annual (38,000 Points/yr · Save 36%)",
+  "pro.subscribeBtn": "Subscribe with Points",
+  "pro.disclaimer": "Quantitative insights are for research only and do not constitute financial advice.",
+  "pro.defenseShift": "Away Win Odds Defensive Adjustment",
+  "pro.defenseVal": "-0.18 Sharp Tightening",
+  "pro.injuryRisk": "Starting Forward Injury Risk",
+  "pro.injuryVal": "Medium-High (Impact 68)",
+  "pro.sharpPick": "High Value Value Market",
+  "pro.sharpVal": "Away +0.5 Handicap Win",
 } as const;
+
+
+import { de } from "./locales/de";
+import { es } from "./locales/es";
 
 export const messages = {
   "zh-CN": zhCN,
   en,
+  de,
+  es,
 } as const satisfies Record<Locale, Record<MessageKey, string>>;
 
 export const sharedAuthCopy: Record<string, { eyebrow: string; title: string; description: string }> = {
@@ -529,3 +594,60 @@ export const sharedPageCopy: Record<string, { title: string; description: string
   "F1 车手档案": { title: "F1 driver profile", description: "Season results come only from confirmed official results. Photo and team-mark assets are tracked in the in-product licence register." },
   "F1 车队档案": { title: "F1 team profile", description: "Team points and results come only from confirmed official results. Photo and team-mark assets are tracked in the in-product licence register." },
 };
+
+export const localizedPageCopies: Record<Locale, Record<string, { title: string; description: string }>> = {
+  "zh-CN": {},
+  "en": sharedPageCopy,
+  "de": {
+    "我的房间": { title: "Meine Gruppen", description: "Private Gruppe erstellen oder beitreten. Jede Gruppe führt eigene Punkte, Tipps und Hauptbücher." },
+    "长期档案": { title: "Langzeitarchiv", description: "Abgerechnete Tipps über Gruppen hinweg nach Event und Saison einsehen, inklusive Abrechnungsversionen und Prüfpfaden." },
+    "房间赛事": { title: "Gruppenevent", description: "Mitglieder und Einladungen verwalten. Vor der Abgabe werden Punkte, Datenaktualität und Sperrstatus erneut geprüft." },
+    "成员提交状态": { title: "Abgabestatus der Mitglieder", description: "Gastgeber sehen nur, wer abgegeben hat. Vor dem Marktschluss sind Auswahlen und Einsätze für niemanden sichtbar." },
+    "我的账户": { title: "Mein Konto", description: "Guthaben, Tipps und Punktebewegungen für jede Gruppe einsehen und Profil verwalten." },
+    "好友": { title: "Freunde", description: "Freunde per PULSE-ID hinzufügen, Anfragen verwalten und Sperrliste führen. Anwesenheit ist nur bei beidseitiger Zustimmung sichtbar." },
+    "每日挑战": { title: "Tägliche Challenge", description: "Eine leichte Sportfrage pro Tag plus deine Glückskarte. XP, Serien und Abzeichen sind reine Klub-Auszeichnungen ohne Einfluss auf Gruppenpunkte." },
+    "PULSE CLUB 大厅": { title: "PULSE CLUB Lobby", description: "Mitglieder treffen, Freundesaktivitäten verfolgen, öffentliche Gruppen entdecken und im Hauptkanal austauschen." },
+    "比赛中心": { title: "Spielzentrum", description: "Hier werden verifizierte Daten aus dem Produkt-Cache angezeigt. Veraltete Daten werden deutlich gekennzeichnet." },
+    "F1 赛程": { title: "Formel 1 Rennkalender", description: "Nach Rennwochenende durchsuchen. Tipps sperren zu Session-Beginn und werden nach offiziellen Ergebnissen abgerechnet." },
+    "房间排行榜": { title: "Gruppen-Rangliste", description: "Platzierungen werden ausschließlich innerhalb der privaten Gruppe berechnet und nicht mit anderen vermischt." },
+    "房间治理": { title: "Gruppen-Governance", description: "Meldungen prüfen, Gruppen einschränken oder schließen und den Betriebsprüfpfad einsehen." },
+    "治理收件箱": { title: "Governance-Posteingang", description: "Meldungen strukturiert bearbeiten und Maßnahmen wie Ausblenden, Stummschalten oder Ablehnen mit Begründung festhalten." },
+    "用户状态管理": { title: "Benutzerstatus-Verwaltung", description: "Hauptadministratoren können Konten sperren oder reaktivieren; sensible Aktionen erfordern erneute Bestätigung." },
+    "系统状态": { title: "Systemstatus", description: "Schreibgeschützte Statusübersicht für Schnittstellen-Quotas, Cache-Daten, Abrechnung und Hintergrund-Jobs." },
+    "运营总览": { title: "Betriebsübersicht", description: "Überblick über Schnittstellen, Abrechnungszustand, offene Prüfungen, Kontorisiken und Rechte-Audits." },
+    "F1 场次详情": { title: "F1 Session-Details", description: "Fahrer-Ranglisten und Multiplikatoren basieren auf Plattformdaten. Nach dem Start sind keine Tipps mehr möglich." },
+    "积分账本": { title: "Punkte-Hauptbuch", description: "Vollständige Aufstellung aller Gutschriften, Sperren, Abrechnungen, Stornierungen und Ausgleiche." },
+    "比赛详情": { title: "Spieldetails", description: "Aufstellungen und Spielverlauf aus dem Produkt-Cache. Ausstehende Daten sind markiert; keine erfundenen Spieler." },
+    "F1 车手档案": { title: "F1 Fahrerprofil", description: "Saisonergebnisse basieren rein auf offiziellen Bestätigungen. Lizenzierte Assets werden im Register nachverfolgt." },
+    "F1 车队档案": { title: "F1 Teammprofil", description: "Teampunkte und Rennergebnisse aus offiziellen Quellen mit lizenzierten Markenelementen." },
+  },
+  "es": {
+    "我的房间": { title: "Mis salas", description: "Crea o únete a una sala privada. Cada grupo mantiene sus propios puntos, pronósticos y libro mayor." },
+    "长期档案": { title: "Archivo histórico", description: "Revisa los pronósticos liquidados en todos los grupos por evento y temporada, con versiones de liquidación y pistas de auditoría." },
+    "房间赛事": { title: "Evento de la sala", description: "Gestiona miembros e invitaciones. Antes de enviar, se verifican nuevamente los puntos, la frescura de datos y el bloqueo." },
+    "成员提交状态": { title: "Estado de envíos", description: "Los anfitriones solo ven quién ha enviado. Las selecciones y montos permanecen ocultos hasta el cierre." },
+    "我的账户": { title: "Mi cuenta", description: "Revisa saldos, pronósticos y movimientos de puntos de cada grupo, y administra tu perfil." },
+    "好友": { title: "Amigos", description: "Agrega amigos por PULSE ID, gestiona solicitudes y tu lista de bloqueo. El estado en línea solo se comparte con amigos mutuos." },
+    "每日挑战": { title: "Desafío diario", description: "Una pregunta deportiva diaria y tu tarjeta de fortuna. Los puntos de experiencia, rachas y medallas son reconocimientos exclusivos del club." },
+    "PULSE CLUB 大厅": { title: "Vestíbulo PULSE CLUB", description: "Conoce miembros, sigue la actividad de amigos, descubre grupos públicos y charla en el canal general." },
+    "比赛中心": { title: "Centro de partidos", description: "Solo se muestran los datos del caché oficial de eventos. Los datos desactualizados se marcan con claridad." },
+    "F1 赛程": { title: "Calendario F1", description: "Explora por fin de semana de carrera. Los pronósticos se cierran al inicio de cada sesión y se liquidan automáticamente." },
+    "房间排行榜": { title: "Clasificación de la sala", description: "Las tablas de posiciones se calculan exclusivamente dentro del grupo privado correspondiente." },
+    "房间治理": { title: "Gobernanza de salas", description: "Revisa reportes, restringe o cierra salas y verifica la trazabilidad de auditoría." },
+    "治理收件箱": { title: "Buzón de gobernanza", description: "Gestiona reportes asignados y aplica restricciones, silencios o descartes con motivo registrado." },
+    "用户状态管理": { title: "Gestión de usuarios", description: "Los administradores pueden suspender o restablecer cuentas con confirmación de seguridad." },
+    "系统状态": { title: "Estado del sistema", description: "Monitoreo en tiempo real de cuotas de proveedores, datos en caché, liquidaciones y tareas en segundo plano." },
+    "运营总览": { title: "Resumen operativo", description: "Estado de proveedores, liquidaciones, riesgos de cuentas y auditoría de permisos." },
+    "F1 场次详情": { title: "Detalles de sesión F1", description: "Clasificaciones de pilotos y multiplicadores oficiales. No se aceptan pronósticos tras el cierre." },
+    "积分账本": { title: "Libro de puntos", description: "Detalle de cada asignación, retención, liquidación, reversión y compensación de saldo." },
+    "比赛详情": { title: "Detalle del partido", description: "Alineaciones y eventos del partido en caché. Datos pendientes marcados con precisión; sin datos ficticios." },
+    "F1 车手档案": { title: "Perfil de piloto F1", description: "Resultados de la temporada basados en datos oficiales confirmados con registro de licencias." },
+    "F1 车队档案": { title: "Perfil de escudería F1", description: "Puntos y resultados del equipo basados en datos oficiales con gestión de activos autorizados." },
+  },
+};
+
+export function getLocalizedPageCopy(title: string, locale: Locale): { title: string; description?: string } | undefined {
+  if (locale === "zh-CN") return undefined;
+  return localizedPageCopies[locale]?.[title];
+}
+

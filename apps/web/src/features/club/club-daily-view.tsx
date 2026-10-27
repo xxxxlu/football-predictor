@@ -143,10 +143,10 @@ export function ClubDailyView() {
               <legend className="sr-only">{localizeText(daily.question.prompt, locale)}</legend>
               <div className="space-y-2.5">
                 {daily.question.options.map((option) => <label key={option.key}
-                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-2 transition ${selected === option.key ? "border-[var(--ink)] bg-[var(--ink)]/5 font-bold" : "border-[var(--line)] bg-white"}`}>
+                  className={`flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-4 py-2 transition ${selected === option.key ? "border-[#FF2A3B] bg-[#160809] font-bold text-white shadow-[0_0_12px_rgba(255,42,59,0.25)]" : "border-white/10 bg-[#0B0D10] text-zinc-300 hover:border-white/25"}`}>
                   <input type="radio" name="daily-answer" value={option.key} checked={selected === option.key}
-                    onChange={() => setSelected(option.key)} className="h-5 w-5" />
-                  <span><b className="mr-2">{option.key}.</b>{localizeText(option.text, locale)}</span>
+                    onChange={() => setSelected(option.key)} className="h-5 w-5 accent-[#FF2A3B]" />
+                  <span><b className="mr-2 text-white">{option.key}.</b>{localizeText(option.text, locale)}</span>
                 </label>)}
               </div>
             </fieldset>
@@ -201,11 +201,11 @@ export function ClubDailyView() {
               its content is routinely not announced at all. The card is injected
               INTO it on reveal, so the reveal is actually read out. */}
           <div aria-live="polite">
-            {fortuneRevealed && <div className="mt-5 rounded-2xl border border-[var(--line)] bg-white p-5">
-              <p className="display text-xl font-bold">{localizeText(daily.fortune.title, locale)}</p>
-              <p className="mt-3 text-sm leading-7">{localizeText(daily.fortune.text, locale)}</p>
+            {fortuneRevealed && <div className="mt-5 rounded-2xl border border-white/10 bg-[#121418] p-5">
+              <p className="display text-xl font-bold text-white">{localizeText(daily.fortune.title, locale)}</p>
+              <p className="mt-3 text-sm leading-7 text-zinc-300">{localizeText(daily.fortune.text, locale)}</p>
               <button type="button" onClick={() => void copyFortune()}
-                className="mt-5 min-h-11 w-full rounded-full border-2 border-[var(--ink)] px-4 font-bold transition hover:bg-[var(--ink)] hover:text-white">
+                className="mt-5 min-h-11 w-full rounded-full border border-white/20 bg-white/5 px-4 font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]">
                 {shareState === "copied" ? t("club.daily.fortuneShared") : t("club.daily.fortuneShare")}
               </button>
               {shareState === "failed" && <p className="mt-2 text-xs font-bold text-[var(--coral)]">{t("club.daily.fortuneShareFailed")}</p>}

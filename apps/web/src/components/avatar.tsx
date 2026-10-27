@@ -1,6 +1,45 @@
 "use client";
 import { useState } from "react";
-import { AVATAR_FALLBACK_TONES, avatarRenderPlan } from "@pulse/domain";
+
+export const AVATAR_FALLBACK_TONES = 6;
+
+function firstMeaningfulCharacter(value: string | null | undefined): string | null {
+  if (!value) return null;
+  for (const character of Array.from(value.trim())) {
+    if (/[\p{L}\p{N}]/u.test(character)) return character;
+  }
+  return null;
+}
+
+export function avatarInitial(nickname: string | null | undefined, pulseId?: string | null): string {
+  const source = firstMeaningfulCharacter(nickname) ?? firstMeaningfulCharacter(pulseId);
+  return source ? source.toUpperCase() : "#";
+}
+
+export function avatarFallbackTone(seed: string | null | undefined): number {
+  if (!seed) return 0;
+  let hash = 0;
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) % 1_000_003;
+  }
+  return hash % AVATAR_FALLBACK_TONES;
+}
+
+export function avatarRenderPlan(input: {
+  src?: string | null;
+  failed?: boolean;
+  nickname?: string | null;
+  pulseId?: string | null;
+  size?: number;
+}) {
+  const size = input.size ?? 40;
+  return {
+    mode: input.src && !input.failed ? ("image" as const) : ("initials" as const),
+    initial: avatarInitial(input.nickname, input.pulseId),
+    tone: avatarFallbackTone(input.pulseId ?? input.nickname ?? ""),
+    box: size,
+  };
+}
 
 /**
  * The one avatar renderer (Story 12.6). Every surface that already shows a

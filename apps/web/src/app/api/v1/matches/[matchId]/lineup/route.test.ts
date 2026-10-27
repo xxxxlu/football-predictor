@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LineupPlayer, LineupSnapshot, LineupStatus, TeamLineup } from "@pulse/domain";
-import { assessLineup, createLineupGet, GET } from "./route.js";
+import { assessLineup, createLineupGet } from "./handler.js";
+import { GET } from "./route.js";
 
 const NOW = new Date("2026-07-19T18:30:00.000Z");
 

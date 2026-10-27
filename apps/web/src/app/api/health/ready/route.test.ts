@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createReadyResponse } from "./route";
+import { createReadyResponse } from "./handler";
 import { probeDatabase, READINESS_DB_TIMEOUTS, type DatabaseProbeFactory } from "./readiness";
 
 const environment = { APP_ENV: "test", APP_VERSION: "1.0.0", DATABASE_URL: "postgresql://user:secret@localhost/app", RULES_VERSION: "phase-1" };

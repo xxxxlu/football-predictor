@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { MatchCard } from "@/components/match-card";
+import { MatchCardSkeleton } from "@/components/match-card-skeleton";
+import { OddsFormatSwitcher } from "@/components/odds-format-switcher";
 import { SportGlyph } from "@/components/pulse";
 import { PredictionSlip } from "./prediction-slip";
 import {
@@ -16,11 +18,13 @@ import {
   summarizeMatches,
   type MatchStatusFilter,
 } from "./match-filters";
+import { useLiveFeed } from "./use-live-feed";
 import { normalizeFreshness, normalizeMatch, type ApiEnvelope, type ApiFailure, type FreshnessMeta, type MatchView } from "./types";
 
 const MATCH_BATCH_SIZE = 24;
 
 export function MatchList({ roomId, interactive = false, advanced = false }: { roomId?: string; interactive?: boolean; advanced?: boolean }) {
+  const { feedMap, isConnected } = useLiveFeed(true);
   const [matches, setMatches] = useState<MatchView[]>([]);
   const [freshness, setFreshness] = useState<FreshnessMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -79,10 +83,14 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
   }, [roomId, retry]);
 
   if (loading) {
-    return <div aria-live="polite" aria-busy="true" className="grid gap-4 sm:grid-cols-2">
-      {[1, 2, 3, 4].map((number) => <div key={number} className="pitch-skeleton h-36 rounded-xl" />)}
-      <span className="sr-only">正在加载比赛</span>
-    </div>;
+    return (
+      <div aria-live="polite" aria-busy="true" className="grid gap-4 xl:grid-cols-2">
+        {[1, 2, 3, 4].map((number) => (
+          <MatchCardSkeleton key={number} />
+        ))}
+        <span className="sr-only">正在加载比赛</span>
+      </div>
+    );
   }
   if (error) {
     return <Empty title="暂时无法取得比赛" text={error} action={
@@ -139,11 +147,11 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
       <strong>{notice.title}</strong>
       <p className="mt-1 text-sm leading-6 text-[var(--muted)]">{notice.detail}</p>
     </section>}
-    <section className="pulse-filter mb-8" aria-label="比赛筛选和数据状态">
+    <section className="pulse-filter sticky top-[53px] z-20 mb-8 rounded-2xl border border-white/10 bg-[#121418]/90 p-4 backdrop-blur-2xl shadow-2xl transition-all" aria-label="比赛筛选和数据状态">
       <div className="flex flex-wrap items-end justify-between gap-x-8 gap-y-4">
         <fieldset>
           <legend className="pulse-filter__legend mb-2">比赛状态</legend>
-          {/* 斜切轨道自身会横移约 8px，负 margin 把左缘拉回和上下文对齐 */}
+          {/* 状态胶囊轨道 */}
           <div className="pulse-seg -ml-1">
             {([["ALL", "全部"], ["PREDICTABLE", "可预测"], ["FINISHED", "已结束"]] as const).map(([value, label]) => <button
               key={value}
@@ -153,34 +161,50 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
             ><span>{label}</span></button>)}
           </div>
         </fieldset>
-        <p className="pulse-filter__count" aria-live="polite">
-          {summary.total}<i> / {matches.length}</i><span className="pulse-filter__unit">场命中</span>
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          {isConnected && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold text-emerald-400">
+              <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span>实时推流中</span>
+            </span>
+          )}
+          <OddsFormatSwitcher compact />
+          <p className="pulse-filter__count" aria-live="polite">
+            {summary.total}<i> / {matches.length}</i><span className="pulse-filter__unit">场命中</span>
+          </p>
+        </div>
       </div>
 
       {/* fieldset defaults to min-width:min-content — min-w-0 lets the chip rail scroll */}
-      <fieldset className="mt-5 min-w-0">
+      <fieldset className="mt-4 min-w-0">
         <legend className="pulse-filter__legend mb-2">联赛分类</legend>
-        <div className="flex gap-2 overflow-x-auto pb-1" aria-label="按联赛筛选比赛">
-          {[{ value: "", label: `全部联赛（${competitions.length}）` }, ...competitions.map((name) => ({ value: name, label: name }))].map((option) => <button
-            key={option.value || "all"}
-            type="button"
-            aria-pressed={competition === option.value}
-            onClick={() => { setCompetition(option.value); resetBatch(); }}
-            className={`min-h-10 shrink-0 rounded-full border-2 px-4 text-sm font-bold transition ${competition === option.value ? "border-[var(--field)] bg-[var(--field)] text-white" : "border-[var(--line)] bg-white text-[var(--ink)] hover:border-[var(--field)]"}`}
-          >{option.label}</button>)}
+        <div className="flex gap-2 overflow-x-auto pb-1.5 pt-0.5 m3-fade-rail no-scrollbar" aria-label="按联赛筛选比赛">
+          {[{ value: "", label: `全部联赛（${competitions.length}）` }, ...competitions.map((name) => ({ value: name, label: name }))].map((option) => (
+            <button
+              key={option.value || "all"}
+              type="button"
+              aria-pressed={competition === option.value}
+              onClick={() => { setCompetition(option.value); resetBatch(); }}
+              className={`pressable-btn cursor-pointer shrink-0 rounded-full px-4 py-1.5 text-xs font-bold transition duration-200 ${
+                competition === option.value
+                  ? "bg-[#FF2A3B] text-white shadow-[0_0_16px_rgba(255,42,59,0.4)] scale-[1.02]"
+                  : "border border-white/10 bg-[#0B0D10] text-zinc-300 hover:bg-white/5 hover:border-white/30"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
         </div>
       </fieldset>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-[minmax(0,22rem)_auto] sm:items-end">
         <label className="pulse-filter__legend">比赛日期
-          {/* §8.2：表单输入框不做斜切 */}
-          <select value={date} onChange={(event) => { setDate(event.target.value); resetBatch(); }} className="mt-1.5 min-h-11 w-full rounded-xl border border-[var(--line)] bg-white px-3 text-sm font-medium normal-case tracking-normal text-[var(--ink)]">
+          <select value={date} onChange={(event) => { setDate(event.target.value); resetBatch(); }} className="mt-1.5 min-h-11 w-full rounded-xl border border-white/10 bg-[#0B0D10] px-3 text-sm font-medium normal-case tracking-normal text-white focus:border-[#FF2A3B] focus:outline-none">
             <option value="">全部日期（{dates.length}）</option>
             {dates.map((value) => <option key={value} value={value}>{formatDate(value)}</option>)}
           </select>
         </label>
-        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 text-sm font-bold text-white transition hover:bg-[var(--field)] sm:justify-self-start">刷新数据</button>
+        <button type="button" onClick={() => { setLoading(true); setRetry((value) => value + 1); }} className="pressable-btn cursor-pointer inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-[#1A1D24] px-6 text-xs font-black uppercase tracking-wider text-white transition hover:border-[#FF2A3B] hover:bg-[#FF2A3B] sm:justify-self-start">刷新数据</button>
       </div>
 
       <dl className="mt-5 flex flex-wrap items-baseline gap-x-6 gap-y-2 border-t rule pt-3" aria-live="polite">
@@ -213,10 +237,29 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
               <div className="grid gap-4 xl:grid-cols-2">
                 {dateGroup.matches.map((match, matchIndex) => {
                   const predictable = matchAvailability(match).predictable;
+                  const liveItem = feedMap.get(match.id);
                   return <div key={match.id} className="grid" data-pulse-reveal style={{ "--pulse-reveal-delay": `${Math.min(matchIndex, 5) * 70}ms` } as React.CSSProperties}>
                     <MatchCard
                       match={match}
-                      action={interactive && roomId && predictable ? <PredictionSlip roomId={roomId} match={match} advanced={advanced} placedMarketIds={placedMarketIds} /> : undefined}
+                      liveItem={liveItem}
+                      action={
+                        interactive && roomId && predictable
+                          ? ({ initialSelection, onClose }) => (
+                              <PredictionSlip
+                                roomId={roomId}
+                                match={match}
+                                liveItem={liveItem}
+                                advanced={advanced}
+                                placedMarketIds={placedMarketIds}
+                                initialSelection={initialSelection}
+                                onAccepted={() => {
+                                  setRetry((value) => value + 1);
+                                  onClose();
+                                }}
+                              />
+                            )
+                          : undefined
+                      }
                     />
                   </div>;
                 })}
@@ -226,7 +269,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
         </section>)}
       </div>
       {page.hasMore && <div className="mt-10 border-t rule pt-6 text-center">
-        <button type="button" onClick={() => setVisibleCount((count) => count + MATCH_BATCH_SIZE)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border-2 border-[var(--ink)] px-5 text-sm font-bold transition hover:bg-[var(--ink)] hover:text-white sm:w-auto">
+        <button type="button" onClick={() => setVisibleCount((count) => count + MATCH_BATCH_SIZE)} className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-full border border-white/20 bg-white/5 px-5 text-sm font-bold text-white transition hover:bg-white hover:text-[#0b0c0e] sm:w-auto">
           再显示 {Math.min(MATCH_BATCH_SIZE, page.remaining)} 场
         </button>
         <p className="mt-2 text-xs text-[var(--muted)]">还有 {page.remaining} 场未展示</p>
@@ -237,7 +280,7 @@ export function MatchList({ roomId, interactive = false, advanced = false }: { r
   </div>;
 }
 
-const BTN_OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-full border-2 border-[var(--ink)] px-5 font-bold transition hover:bg-[var(--ink)] hover:text-white";
+const BTN_OUTLINE = "inline-flex min-h-11 items-center justify-center rounded-full border border-white/20 bg-white/5 px-5 font-bold text-white transition hover:bg-white hover:text-[#0b0c0e]";
 
 function formatDate(value: string) {
   return new Date(`${value}T00:00:00`).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });

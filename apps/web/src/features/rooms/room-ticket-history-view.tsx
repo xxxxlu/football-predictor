@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { DataStatePanel } from "@/components/data-state-panel";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { formatEventTitle } from "@/features/matchday/selection-label";
+import { VictoryShareModal } from "@/components/victory-card/victory-share-modal";
+import type { VictoryCardData } from "@/components/victory-card/types";
 import { toTicketHistoryView, type AnyTicketStatus, type TicketHistoryRecord } from "./room-ticket-history";
 
 // SETTLED only ever reaches a hidden ticket: the round is over, and that is all a
@@ -17,6 +19,9 @@ export function RoomTicketHistoryView({ roomId, isOwner, initialPostMatchTicketV
   const [error, setError] = useState("");
   const [postMatchVisible, setPostMatchVisible] = useState(initialPostMatchTicketVisible);
   const [saving, setSaving] = useState(false);
+
+  const [shareData, setShareData] = useState<VictoryCardData | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true); setError("");
@@ -38,6 +43,29 @@ export function RoomTicketHistoryView({ roomId, isOwner, initialPostMatchTicketV
 
   const visibleRecords = useMemo(() => (records ?? []).filter((record) => filter === "ALL" || record.owner.isCurrentUser), [records, filter]);
 
+  function handleShare(record: TicketHistoryRecord) {
+    const view = toTicketHistoryView(record);
+    if (!view.selection) return;
+
+    setShareData({
+      kind: "MATCH",
+      competition: "房间赛事预测",
+      homeTeam: record.homeTeam,
+      awayTeam: record.awayTeam,
+      kickoffAt: record.kickoffAt,
+      settledAt: view.submittedAt || record.kickoffAt,
+      selection: view.selection,
+      odds: view.odds || "—",
+      stakePoints: view.stake ? `${view.stake} PTS` : "—",
+      grossReturnPoints: view.returnPoints ? `${view.returnPoints} PTS` : "—",
+      netPoints: view.netPoints ? `${view.netPoints} PTS` : "待结算",
+      outcome: record.status === "WON" ? "WIN" : record.status === "VOID" ? "PUSH" : "LOSS",
+      ticketId: record.ticketId,
+      roomName: "本房间",
+    });
+    setShareOpen(true);
+  }
+
   async function updatePostMatchVisibility(visible: boolean) {
     setSaving(true); setError("");
     try {
@@ -57,15 +85,44 @@ export function RoomTicketHistoryView({ roomId, isOwner, initialPostMatchTicketV
     </div>
     {isOwner && <div className="mt-5 rounded-xl border-2 border-[var(--field)] bg-[var(--wash-brand-soft)] p-4"><p className="text-xs font-black tracking-wide text-[var(--field-dark)]">房主设置</p><label className="mt-2 flex cursor-pointer items-start justify-between gap-4"><span><strong className="block">开赛后公开完整记录</strong><span className="mt-1 block text-xs leading-5 text-[var(--muted)]">关闭后，其他成员只能看到已提交状态；每个人仍能查看自己的完整记录。</span></span><input type="checkbox" checked={postMatchVisible} disabled={saving} onChange={(event) => void updatePostMatchVisibility(event.target.checked)} className="mt-1 size-6 shrink-0 accent-[var(--field)]" aria-label="开赛后公开完整记录"/></label></div>}
     {error && <p role="alert" className="mt-4 text-sm font-bold text-[var(--coral)]">{error}</p>}
-    {loading && !records ? <div className="mt-5"><DataStatePanel state="loading" title="正在加载投入记录" description=""/></div> : !visibleRecords.length ? <div className="mt-5"><DataStatePanel state="empty" title="还没有投入记录" description="成员提交预测后，积分投入和允许公开的详情会显示在这里。"/></div> : <ol className="mt-5 space-y-3">{visibleRecords.map((record) => <TicketRow key={record.ticketId} record={record}/>)}</ol>}
+    {loading && !records ? <div className="mt-5"><DataStatePanel state="loading" title="正在加载投入记录" description=""/></div> : !visibleRecords.length ? <div className="mt-5"><DataStatePanel state="empty" title="还没有投入记录" description="成员提交预测后，积分投入和允许公开的详情会显示在这里。"/></div> : <ol className="mt-5 space-y-3">{visibleRecords.map((record) => <TicketRow key={record.ticketId} record={record} onShare={() => handleShare(record)}/>)}</ol>}
+    <VictoryShareModal data={shareData} isOpen={shareOpen} onClose={() => setShareOpen(false)} />
   </section>;
 }
 
-function TicketRow({ record }: { record: TicketHistoryRecord }) {
+function TicketRow({ record, onShare }: { record: TicketHistoryRecord; onShare: () => void }) {
   const view = toTicketHistoryView(record);
   return <li className="rounded-xl border border-[var(--line)] p-4">
-    <div className="flex flex-wrap justify-between gap-3"><div><p className="font-black">{view.ownerLabel}</p><h3 className="mt-1 text-lg font-bold">{record.matchId.startsWith("f1:") ? formatEventTitle(record) : <>{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</>}</h3><p className="mt-1 text-xs text-[var(--muted)]">开赛 {new Date(record.kickoffAt).toLocaleString("zh-CN")}{view.submittedAt ? ` · 提交 ${new Date(view.submittedAt).toLocaleString("zh-CN")}` : ""}</p></div><div className="text-right"><span className="rounded-full bg-[var(--wash-brand)] px-3 py-1 text-xs font-bold text-[var(--field-dark)]">{statusLabels[record.status]}</span><p className="mt-2 text-xs text-[var(--muted)]">{view.disclosure}</p></div></div>
-    <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-4 sm:grid-cols-4"><Fact label="判断" value={view.selection ?? "未公开"}/><Fact label="投入积分" value={view.stake ?? "未公开"}/><Fact label="确认倍率" value={view.odds ?? "未公开"}/><Fact label={record.status === "FROZEN" ? "状态" : "净积分"} value={record.status === "FROZEN" ? "等待比赛结果" : view.netPoints ?? "未公开"}/></dl>
+    <div className="flex flex-wrap justify-between gap-3">
+      <div>
+        <p className="font-black">{view.ownerLabel}</p>
+        <h3 className="mt-1 text-lg font-bold">{record.matchId.startsWith("f1:") ? formatEventTitle(record) : <>{record.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.awayTeam}</>}</h3>
+        <p className="mt-1 text-xs text-[var(--muted)]">开赛 {new Date(record.kickoffAt).toLocaleString("zh-CN")}{view.submittedAt ? ` · 提交 ${new Date(view.submittedAt).toLocaleString("zh-CN")}` : ""}</p>
+      </div>
+      <div className="text-right flex flex-col items-end gap-2">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full bg-[var(--wash-brand)] px-3 py-1 text-xs font-bold text-[var(--field-dark)]">{statusLabels[record.status]}</span>
+          {view.selection && (
+            <button
+              type="button"
+              onClick={onShare}
+              aria-label="生成战报海报"
+              className="pressable-btn inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--wash-neutral-soft)] px-2.5 py-1 text-xs font-bold text-[var(--ink)] hover:border-[var(--field)]"
+            >
+              <span>↗</span>
+              <span className="hidden sm:inline">战报</span>
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-[var(--muted)]">{view.disclosure}</p>
+      </div>
+    </div>
+    <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-[var(--line)] pt-4 sm:grid-cols-4">
+      <Fact label="判断" value={view.selection ?? "未公开"}/>
+      <Fact label="投入积分" value={view.stake ?? "未公开"}/>
+      <Fact label="确认倍率" value={view.odds ?? "未公开"}/>
+      <Fact label={record.status === "FROZEN" ? "状态" : "净积分"} value={record.status === "FROZEN" ? "等待比赛结果" : view.netPoints ?? "未公开"}/>
+    </dl>
   </li>;
 }
 

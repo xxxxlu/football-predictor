@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMatchGet, GET } from "./route.js";
+import { createMatchGet } from "./handler.js";
+import { GET } from "./route.js";
 
 describe("GET /api/v1/matches/:matchId", () => {
   it("uses the production runtime PostgreSQL-backed cache", async () => {

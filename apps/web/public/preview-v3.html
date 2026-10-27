@@ -1,0 +1,1223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>PULSE · 极速赛道红竞技座舱 (Racing Crimson Edition)</title>
+  <style>
+    /* ============================================================
+       PULSE RACING RED DESIGN SYSTEM
+       核心主题色：高能赛道红 (#FF2A3B / Electric Crimson)
+       底色：哑光赛道深黑 (#0B0C0E / #121418)
+       交互：磁吸超级光标、3D 卡片透视、鼠标局部红色流光探照灯、双层滚字翻牌
+       ============================================================ */
+    :root {
+      --ln-red: #FF2A3B;              /* 核心高能赛车红 (Electric Crimson) */
+      --ln-red-glow: rgba(255, 42, 59, 0.45);
+      --ln-red-dim: rgba(255, 42, 59, 0.12);
+      --ln-red-dark: #C41224;
+      
+      --ln-black: #0B0C0E;            /* 纯哑光赛道深黑 */
+      --ln-surface: #121418;          /* 悬浮面板 */
+      --ln-surface-card: #15181F;     /* 内部卡片 */
+      
+      --ln-line: rgba(255, 255, 255, 0.1);
+      --ln-line-light: rgba(255, 255, 255, 0.22);
+      
+      --text-white: #FFFFFF;
+      --text-gray: #8F94A0;
+      --text-muted: #555A66;
+
+      --cubic-speed: cubic-bezier(0.65, 0.05, 0, 1);
+      --cubic-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      --font-display: -apple-system, BlinkMacSystemFont, "Impact", "Barlow Condensed", "Arial Black", sans-serif;
+      --font-mono: ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+      cursor: none !important; /* 启用赛道红自定义光标 */
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+      background-color: var(--ln-black);
+      color: var(--text-white);
+      line-height: 1.4;
+      min-height: 100vh;
+      padding: 20px;
+      overflow-x: hidden;
+      position: relative;
+      /* 极微弱的红色环境光 */
+      background-image: 
+        radial-gradient(at 0% 0%, rgba(255, 42, 59, 0.04) 0px, transparent 50%),
+        radial-gradient(at 100% 100%, rgba(255, 42, 59, 0.03) 0px, transparent 40%);
+    }
+
+    /* 胶片微噪点 (Film Grain) */
+    .film-grain {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.035;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    }
+
+    /* 赛道红磁吸跟随光标 (Magnetic Red Cursor) */
+    #cursor-dot {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 8px;
+      height: 8px;
+      background-color: var(--ln-red);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 10000;
+      transform: translate(-50%, -50%);
+      transition: width 0.2s ease, height 0.2s ease, background-color 0.2s ease;
+      box-shadow: 0 0 12px var(--ln-red);
+    }
+
+    #cursor-ring {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 36px;
+      height: 36px;
+      border: 1.5px solid rgba(255, 42, 59, 0.65);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 9999;
+      transform: translate(-50%, -50%);
+      transition: width 0.3s var(--cubic-spring), height 0.3s var(--cubic-spring), border-color 0.2s ease, background-color 0.2s ease;
+    }
+
+    body.cursor-hover #cursor-ring {
+      width: 60px;
+      height: 60px;
+      border-color: var(--ln-red);
+      background-color: rgba(255, 42, 59, 0.18);
+    }
+    body.cursor-hover #cursor-dot {
+      width: 4px;
+      height: 4px;
+      background-color: #fff;
+    }
+
+    .app-shell {
+      max-width: 1220px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      position: relative;
+      z-index: 10;
+    }
+
+    /* 双层滚字悬停翻转 (Rolling Text Flip) */
+    .roll-text {
+      display: inline-block;
+      overflow: hidden;
+      height: 1.25em;
+      position: relative;
+    }
+    .roll-text-inner {
+      display: flex;
+      flex-direction: column;
+      transition: transform 0.35s var(--cubic-speed);
+    }
+    .roll-text-top, .roll-text-bottom {
+      display: block;
+      line-height: 1.25em;
+      white-space: nowrap;
+    }
+    .roll-text-bottom {
+      color: var(--ln-red);
+    }
+
+    .has-roll:hover .roll-text-inner {
+      transform: translateY(-50%);
+    }
+
+    /* 赛道红胶囊导航 (Red Capsule Navbar) */
+    .ln-nav-capsule {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 24px;
+      background: var(--ln-surface);
+      border: 1px solid var(--ln-line);
+      border-radius: 9999px;
+      backdrop-filter: blur(25px);
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+    }
+
+    .brand-hub {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      text-decoration: none;
+    }
+
+    .ln-badge {
+      background: var(--ln-red);
+      color: #fff;
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: 15px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      letter-spacing: -0.02em;
+      box-shadow: 0 0 18px var(--ln-red-glow);
+    }
+
+    .brand-hgroup {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+    }
+    .brand-hgroup h1 {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+    .brand-hgroup span {
+      font-size: 11px;
+      color: var(--text-gray);
+      font-family: var(--font-mono);
+      letter-spacing: 0.05em;
+    }
+
+    /* 分段赛道控制器 */
+    .track-segmented-bar {
+      display: none;
+      background: #090A0D;
+      border: 1px solid var(--ln-line);
+      border-radius: 9999px;
+      padding: 4px;
+      gap: 6px;
+    }
+    @media (min-width: 820px) {
+      .track-segmented-bar {
+        display: flex;
+      }
+    }
+
+    .track-seg-btn {
+      padding: 7px 18px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-gray);
+      border: none;
+      background: transparent;
+      transition: all 0.25s var(--cubic-speed);
+    }
+    .track-seg-btn:hover {
+      color: #fff;
+    }
+    .track-seg-btn.active {
+      background: var(--ln-red);
+      color: #fff;
+      box-shadow: 0 0 16px var(--ln-red-glow);
+    }
+
+    /* 磁吸药丸按钮 */
+    .magnetic-btn {
+      background: transparent;
+      border: 1px solid var(--ln-line-light);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      padding: 10px 22px;
+      border-radius: 9999px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.15s ease-out, border-color 0.25s ease, color 0.25s ease;
+    }
+    .magnetic-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--ln-red);
+      transform: translateY(100%);
+      transition: transform 0.3s var(--cubic-speed);
+      z-index: 0;
+    }
+    .magnetic-btn:hover {
+      border-color: var(--ln-red);
+      color: #fff;
+    }
+    .magnetic-btn:hover::before {
+      transform: translateY(0);
+    }
+    .magnetic-btn > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 3D 悬浮透视与局部红色流光探照灯 (3D Tilt & Red Spotlight) */
+    .tilt-card {
+      background: var(--ln-surface);
+      border: 1px solid var(--ln-line);
+      border-radius: 24px;
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+      overflow: hidden;
+      transform-style: preserve-3d;
+      transition: transform 0.15s ease-out, border-color 0.3s ease, box-shadow 0.3s ease;
+      will-change: transform;
+    }
+    .tilt-card:hover {
+      border-color: var(--ln-line-light);
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 42, 59, 0.08);
+    }
+
+    .card-spotlight {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      background: radial-gradient(circle 280px at var(--mouse-x, -500px) var(--mouse-y, -500px), rgba(255, 42, 59, 0.15), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    .tilt-card:hover .card-spotlight {
+      opacity: 1;
+    }
+
+    .tilt-card > * {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 比赛核心看板 */
+    .match-deck-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--ln-line);
+      font-size: 12px;
+      text-transform: uppercase;
+      font-family: var(--font-mono);
+      color: var(--text-gray);
+    }
+
+    .match-versus-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      gap: 20px;
+      padding: 10px 0;
+    }
+
+    .team-badge-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .team-badge-row.away {
+      justify-content: flex-end;
+      text-align: right;
+    }
+
+    .team-crest-box {
+      width: 58px;
+      height: 58px;
+      border-radius: 16px;
+      background: #181C24;
+      border: 1px solid var(--ln-line);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: 20px;
+      color: #fff;
+      flex-shrink: 0;
+      transition: transform 0.3s var(--cubic-spring);
+    }
+    .tilt-card:hover .team-crest-box {
+      transform: translateZ(20px);
+    }
+    .team-crest-box.fcb { background: #DC052D; }
+    .team-crest-box.b04 { background: #E32219; }
+
+    .team-name-lg {
+      font-family: var(--font-display);
+      font-size: 26px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: -0.01em;
+      color: #fff;
+    }
+
+    .score-lightbox {
+      background: #000;
+      border: 1px solid var(--ln-line);
+      border-radius: 18px;
+      padding: 8px 24px;
+      text-align: center;
+      transition: all 0.3s var(--cubic-speed);
+    }
+    .score-numbers {
+      font-family: var(--font-display);
+      font-size: 44px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+    .score-lightbox.goal-live {
+      border-color: var(--ln-red);
+      box-shadow: 0 0 25px var(--ln-red-glow);
+    }
+    .score-lightbox.goal-live .score-numbers {
+      color: var(--ln-red);
+    }
+
+    /* 赛道攻防条 */
+    .track-meter {
+      background: #090A0E;
+      border: 1px solid var(--ln-line);
+      border-radius: 14px;
+      padding: 14px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .meter-labels {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-family: var(--font-mono);
+      color: var(--text-gray);
+      text-transform: uppercase;
+    }
+    .meter-progress-rail {
+      height: 6px;
+      background: #1C2028;
+      border-radius: 3px;
+      overflow: hidden;
+      display: flex;
+    }
+    .meter-bar-home {
+      width: 64%;
+      background: var(--ln-red);
+      transition: width 0.6s var(--cubic-speed);
+      box-shadow: 0 0 10px var(--ln-red-glow);
+    }
+    .meter-bar-away {
+      width: 36%;
+      background: #3A4050;
+      transition: width 0.6s var(--cubic-speed);
+    }
+
+    /* 盘口矩阵 */
+    .odds-matrix {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 14px;
+    }
+
+    .odds-tile {
+      background: var(--ln-surface-card);
+      border: 1px solid var(--ln-line);
+      border-radius: 16px;
+      padding: 18px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      text-align: left;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.25s var(--cubic-speed);
+    }
+    .odds-tile:hover {
+      background: #1A1E27;
+      border-color: var(--ln-line-light);
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px -8px rgba(0, 0, 0, 0.7);
+    }
+    .odds-tile.selected {
+      background: #160809;
+      border-color: var(--ln-red);
+      box-shadow: 0 0 0 1px var(--ln-red), 0 10px 30px -5px var(--ln-red-dim);
+    }
+
+    .odds-tile-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--text-gray);
+    }
+    .odds-tile.selected .odds-tile-top {
+      color: var(--ln-red);
+    }
+
+    .odds-tile-rate {
+      font-family: var(--font-display);
+      font-size: 32px;
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      color: #fff;
+    }
+    .odds-tile.selected .odds-tile-rate {
+      color: var(--ln-red);
+    }
+
+    /* 红色冲击波动画 (Red Ripple Wave) */
+    .ripple-wave {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--ln-red), transparent 70%);
+      transform: translate(-50%, -50%) scale(0);
+      pointer-events: none;
+      animation: ripple-grow 0.6s ease-out forwards;
+      opacity: 0.7;
+    }
+    @keyframes ripple-grow {
+      to {
+        transform: translate(-50%, -50%) scale(15);
+        opacity: 0;
+      }
+    }
+
+    /* 专属 F1 遥测条 (Ferrari / Racing Red Edition) */
+    .ln4-capsule-strip {
+      background: #0B0D10;
+      border: 1px solid var(--ln-line);
+      border-left: 4px solid var(--ln-red);
+      border-radius: 18px;
+      padding: 18px 22px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      transition: all 0.3s ease;
+    }
+    .ln4-capsule-strip:hover {
+      border-color: var(--ln-red);
+      box-shadow: 0 0 30px var(--ln-red-dim);
+    }
+
+    .ln4-driver-block {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .ln4-number-box {
+      width: 48px;
+      height: 48px;
+      border-radius: 14px;
+      background: var(--ln-red);
+      color: #fff;
+      font-family: var(--font-display);
+      font-weight: 900;
+      font-size: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 0 16px var(--ln-red-glow);
+    }
+
+    /* 右侧战术座舱 (Tactical Betslip) */
+    .slip-dock {
+      background: var(--ln-surface);
+      border: 1px solid var(--ln-line);
+      border-radius: 24px;
+      padding: 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+    }
+
+    .dock-headline {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--ln-line);
+    }
+    .dock-headline h2 {
+      font-family: var(--font-display);
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: #fff;
+    }
+
+    .dock-target-plate {
+      background: #090A0E;
+      border: 1px solid var(--ln-line);
+      border-radius: 16px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: border-color 0.2s ease;
+    }
+    .slip-dock:hover .dock-target-plate {
+      border-color: rgba(255, 42, 59, 0.3);
+    }
+
+    .stake-box-wrap {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .stake-input-field-wrap {
+      background: #090A0E;
+      border: 1px solid var(--ln-line);
+      border-radius: 14px;
+      padding: 12px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: border-color 0.25s ease;
+    }
+    .stake-input-field-wrap:focus-within {
+      border-color: var(--ln-red);
+      box-shadow: 0 0 16px var(--ln-red-dim);
+    }
+    .stake-input-num {
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-family: var(--font-display);
+      font-size: 28px;
+      font-weight: 900;
+      text-align: right;
+      width: 140px;
+      outline: none;
+    }
+
+    .chips-pill-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .chip-pill-item {
+      background: #090A0E;
+      border: 1px solid var(--ln-line);
+      color: var(--text-gray);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      padding: 9px 0;
+      border-radius: 9999px;
+      text-align: center;
+      transition: all 0.2s var(--cubic-speed);
+    }
+    .chip-pill-item:hover {
+      background: var(--ln-surface-card);
+      color: #fff;
+      border-color: var(--ln-line-light);
+      transform: translateY(-2px);
+    }
+    .chip-pill-item.active {
+      background: var(--ln-red);
+      color: #fff;
+      border-color: var(--ln-red);
+      box-shadow: 0 0 14px var(--ln-red-dim);
+    }
+
+    .payout-plate {
+      background: rgba(255, 42, 59, 0.05);
+      border: 1px solid rgba(255, 42, 59, 0.3);
+      border-radius: 16px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* 赛道红超大全宽药丸按钮 (Signature Red Super Pill) */
+    .btn-super-pill {
+      width: 100%;
+      padding: 18px 0;
+      border-radius: 9999px;
+      background: var(--ln-red);
+      border: none;
+      color: #fff;
+      font-family: var(--font-display);
+      font-size: 17px;
+      font-weight: 900;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      box-shadow: 0 10px 30px var(--ln-red-glow);
+      transition: all 0.25s var(--cubic-speed);
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-super-pill:hover {
+      background: #FF4252;
+      transform: translateY(-3px) scale(1.01);
+      box-shadow: 0 16px 40px var(--ln-red-glow);
+    }
+    .btn-super-pill:active {
+      transform: translateY(1px) scale(0.99);
+    }
+    .btn-super-pill.success {
+      background: #10B981;
+      color: #fff;
+    }
+
+    /* 顶部滑入事件幕帘 */
+    .race-curtain {
+      position: fixed;
+      top: -100px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #12151B;
+      border: 1.5px solid var(--ln-red);
+      border-radius: 9999px;
+      padding: 12px 28px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.9), 0 0 30px var(--ln-red-glow);
+      z-index: 10001;
+      opacity: 0;
+      transition: all 0.45s var(--cubic-speed);
+      pointer-events: none;
+    }
+    .race-curtain.visible {
+      top: 24px;
+      opacity: 1;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 24px;
+    }
+    @media (min-width: 960px) {
+      .main-grid {
+        grid-template-columns: 7fr 5fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="film-grain"></div>
+
+  <!-- 赛道红磁吸动态光标 -->
+  <div id="cursor-dot"></div>
+  <div id="cursor-ring"></div>
+
+  <!-- 赛车旗语幕帘通知 -->
+  <div id="race-curtain" class="race-curtain">
+    <span style="background: var(--ln-red); color: #fff; font-family: var(--font-display); font-weight: 900; font-size: 11px; padding: 3px 10px; border-radius: 9999px;">
+      ⚡ TELEMETRY FLASH
+    </span>
+    <span style="font-size: 14px; font-weight: 800; color: #fff; letter-spacing: -0.01em;" id="curtain-text">
+      BAYERN MUNICH // 85&apos; MUSIALA DRILLS INTO BOTTOM CORNER (3 - 1)
+    </span>
+  </div>
+
+  <div class="app-shell">
+
+    <!-- 1. 胶囊导航 -->
+    <header class="ln-nav-capsule">
+      <a href="#" class="brand-hub has-roll">
+        <span class="ln-badge">PLS // RED</span>
+        <div class="brand-hgroup">
+          <h1>
+            <span class="roll-text">
+              <span class="roll-text-inner">
+                <span class="roll-text-top">PULSE MOTORSPORT</span>
+                <span class="roll-text-bottom">PULSE RACING RED</span>
+              </span>
+            </span>
+          </h1>
+          <span>OFFICIAL HUB</span>
+        </div>
+      </a>
+
+      <!-- Segmented Track Switcher -->
+      <nav class="track-segmented-bar">
+        <button class="track-seg-btn active" onclick="switchTrack(this)">ON TRACK (现场)</button>
+        <button class="track-seg-btn" onclick="switchTrack(this)">TELEMETRY (盘口)</button>
+        <button class="track-seg-btn" onclick="switchTrack(this)">CALENDAR (赛程)</button>
+      </nav>
+
+      <div>
+        <button class="magnetic-btn has-roll" onclick="simulateRaceGoal()">
+          <span class="roll-text">
+            <span class="roll-text-inner">
+              <span class="roll-text-top">⚡ SIMULATE GOAL (进球更新)</span>
+              <span class="roll-text-bottom">⚡ TRIGGER 85&apos; GOAL!</span>
+            </span>
+          </span>
+        </button>
+      </div>
+    </header>
+
+    <!-- 2. 数据磁带跑马灯 -->
+    <div style="background: #090A0D; border: 1px solid var(--ln-line); border-radius: 12px; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; font-family: var(--font-mono); font-size: 12px; flex-wrap: wrap; gap: 10px;">
+      <div style="display: flex; align-items: center; gap: 12px;">
+        <span style="background: var(--ln-red); color: #fff; font-weight: 900; font-size: 10px; padding: 2px 8px; border-radius: 4px;">ON AIR</span>
+        <span style="color: #E2E8F0; font-weight: 600;" id="headline-text">
+          BUNDESLIGA // DER KLASSIKER — ALLIANZ ARENA (84&apos;)
+        </span>
+      </div>
+      <div style="color: var(--text-gray); font-size: 11px;">
+        <span>TRACK: <b>DRY</b></span> · <span>TEMP: <b>18°C</b></span> · <span style="color: var(--ln-red);">TELEMETRY: LIVE</span>
+      </div>
+    </div>
+
+    <!-- 3. 主竞技甲板 -->
+    <main class="main-grid">
+      
+      <!-- 左列：3D 透视卡片 + 盘口矩阵 + F1 -->
+      <section style="display: flex; flex-direction: column; gap: 20px;">
+        
+        <article class="tilt-card" id="main-match-card">
+          <div class="card-spotlight"></div>
+
+          <div class="match-deck-meta">
+            <div>
+              <span style="color: var(--ln-red); font-weight: 800;">01 / FOOTBALL HEADLINE</span>
+              <span style="margin-left: 8px; color: #fff; font-weight: 700;">ROUND 27 · DER KLASSIKER</span>
+            </div>
+            <div>MUNICH, GERMANY</div>
+          </div>
+
+          <!-- 对决双方与比分 -->
+          <div class="match-versus-grid">
+            <!-- Home -->
+            <div class="team-badge-row">
+              <div class="team-crest-box fcb">FCB</div>
+              <div>
+                <div class="team-name-lg">BAYERN MUNICH</div>
+                <div style="font-size: 11px; color: var(--text-gray); font-family: var(--font-mono); margin-top: 2px;">
+                  POSSESSION 64% · XG 2.45
+                </div>
+              </div>
+            </div>
+
+            <!-- Score -->
+            <div style="text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <div class="score-lightbox" id="score-lightbox">
+                <span class="score-numbers" id="score-digits">2 : 1</span>
+              </div>
+              <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: var(--ln-red); letter-spacing: 0.1em; text-transform: uppercase;" id="stage-text">
+                2ND HALF // 84&apos;
+              </span>
+            </div>
+
+            <!-- Away -->
+            <div class="team-badge-row away">
+              <div>
+                <div class="team-name-lg">LEVERKUSEN</div>
+                <div style="font-size: 11px; color: var(--text-gray); font-family: var(--font-mono); margin-top: 2px;">
+                  COUNTER ATTACKS 7 · SHOTS 4
+                </div>
+              </div>
+              <div class="team-crest-box b04">B04</div>
+            </div>
+          </div>
+
+          <!-- 赛道攻防推演进度条 -->
+          <div class="track-meter">
+            <div class="meter-labels">
+              <span>BAYERN DOMINANCE (64%)</span>
+              <span style="color: var(--ln-red);" id="meter-note">ATTACKING 18-YARD BOX</span>
+              <span>LEVERKUSEN (36%)</span>
+            </div>
+            <div class="meter-progress-rail">
+              <div class="meter-bar-home" id="meter-bar-home"></div>
+              <div class="meter-bar-away" id="meter-bar-away"></div>
+            </div>
+          </div>
+
+          <!-- 盘口按键矩阵 -->
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono); color: var(--text-gray); text-transform: uppercase;">
+              <span>LIVE 1X2 MARKET TELEMETRY</span>
+              <span>MAX ALLOCATION: 20,000 PTS</span>
+            </div>
+
+            <div class="odds-matrix">
+              <!-- Home -->
+              <div class="odds-tile selected has-roll" onclick="selectOddsTile(this, 'BAYERN MUNICH (HOME)', '1.45', event)">
+                <div class="odds-tile-top">
+                  <span>
+                    <span class="roll-text">
+                      <span class="roll-text-inner">
+                        <span class="roll-text-top">HOME // 主胜</span>
+                        <span class="roll-text-bottom">LOCK 1.45 →</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span style="color: #34D399; font-family: var(--font-mono);">▲ 0.03</span>
+                </div>
+                <div class="odds-tile-rate">1.45</div>
+              </div>
+
+              <!-- Draw -->
+              <div class="odds-tile has-roll" onclick="selectOddsTile(this, 'DRAW // 双方平局', '4.10', event)">
+                <div class="odds-tile-top">
+                  <span>
+                    <span class="roll-text">
+                      <span class="roll-text-inner">
+                        <span class="roll-text-top">DRAW // 平局</span>
+                        <span class="roll-text-bottom">LOCK 4.10 →</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span style="color: var(--text-muted); font-family: var(--font-mono);">PAR</span>
+                </div>
+                <div class="odds-tile-rate">4.10</div>
+              </div>
+
+              <!-- Away -->
+              <div class="odds-tile has-roll" onclick="selectOddsTile(this, 'LEVERKUSEN (AWAY)', '6.80', event)">
+                <div class="odds-tile-top">
+                  <span>
+                    <span class="roll-text">
+                      <span class="roll-text-inner">
+                        <span class="roll-text-top">AWAY // 客胜</span>
+                        <span class="roll-text-bottom">LOCK 6.80 →</span>
+                      </span>
+                    </span>
+                  </span>
+                  <span style="color: #FF3B30; font-family: var(--font-mono);">▼ 0.20</span>
+                </div>
+                <div class="odds-tile-rate">6.80</div>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- 专属 F1 赛车遥测条 (Scuderia Red) -->
+        <article class="ln4-capsule-strip">
+          <div class="ln4-driver-block">
+            <div class="ln4-number-box">#16</div>
+            <div>
+              <h4 style="font-family: var(--font-display); font-size: 18px; font-weight: 900; text-transform: uppercase; margin: 0;">
+                SCUDERIA CORSA // F1 TELEMETRY
+              </h4>
+              <p style="font-size: 11px; color: var(--text-gray); font-family: var(--font-mono); margin: 3px 0 0 0;">
+                MEXICAN GP · SPEED: 348.6 KM/H · TIRE: SOFT (76% WEAR) · DRS: OPEN
+              </p>
+            </div>
+          </div>
+
+          <button class="odds-tile has-roll" style="padding: 10px 18px;" onclick="selectOddsTile(this, 'SCUDERIA (P1 WIN)', '1.82', event)">
+            <span class="odds-tile-top" style="font-size: 10px;">
+              <span class="roll-text">
+                <span class="roll-text-inner">
+                  <span class="roll-text-top">P1 WINNER</span>
+                  <span class="roll-text-bottom">LOCK P1 →</span>
+                </span>
+              </span>
+            </span>
+            <span class="odds-tile-rate" style="font-size: 22px;">1.82</span>
+          </button>
+        </article>
+
+      </section>
+
+      <!-- 右列：战术确认座舱 -->
+      <aside class="slip-dock tilt-card">
+        <div class="card-spotlight"></div>
+
+        <div class="dock-headline">
+          <h2>TACTICAL BETSLIP</h2>
+          <span style="font-family: var(--font-mono); font-size: 10px; font-weight: 800; color: #fff; background: var(--ln-red); padding: 3px 10px; border-radius: 9999px; box-shadow: 0 0 10px var(--ln-red-glow);">
+            ● RACING RED ACTIVE
+          </span>
+        </div>
+
+        <!-- 锁定选项卡片 -->
+        <div class="dock-target-plate">
+          <div style="display: flex; justify-content: space-between; font-size: 10px; font-family: var(--font-mono); color: var(--text-gray); text-transform: uppercase;">
+            <span>ACTIVE SELECTION</span>
+            <span>BUNDESLIGA ROUND 27</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: baseline; margin-top: 4px;">
+            <span style="font-family: var(--font-display); font-size: 20px; font-weight: 900; text-transform: uppercase; color: #fff;" id="dock-target-name">
+              BAYERN MUNICH (HOME)
+            </span>
+            <span style="font-family: var(--font-display); font-size: 30px; font-weight: 900; color: var(--ln-red);" id="dock-target-odds">
+              1.45
+            </span>
+          </div>
+        </div>
+
+        <!-- 积分底池加注 -->
+        <div class="stake-box-wrap">
+          <div style="display: flex; justify-content: space-between; font-size: 11px; font-family: var(--font-mono); color: var(--text-gray); text-transform: uppercase;">
+            <span>STAKE ALLOCATION (PTS)</span>
+            <span>AVAILABLE: 14,250 PTS</span>
+          </div>
+
+          <div class="stake-input-field-wrap">
+            <span style="font-family: var(--font-mono); font-weight: 800; font-size: 12px; color: var(--text-muted);">PTS //</span>
+            <input type="number" id="stake-input" value="1000" oninput="recalcValues(this.value)" class="stake-input-num" />
+          </div>
+
+          <!-- 快捷筹码药丸 -->
+          <div class="chips-pill-grid">
+            <button class="chip-pill-item" onclick="setQuickChip(500)">500</button>
+            <button class="chip-pill-item active" onclick="setQuickChip(1000)">1,000</button>
+            <button class="chip-pill-item" onclick="setQuickChip(2500)">2,500</button>
+            <button class="chip-pill-item" onclick="setQuickChip(5000)">MAX</button>
+          </div>
+        </div>
+
+        <!-- 收益卡片 -->
+        <div class="payout-plate">
+          <div>
+            <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-gray); text-transform: uppercase;">
+              ESTIMATED PAYOUT
+            </div>
+            <div style="font-family: var(--font-display); font-size: 26px; font-weight: 900; color: var(--ln-red);" id="dock-payout-total">
+              1,450 PTS
+            </div>
+          </div>
+          <div style="text-align: right;">
+            <div style="font-size: 11px; font-family: var(--font-mono); color: var(--text-gray); text-transform: uppercase;">
+              NET PROFIT
+            </div>
+            <div style="font-family: var(--font-mono); font-size: 13px; font-weight: 800; color: #34D399;" id="dock-payout-profit">
+              +450 PTS
+            </div>
+          </div>
+        </div>
+
+        <!-- 赛道红超大全宽药丸按钮 -->
+        <button class="btn-super-pill has-roll" id="btn-submit-order" onclick="submitLNOrder()">
+          <span class="roll-text">
+            <span class="roll-text-inner" id="submit-roll-inner">
+              <span class="roll-text-top">LOCK PREDICTION // 锁定预测 →</span>
+              <span class="roll-text-bottom">CONFIRM &amp; DISPATCH →</span>
+            </span>
+          </span>
+        </button>
+
+        <p style="text-align: center; font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); letter-spacing: 0.05em; margin: 0;">
+          IDEMPOTENT SNOWFLAKE VERIFIED · ZERO FLOATING LOSS · POSTGRES ROW LOCK
+        </p>
+      </aside>
+
+    </main>
+
+  </div>
+
+  <script>
+    // 1. 赛道红磁吸光标跟随
+    const cursorDot = document.getElementById('cursor-dot');
+    const cursorRing = document.getElementById('cursor-ring');
+    let mouseX = window.innerWidth / 2;
+    let mouseY = window.innerHeight / 2;
+    let ringX = mouseX;
+    let ringY = mouseY;
+
+    window.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      cursorDot.style.left = `${mouseX}px`;
+      cursorDot.style.top = `${mouseY}px`;
+    });
+
+    function renderCursor() {
+      ringX += (mouseX - ringX) * 0.18;
+      ringY += (mouseY - ringY) * 0.18;
+      cursorRing.style.left = `${ringX}px`;
+      cursorRing.style.top = `${ringY}px`;
+      requestAnimationFrame(renderCursor);
+    }
+    requestAnimationFrame(renderCursor);
+
+    const interactives = document.querySelectorAll('button, .odds-tile, .brand-hub, .tilt-card, input');
+    interactives.forEach(el => {
+      el.addEventListener('mouseenter', () => document.body.classList.add('cursor-hover'));
+      el.addEventListener('mouseleave', () => document.body.classList.remove('cursor-hover'));
+    });
+
+    // 2. 3D 卡片透视倾角与红色探照灯流光
+    const tiltCards = document.querySelectorAll('.tilt-card');
+    tiltCards.forEach(card => {
+      card.addEventListener('mousemove', (e) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        card.style.setProperty('--mouse-x', `${x}px`);
+        card.style.setProperty('--mouse-y', `${y}px`);
+
+        const centerX = rect.width / 2;
+        const centerY = rect.height / 2;
+        const rotateX = ((y - centerY) / centerY) * -6;
+        const rotateY = ((x - centerX) / centerX) * 6;
+
+        card.style.transform = `perspective(1000px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateY(-2px)`;
+      });
+
+      card.addEventListener('mouseleave', () => {
+        card.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg) translateY(0)';
+      });
+    });
+
+    // 3. 磁力吸引按钮
+    const magneticBtns = document.querySelectorAll('.magnetic-btn');
+    magneticBtns.forEach(btn => {
+      btn.addEventListener('mousemove', (e) => {
+        const rect = btn.getBoundingClientRect();
+        const btnCenterX = rect.left + rect.width / 2;
+        const btnCenterY = rect.top + rect.height / 2;
+        const deltaX = (e.clientX - btnCenterX) * 0.35;
+        const deltaY = (e.clientY - btnCenterY) * 0.35;
+        btn.style.transform = `translate(${deltaX}px, ${deltaY}px)`;
+      });
+
+      btn.addEventListener('mouseleave', () => {
+        btn.style.transform = 'translate(0px, 0px)';
+      });
+    });
+
+    // 4. 盘口选择与红色冲击波
+    let activeOdds = 1.45;
+    let activeStake = 1000;
+    let goalTriggered = false;
+
+    function selectOddsTile(tile, name, odds, event) {
+      document.querySelectorAll('.odds-tile').forEach(t => t.classList.remove('selected'));
+      tile.classList.add('selected');
+
+      if (event) {
+        const rect = tile.getBoundingClientRect();
+        const wave = document.createElement('div');
+        wave.className = 'ripple-wave';
+        wave.style.left = `${event.clientX - rect.left}px`;
+        wave.style.top = `${event.clientY - rect.top}px`;
+        tile.appendChild(wave);
+        setTimeout(() => wave.remove(), 600);
+      }
+
+      activeOdds = parseFloat(odds);
+      document.getElementById('dock-target-name').textContent = name;
+      document.getElementById('dock-target-odds').textContent = odds;
+      
+      calculate();
+    }
+
+    // 5. 积分计算
+    function recalcValues(val) {
+      activeStake = Math.max(0, parseInt(val) || 0);
+      calculate();
+    }
+
+    function setQuickChip(val) {
+      activeStake = val;
+      document.getElementById('stake-input').value = val;
+      
+      document.querySelectorAll('.chip-pill-item').forEach(btn => {
+        btn.classList.toggle('active', btn.textContent.replace(',', '') === String(val) || (val === 5000 && btn.textContent === 'MAX'));
+      });
+
+      calculate();
+    }
+
+    function calculate() {
+      const total = Math.round(activeStake * activeOdds);
+      const profit = total - activeStake;
+      document.getElementById('dock-payout-total').textContent = `${total.toLocaleString()} PTS`;
+      document.getElementById('dock-payout-profit').textContent = `+${profit.toLocaleString()} PTS`;
+    }
+
+    function switchTrack(btn) {
+      document.querySelectorAll('.track-seg-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    }
+
+    // 6. 进球模拟 (F1 弹射幕帘通知)
+    function simulateRaceGoal() {
+      if (goalTriggered) return;
+      goalTriggered = true;
+
+      const curtain = document.getElementById('race-curtain');
+      curtain.classList.add('visible');
+      setTimeout(() => {
+        curtain.classList.remove('visible');
+      }, 4200);
+
+      const scoreBox = document.getElementById('score-lightbox');
+      const scoreDigits = document.getElementById('score-digits');
+      scoreBox.classList.add('goal-live');
+      scoreDigits.textContent = "3 : 1";
+
+      document.getElementById('headline-text').textContent = "🚨 GOAL // BAYERN MUNICH 85' MUSIALA SCORES (3 - 1) — ALLIANZ ARENA";
+      document.getElementById('stage-text').textContent = "GOAL MOMENT // 85'";
+      document.getElementById('meter-note').textContent = "MUSIALA CLINICAL FINISH TO BOTTOM CORNER";
+      document.getElementById('meter-bar-home').style.width = "74%";
+      document.getElementById('meter-bar-away').style.width = "26%";
+    }
+
+    // 7. 订单确认
+    function submitLNOrder() {
+      const btn = document.getElementById('btn-submit-order');
+      const rollInner = document.getElementById('submit-roll-inner');
+
+      btn.style.pointerEvents = 'none';
+      rollInner.innerHTML = `
+        <span class="roll-text-top">LOCKING TELEMETRY...</span>
+        <span class="roll-text-bottom">PROCESSING...</span>
+      `;
+
+      setTimeout(() => {
+        btn.classList.add('success');
+        rollInner.innerHTML = `
+          <span class="roll-text-top">✓ PREDICTION LOCKED (已幂等入账)</span>
+          <span class="roll-text-bottom">✓ INVOICE VERIFIED</span>
+        `;
+
+        setTimeout(() => {
+          btn.classList.remove('success');
+          btn.style.pointerEvents = 'auto';
+          rollInner.innerHTML = `
+            <span class="roll-text-top">LOCK PREDICTION // 锁定预测 →</span>
+            <span class="roll-text-bottom">CONFIRM &amp; DISPATCH →</span>
+          `;
+        }, 3200);
+      }, 700);
+    }
+  </script>
+</body>
+</html>

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { createMatchesGet, GET } from "./route.js";
+import { createMatchesGet } from "./handler.js";
+import { GET } from "./route.js";
 
 describe("GET /api/v1/matches", () => {
   it("uses the production runtime product cache instead of an unavailable placeholder", async () => {

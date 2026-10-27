@@ -1,4 +1,4 @@
-import type { FreshnessMeta, MatchView } from "./types.js";
+import type { FreshnessMeta, MatchView } from "./types";
 
 export type MatchStatusFilter = "ALL" | "PREDICTABLE" | "FINISHED";
 export type MatchFilter = { competition?: string; date?: string; timeZone?: string; status?: MatchStatusFilter };

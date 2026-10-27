@@ -23,6 +23,7 @@ export * from "./predictions/repository.js";
 export * from "./predictions/supplier-snapshot-adapter.js";
 export * from "./settlement/repository.js";
 export * from "./settlement/connection.js";
+export * from "./settlement/audit.js";
 export * from "./operations/repository.js";
 export * from "./operations/moderation-privacy.js";
 export * from "./operations/user-security.js";
@@ -37,3 +38,6 @@ export * from "./f1/results-sync.js";
 export * from "./f1/read-model-refresh.js";
 export * from "./privacy/schema.js";
 export * from "./privacy/repository.js";
+export * from "./billing/schema.js";
+export * from "./billing/repository.js";
+

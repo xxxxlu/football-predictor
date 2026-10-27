@@ -19,3 +19,8 @@ export * from "./settlement/settlement.js";
 export * from "./competition/index.js";
 export * from "./supplier-budget/index.js";
 export * from "./f1/index.js";
+export * from "./billing/index.js";
+export * from "./predictions/live-feed.js";
+export * from "./settlement/audit.js";
+
+

@@ -8,26 +8,21 @@
    keep working; their values now resolve to the PULSE palette.
    ============================================================ */
 :root {
-  /* ---- PULSE core (§6.1; hex mirrors the audited contrast table §6.3) ---- */
-  --pulse-carbon: #0a0b0b;
-  --pulse-carbon-2: #17191a;
-  --pulse-red: #ff3b20;
-  --pulse-red-deep: #b8170d;
-  --pulse-ivory: #f4f1e8;
-  --pulse-paper: #fbf9f2;
-  /* ⚠️ 荧光黄绿是保留色（§6.2）：只允许出现在 LIVE、OPEN、数据刚更新、当前最快
-     这类真实实时状态上，不做装饰、不做普通 CTA、不做选中态。当前合法落点仅
-     .pd-live-badge / .pulse-home__rail-kind--open / .pulse-weekend-session__marker.is-open
-     / .pulse-session-hero__state.is-open。新增用法前先确认它表达的是实时状态。
-     另外它在暖白底上只有 1.11:1，任何浅色区块都不能用。 */
-  --pulse-lime: #d2ff00;
-  --pulse-lime-deep: #a8cc00;
-  --pulse-muted: #5f635e;
-  --pulse-line-dark: rgb(255 255 255 / 14%);
-  --pulse-line-light: rgb(8 9 9 / 16%);
-  --pulse-teal: #1f8a70; /* success (§6.4) */
+  /* ---- PULSE core: Racing Red + Matte Asphalt Carbon ---- */
+  --pulse-carbon: #0b0c0e;
+  --pulse-carbon-2: #121418;
+  --pulse-red: #ff2a3b;
+  --pulse-red-deep: #ff2a3b;
+  --pulse-ivory: #0b0c0e;
+  --pulse-paper: #121418;
+  --pulse-lime: #ff2a3b;
+  --pulse-lime-deep: #e01d2d;
+  --pulse-muted: #8f94a0;
+  --pulse-line-dark: rgba(255, 255, 255, 0.15);
+  --pulse-line-light: rgba(255, 255, 255, 0.1);
+  --pulse-teal: #10b981; /* success */
 
-  /* ---- type scale (§7.2) ---- */
+  /* ---- type scale ---- */
   --type-hero: clamp(4.5rem, 16vw, 13rem);
   --type-display: clamp(3rem, 9vw, 7rem);
   --type-section: clamp(2.25rem, 6vw, 4.5rem);
@@ -35,53 +30,45 @@
   --type-body: 1rem;
   --type-caption: 0.75rem;
 
-  /* ---- fonts (§7.1; local stacks only — no runtime webfont fetch) ---- */
-  --pd-font-display: "Barlow Condensed", "Roboto Condensed", "Arial Narrow", "Noto Sans SC", "PingFang SC", sans-serif;
-  --pd-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  /* ---- fonts ---- */
+  --pd-font-display: "Barlow Condensed", "Impact", "Roboto Condensed", "Arial Narrow", sans-serif;
+  --pd-font-mono: ui-monospace, "SF Mono", "IBM Plex Mono", Menlo, monospace;
 
-  /* ---- shape (§8.2) + signature 11° cut (§4.0) ---- */
-  --pd-cut: 11deg;
-  --pd-radius-card: 12px;
-  --pd-radius-brand: 6px;
-  --pd-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  /* ---- shape: 0deg clean architectural edges & pill curves ---- */
+  --pd-cut: 0deg;
+  --pd-radius-card: 20px;
+  --pd-radius-brand: 9999px;
+  --pd-ease-out: cubic-bezier(0.65, 0.05, 0, 1);
 
   /* ---- legacy aliases → PULSE values ---- */
-  --paper: var(--pulse-ivory);
-  --paper-raised: var(--pulse-paper);
-  --ink: #121413;
-  --field: var(--pulse-red-deep);      /* brand accent on light surfaces */
-  --field-dark: #8d1007;
-  --coral: #a51408;                    /* error deep red (§6.4: 深红文字) */
-  --amber: #9a641c;
-  --line: #d5d0c2;
-  --muted: var(--pulse-muted);
-  --focus: #315f9e;
-  /* 暖白页面上的阴影必须带碳黑的暖调，纯黑投影会在象牙底色上发灰（§6.1） */
-  --shadow: 0 12px 34px rgb(26 20 14 / 12%);
-  --shadow-raised: 0 2px 4px rgb(26 20 14 / 5%), 0 18px 44px rgb(26 20 14 / 13%);
+  --paper: #0b0c0e;
+  --paper-raised: #121418;
+  --ink: #ffffff;
+  --field: var(--pulse-red);
+  --field-dark: #d81b2a;
+  --coral: var(--pulse-red);
+  --amber: #f59e0b;
+  --line: rgba(255, 255, 255, 0.1);
+  --muted: #8f94a0;
+  --focus: #ff2a3b;
+  --shadow: 0 12px 34px rgba(0, 0, 0, 0.6);
+  --shadow-raised: 0 4px 12px rgba(0, 0, 0, 0.5), 0 20px 48px rgba(0, 0, 0, 0.8);
 
-  /* ---- 中性/语义淡底 (§6.2 配比) ----
-     此前散落在各 feature 组件里的硬编码色（旧品牌的藏青 rgb(23 35 59)、
-     球场绿 rgb(23 107 77)、薄荷 #edf7f1）是暖白体系里的冷色杂质。
-     统一收敛成从碳黑/赛车红/琥珀派生的暖色淡底。 */
-  --wash-neutral: rgb(26 20 14 / 8%);
-  --wash-neutral-soft: rgb(26 20 14 / 5%);
-  --wash-brand: rgb(184 23 13 / 8%);
-  --wash-brand-soft: rgb(184 23 13 / 5%);
-  --wash-alert: rgb(154 100 28 / 12%);
-  --panel-brand: #fbeee9;
-  --panel-alert: #fbf1dc;
+  --wash-neutral: rgba(255, 255, 255, 0.06);
+  --wash-neutral-soft: rgba(255, 255, 255, 0.04);
+  --wash-brand: rgba(255, 42, 59, 0.12);
+  --wash-brand-soft: rgba(255, 42, 59, 0.06);
+  --wash-alert: rgba(245, 158, 11, 0.12);
+  --panel-brand: #18090a;
+  --panel-alert: #191408;
 
-  /* live/realtime — lime, never red (§6.4) */
-  --live: var(--pulse-lime-deep);
-
-  /* dark band aliases (formerly stadium night green) */
-  --volt: var(--pulse-lime);
-  --volt-deep: var(--pulse-lime-deep);
-  --volt-ink: #0e1000;
-  --night: var(--pulse-carbon);
-  --night-2: var(--pulse-carbon-2);
-  --night-line: var(--pulse-line-dark);
+  --live: var(--pulse-red);
+  --volt: var(--pulse-red);
+  --volt-deep: var(--pulse-red);
+  --volt-ink: #ffffff;
+  --night: #0b0c0e;
+  --night-2: #121418;
+  --night-line: rgba(255, 255, 255, 0.1);
 }
 
 .account-balance-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
@@ -111,8 +98,17 @@ body {
 }
 /* 放在 base 层，让链接上的文字颜色 utility 能正常覆盖继承色。 */
 @layer base { a { color: inherit; } }
-button, input { font: inherit; }
+button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]), select, textarea {
+  background-color: #121418;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):focus, select:focus, textarea:focus {
+  border-color: #FF2A3B;
+  outline: none;
+}
 :focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
 ::selection { background: rgb(255 59 32 / 22%); }
 
@@ -197,18 +193,155 @@ button, a { -webkit-tap-highlight-color: transparent; }
   box-shadow: 0 0 0 3px var(--paper-raised), 0 0 0 4px var(--line);
 }
 
-/* --- Scoreboard odds cell — selected = 赛车红 + 碳黑（§6.4） -------- */
+/* --- Scoreboard odds cell — LN4 Racing Red + Dark Titanium --- */
 .scoreboard-cell {
-  border-radius: var(--pd-radius-brand);
-  background: var(--pulse-paper);
-  border: 1px solid var(--pulse-line-light);
-  transition: transform .12s ease, border-color .12s ease, background .12s ease;
+  border-radius: 14px;
+  background: #15181F;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  transition: all 0.25s cubic-bezier(0.65, 0.05, 0, 1);
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.scoreboard-cell:hover:not(:disabled) { border-color: var(--pulse-red); transform: translateY(-1px); }
+.scoreboard-cell:hover:not(:disabled) {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: #1A1E27;
+  transform: translateY(-3px);
+  box-shadow: 0 10px 24px -8px rgba(0, 0, 0, 0.7);
+}
+.scoreboard-cell:active:not(:disabled) {
+  transform: scale(0.97);
+}
 .scoreboard-cell[data-selected="true"] {
-  background: var(--pulse-red);
-  border-color: var(--pulse-red); color: var(--pulse-carbon);
-  box-shadow: 0 6px 16px rgb(255 59 32 / 28%);
+  background: #160809 !important;
+  border-color: #FF2A3B !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 1px #FF2A3B, 0 10px 30px rgba(255, 42, 59, 0.25) !important;
+  transform: translateY(-3px);
+}
+.scoreboard-cell[data-selected="true"] strong,
+.scoreboard-cell[data-selected="true"] span {
+  color: #ffffff;
+}
+
+/* --- PULSE × LN4 Motion & Kinetic Utilities --- */
+.roll-text {
+  display: inline-block;
+  overflow: hidden;
+  height: 1.25em;
+  position: relative;
+}
+.roll-text-inner {
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.35s cubic-bezier(0.65, 0.05, 0, 1);
+}
+.roll-text-top, .roll-text-bottom {
+  display: block;
+  line-height: 1.25em;
+  white-space: nowrap;
+}
+.roll-text-bottom {
+  color: inherit;
+}
+.btn-super-pill .roll-text-bottom,
+.btn-volt .roll-text-bottom,
+.bg-\[\#FF2A3B\] .roll-text-bottom,
+[class*="bg-[#FF2A3B]"] .roll-text-bottom,
+.has-roll.btn-super-pill .roll-text-bottom {
+  color: #ffffff !important;
+}
+.btn-outline .roll-text-bottom,
+.btn-ghost .roll-text-bottom {
+  color: #FF2A3B;
+}
+.has-roll:hover .roll-text-inner {
+  transform: translateY(-50%);
+}
+
+.btn-super-pill:disabled,
+.btn-volt:disabled,
+.btn-solid:disabled,
+.btn-outline:disabled,
+.scoreboard-cell:disabled {
+  opacity: 0.45 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.tilt-card {
+  background: #121418;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  position: relative;
+  overflow: hidden;
+  transform-style: preserve-3d;
+  transition: transform 0.15s ease-out, border-color 0.3s ease, box-shadow 0.3s ease;
+  will-change: transform;
+}
+.tilt-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(450px circle at var(--mouse-x, -500px) var(--mouse-y, -500px), rgba(255, 42, 59, 0.16), transparent 70%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+}
+.tilt-card:hover::before {
+  opacity: 1;
+}
+.tilt-card:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 42, 59, 0.12);
+}
+
+.btn-super-pill {
+  border-radius: 9999px;
+  background: #FF2A3B;
+  color: #ffffff;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(255, 42, 59, 0.4);
+  transition: all 0.25s cubic-bezier(0.65, 0.05, 0, 1);
+  cursor: pointer;
+}
+.btn-super-pill:hover {
+  background: #FF4252;
+  transform: translateY(-2px);
+  box-shadow: 0 14px 36px rgba(255, 42, 59, 0.5);
+}
+
+/* --- Reusable pressable & interactive card utilities --- */
+.pressable-btn {
+  transition: transform 0.1s cubic-bezier(0.2, 0, 0, 1), background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pressable-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.interactive-card {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.2s ease,
+              box-shadow 0.22s ease;
+  will-change: transform;
+}
+.interactive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px -8px rgb(10 11 11 / 18%), 0 0 0 1px rgb(255 59 32 / 24%);
 }
 
 /* --- Live indicator — lime, not red (§6.4) -------------------------- */
@@ -231,14 +364,14 @@ button, a { -webkit-tap-highlight-color: transparent; }
 }
 @keyframes pulse-ring { 0% { transform: scale(1); opacity: .45; } 70% { transform: scale(2.7); opacity: 0; } 100% { opacity: 0; } }
 
-/* --- Skeleton shimmer ----------------------------------------------- */
+/* --- Skeleton shimmer (sleek, non-jarring) ------------------------- */
 .pitch-skeleton {
   position: relative; overflow: hidden; background: rgb(10 11 11 / 6%);
 }
 .pitch-skeleton::after {
   content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 55%), transparent);
-  transform: translateX(-100%); animation: skeleton-slide 1.5s ease-in-out infinite;
+  background: linear-gradient(90deg, transparent 0%, rgb(255 255 255 / 15%) 50%, transparent 100%);
+  transform: translateX(-100%); animation: skeleton-slide 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 @keyframes skeleton-slide { 100% { transform: translateX(100%); } }
 
@@ -267,22 +400,34 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 }
 @media (max-width: 640px) { .text-stroke { -webkit-text-stroke-width: 1.4px; } }
 
-/* --- Buttons（§6.4：品牌主按钮 红底碳黑字） --- */
+/* --- Buttons（PULSE LN4 Racing Red + Dark Titanium） --- */
 .btn-volt, .btn-solid, .btn-outline {
   display: inline-flex; align-items: center; justify-content: center; gap: .55em;
-  border-radius: var(--pd-radius-brand); font-weight: 700; letter-spacing: .01em;
+  border-radius: var(--pd-radius-brand); font-weight: 800; letter-spacing: .02em;
   min-height: 48px; padding: .8rem 1.7rem; text-decoration: none; cursor: pointer;
-  transition: transform .16s var(--pd-ease-out), box-shadow .16s ease, background .16s ease, color .16s ease;
+  transition: transform .16s var(--pd-ease-out), box-shadow .16s ease, background .16s ease, color .16s ease, border-color .16s ease;
 }
-.btn-volt { background: var(--pulse-red); color: var(--pulse-carbon); }
-.btn-volt:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgb(255 59 32 / 32%); background: #ff5238; }
-.btn-volt:active { transform: translateY(1px); }
-.btn-solid { background: var(--pulse-carbon); color: #fff; }
-.btn-solid:hover { transform: translateY(-2px); background: var(--pulse-carbon-2); }
-.btn-outline { border: 2px solid currentColor; }
-.btn-outline:hover { transform: translateY(-2px); background: currentColor; }
-/* Fill is currentColor — recolor only the label so it stays legible. */
-.btn-outline:hover > * { color: var(--pulse-carbon); }
+.btn-volt { background: #FF2A3B; color: #ffffff !important; box-shadow: 0 4px 18px rgba(255, 42, 59, 0.35); }
+.btn-volt:hover { transform: translateY(-2px); box-shadow: 0 12px 30px rgba(255, 42, 59, 0.5); background: #FF4252; color: #ffffff !important; }
+.btn-volt:active { transform: scale(0.97); }
+.btn-solid { background: #121418; color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.15); }
+.btn-solid:hover { transform: translateY(-2px); background: #1b1e24; border-color: rgba(255, 255, 255, 0.3); }
+.btn-solid:active { transform: scale(0.97); }
+.btn-outline { border: 1px solid rgba(255, 255, 255, 0.25); color: #ffffff; background: transparent; }
+.btn-outline:hover { transform: translateY(-2px); background: #ffffff !important; color: #0b0c0e !important; border-color: #ffffff !important; }
+.btn-outline:active { transform: scale(0.97); }
+.btn-outline:hover > * { color: #0b0c0e !important; }
+
+/* Safety guard for legacy button classes */
+[class*="hover:bg-[var(--ink)]"][class*="hover:text-white"] {
+  border-color: rgba(255, 255, 255, 0.25) !important;
+  color: #ffffff !important;
+}
+[class*="hover:bg-[var(--ink)]"][class*="hover:text-white"]:hover {
+  background-color: #ffffff !important;
+  color: #0b0c0e !important;
+  border-color: #ffffff !important;
+}
 
 /* --- Arrow link --- */
 .link-arrow { display: inline-flex; align-items: center; gap: .5em; }
@@ -361,11 +506,18 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pd-live-badge i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pd-blink 2s ease-in-out infinite; }
 @keyframes pd-blink { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 
-/* --- Global header（§10.1：碳黑 + 红色当前项下划线） --- */
+/* --- Global header（Apple-style Dynamic Frosted Navigation） --- */
 .pd-header {
   position: sticky; top: 0; z-index: 40;
-  background: var(--pulse-carbon); color: var(--pulse-ivory);
-  border-bottom: 1px solid var(--pulse-line-dark);
+  background: rgba(10, 11, 11, 0.78);
+  backdrop-filter: blur(24px) saturate(190%);
+  -webkit-backdrop-filter: blur(24px) saturate(190%);
+  color: var(--pulse-ivory);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: env(safe-area-inset-top);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  transition: background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pd-header::after {
   content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 2px;
@@ -375,34 +527,78 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 @keyframes pd-header-line { to { transform: scaleX(1); } }
 .pd-header-inner {
   display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
-  max-width: 80rem; margin: 0 auto; padding: .7rem 1rem;
+  max-width: 80rem; margin: 0 auto; padding: .65rem 1rem;
+}
+@media (max-width: 480px) {
+  .pd-header-inner { gap: 0.5rem; padding: 0.5rem 0.75rem; }
 }
 @media (min-width: 768px) { .pd-header-inner { padding-inline: 2rem; } }
-.pd-header-nav { display: flex; gap: clamp(.9rem, 2.5vw, 2rem); }
+.pd-header-nav { display: flex; align-items: center; gap: clamp(.5rem, 1.5vw, 1.25rem); }
 .pd-header-nav a {
-  color: rgb(244 241 232 / 64%); text-decoration: none; font-size: .9375rem; font-weight: 600;
-  padding: .3rem 0; border-bottom: 2px solid transparent; transition: color 140ms;
+  color: rgb(244 241 232 / 65%); text-decoration: none; font-size: .875rem; font-weight: 600;
+  padding: .35rem .75rem; border-radius: 9999px; transition: color 180ms, background-color 180ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.pd-header-nav a:hover { color: var(--pulse-ivory); }
-.pd-header-nav a[aria-current="page"] { color: var(--pulse-ivory); border-bottom-color: var(--pulse-red); }
+.pd-header-nav a:hover {
+  color: var(--pulse-ivory);
+  background-color: rgba(255, 255, 255, 0.08);
+}
+.pd-header-nav a[aria-current="page"] {
+  color: var(--pulse-ivory);
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
 @media (max-width: 767px) { .pd-header-nav { display: none; } }
 
-/* --- Mobile bottom nav（§10.2） --- */
+/* --- Mobile bottom nav（Apple iOS Dynamic Frosted Dock） --- */
 .pd-bottom-nav {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
   display: none; grid-template-columns: repeat(6, 1fr);
-  background: var(--pulse-carbon); border-top: 1px solid var(--pulse-line-dark);
-  padding: .4rem 0 calc(.4rem + env(safe-area-inset-bottom));
+  background: rgba(10, 11, 11, 0.88);
+  backdrop-filter: blur(28px) saturate(200%);
+  -webkit-backdrop-filter: blur(28px) saturate(200%);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.38);
+  padding-top: .45rem;
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: max(.45rem, env(safe-area-inset-bottom));
 }
 .pd-bottom-nav a {
   display: flex; flex-direction: column; align-items: center; gap: .15rem;
-  color: rgb(244 241 232 / 58%); text-decoration: none; font-size: .6875rem; min-height: 44px; justify-content: center;
+  color: rgb(244 241 232 / 52%); text-decoration: none; font-size: .625rem; min-height: 44px; justify-content: center;
+  padding: 0 1px;
+  transition: color 0.18s cubic-bezier(0.16, 1, 0.3, 1), transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
-.pd-bottom-nav a svg { width: 22px; height: 22px; }
-.pd-bottom-nav a[aria-current="page"] { color: var(--pulse-red); }
+.pd-bottom-nav a span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 9.5px;
+  line-height: 1.1;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.pd-bottom-nav a:active {
+  transform: scale(0.90);
+}
+.pd-bottom-nav a svg { width: 20px; height: 20px; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+@media (min-width: 375px) {
+  .pd-bottom-nav a svg { width: 22px; height: 22px; }
+  .pd-bottom-nav a span { font-size: 10px; }
+}
+.pd-bottom-nav a[aria-current="page"] {
+  color: var(--pulse-red);
+}
+.pd-bottom-nav a[aria-current="page"] svg {
+  transform: translateY(-2px) scale(1.1);
+  filter: drop-shadow(0 2px 6px rgba(255, 59, 32, 0.5));
+}
 @media (max-width: 767px) {
   .pd-bottom-nav { display: grid; }
-  .pd-has-bottom-nav { padding-bottom: 76px; }
+  .pd-has-bottom-nav { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
 }
 
 /* --- Sport switcher pills（§10.1 赛事页内切换） --- */
@@ -506,7 +702,13 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
    prototype's visual language without importing prototype links
    or fixture data. Motion is transform/opacity only.
    ============================================================ */
-.pd-page-lead { border-bottom: 1px solid var(--night-line); }
+.pd-page-lead {
+  border-bottom: 1px solid var(--night-line);
+  background:
+    radial-gradient(ellipse 70% 50% at 85% 15%, rgba(255, 59, 32, 0.12), transparent 70%),
+    radial-gradient(ellipse 45% 55% at 15% 85%, rgba(210, 255, 0, 0.04), transparent 60%),
+    var(--pulse-carbon);
+}
 /* 索引行用赛车红，不用荧光黄绿：§6.2 把荧光严格留给 LIVE / 刚更新这类实时状态，
    而 page lead 出现在每一个页面顶部，拿它当装饰会让真正的实时信号彻底失效。
    红色同时让深色页头的 eyebrow 和浅色区块的 .eyebrow（--field）成为同一套写法。
@@ -625,11 +827,33 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-home__mode-stamp { position: absolute; z-index: 2; right: 1rem; bottom: 1rem; color: var(--pulse-red); font: .62rem var(--pd-font-mono); letter-spacing: .12em; writing-mode: vertical-rl; }
 .pulse-home__final { border-top: 1px solid var(--night-line); }
 
-.pd-sport-switch { align-items: stretch; gap: .6rem; }
-.pd-sport-pill { display: inline-flex; min-height: 3.5rem; flex-direction: column; align-items: flex-start; justify-content: center; gap: .15rem; padding: .55rem 1.2rem; border-radius: 0; text-decoration: none; }
-.pd-sport-pill small { display: block; color: var(--pulse-muted); font: .59rem var(--pd-font-mono); letter-spacing: .12em; opacity: 1; transform: skewX(var(--pd-cut)); }
-.pd-sport-pill.is-active small { color: rgb(10 11 11 / 72%); }
-.pd-sport-pill:not(.is-active):hover small { color: var(--pulse-red); }
+.pd-sport-switch { align-items: stretch; gap: .75rem; }
+.pd-sport-pill {
+  display: inline-flex; min-height: 3.5rem; flex-direction: column; align-items: flex-start; justify-content: center; gap: .2rem; padding: .65rem 1.4rem;
+  border-radius: 16px;
+  background: #121418;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  text-decoration: none;
+  transition: all 0.25s cubic-bezier(0.65, 0.05, 0, 1);
+  cursor: pointer;
+}
+.pd-sport-pill small { display: block; color: var(--pulse-muted); font: .62rem var(--pd-font-mono); letter-spacing: .12em; transition: color 0.2s; }
+.pd-sport-pill:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  background: #181c24;
+  transform: translateY(-2px);
+}
+.pd-sport-pill.is-active {
+  background: #FF2A3B;
+  border-color: #FF2A3B;
+  color: #ffffff;
+  box-shadow: 0 0 24px rgba(255, 42, 59, 0.4);
+}
+.pd-sport-pill.is-active small {
+  color: rgba(255, 255, 255, 0.85);
+}
+.pd-sport-pill:not(.is-active):hover small { color: #ffffff; }
 
 .pulse-circuit { position: relative; min-height: 100%; overflow: hidden; background: var(--pulse-carbon-2); }
 .pulse-circuit img { object-fit: contain; padding: 1rem; filter: grayscale(1) contrast(1.2) brightness(1.2); opacity: .72; transition: transform .55s var(--pd-ease-out), filter .3s, opacity .3s; }
@@ -640,16 +864,27 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .pulse-circuit--empty { display: grid; place-items: center; min-height: 12rem; color: var(--pulse-muted); font: .7rem var(--pd-font-mono); letter-spacing: .16em; }
 @keyframes pulse-scan { 0%, 100% { opacity: 0; transform: translateY(-70px); } 45%, 55% { opacity: .7; transform: translateY(90px); } }
 
-.pulse-weekend-card { overflow: hidden; background: var(--pulse-paper); border: 1px solid var(--pulse-line-light); border-radius: 0; box-shadow: 0 18px 40px rgb(10 11 11 / 7%); }
+.pulse-weekend-card {
+  overflow: hidden;
+  background: #121418;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
+  transition: transform 0.2s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.pulse-weekend-card:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 30px rgba(255, 42, 59, 0.1);
+}
 .pulse-weekend-card[data-pulse-reveal] { opacity: 0; transform: translateY(22px); transition: opacity .65s var(--pd-ease-out), transform .65s var(--pd-ease-out); transition-delay: var(--pulse-card-delay); }
 .pulse-weekend-card[data-pulse-reveal][data-pulse-revealed="true"] { opacity: 1; transform: none; }
-.pulse-weekend-card__head { display: grid; grid-template-columns: minmax(9rem, .75fr) 1.25fr; min-height: 14rem; color: var(--pulse-ivory); background: var(--pulse-carbon); }
+.pulse-weekend-card__head { display: grid; grid-template-columns: minmax(9rem, .75fr) 1.25fr; min-height: 14rem; color: var(--pulse-ivory); background: #0B0C0E; }
 .pulse-weekend-card__media { min-height: 14rem; border-right: 1px solid var(--night-line); }
 .pulse-weekend-card__head-copy { padding: 1.4rem 1.5rem; }
 .pulse-weekend-card__circuit { margin-top: 1rem; color: var(--pulse-ivory); font: .65rem var(--pd-font-mono); letter-spacing: .12em; }
 .pulse-weekend-card__sessions { margin: 0; padding: 0; list-style: none; }
-.pulse-weekend-session { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) auto 1rem; gap: .8rem; align-items: center; min-height: 4.7rem; padding: .7rem 1.25rem; color: inherit; text-decoration: none; border-top: 1px solid var(--pulse-line-light); transition: background .2s, padding .25s var(--pd-ease-out); }
-.pulse-weekend-session:hover, .pulse-weekend-session:focus-visible { padding-left: 1.5rem; background: rgb(255 59 32 / 5%); }
+.pulse-weekend-session { display: grid; grid-template-columns: 2.2rem minmax(0, 1fr) auto 1rem; gap: .8rem; align-items: center; min-height: 4.7rem; padding: .7rem 1.25rem; color: inherit; text-decoration: none; border-top: 1px solid rgba(255, 255, 255, 0.08); transition: background .2s, padding .25s var(--pd-ease-out); }
+.pulse-weekend-session:hover, .pulse-weekend-session:focus-visible { padding-left: 1.5rem; background: rgba(255, 42, 59, 0.08); }
 .pulse-weekend-session__marker { display: grid; place-items: center; width: 1.8rem; height: 1.8rem; color: var(--pulse-muted); font-size: .65rem; border: 1px solid var(--pulse-line-light); }
 .pulse-weekend-session__marker.is-open { color: var(--pulse-carbon); background: var(--pulse-lime); border-color: var(--pulse-lime); }
 .pulse-weekend-session__state { white-space: nowrap; padding: .25rem .55rem; font: .62rem var(--pd-font-mono); letter-spacing: .06em; }
@@ -864,19 +1099,18 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
    原本是一张和比赛卡片同款的白卡：三组 fieldset 上下堆叠、胶囊全是同一种、
    命中数和「数据截至」挤成一行同号小灰字。筛选是工具不是内容，所以撤掉卡片
    外壳，改成上下规线夹住的控制条；命中数按 §7.3 提成这条里的主数字。 */
-.pulse-filter { border-top: 2px solid var(--pulse-carbon); border-bottom: 1px solid var(--line); padding: 1.15rem 0 1rem; }
+.pulse-filter { border-top: 1px solid rgba(255, 255, 255, 0.1); border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding: 1.15rem 0 1rem; }
 .pulse-filter__legend { display: block; font: 700 .62rem/1 var(--pd-font-mono); letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
 .pulse-filter__count { font: 800 clamp(1.45rem, 3.4vw, 2rem)/1 var(--pd-font-display); font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
 .pulse-filter__count i { font-style: normal; color: var(--muted); }
 .pulse-filter__unit { margin-left: .38rem; font: 700 .66rem/1 var(--pd-font-mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
 
-/* 分段控件：整条轨道斜切，标签各自反向切回来。若改成逐个按钮斜切，
-   两端会按 height × tan(11°) ≈ 8px 探出轨道外。 */
-.pulse-seg { display: inline-flex; overflow: hidden; gap: 1px; padding: 2px; background: var(--pulse-carbon); transform: skewX(calc(var(--pd-cut) * -1)); }
-.pulse-seg button { min-height: 2.5rem; padding: 0 1.2rem; font: 700 .8rem/1 var(--pd-font-mono); letter-spacing: .06em; color: rgb(244 241 232 / 74%); background: transparent; transition: background 140ms, color 140ms; }
-.pulse-seg button > span { display: inline-block; transform: skewX(var(--pd-cut)); }
-.pulse-seg button:hover { color: var(--pulse-ivory); }
-.pulse-seg button[aria-pressed="true"] { color: var(--pulse-ivory); background: var(--pulse-red-deep); }
+/* 分段控件：LN4 Titanium Pill */
+.pulse-seg { display: inline-flex; overflow: hidden; gap: 4px; padding: 4px; background: #121418; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 9999px; }
+.pulse-seg button { min-height: 2.2rem; border-radius: 9999px; padding: 0 1.1rem; font: 700 .75rem/1 var(--pd-font-mono); letter-spacing: .06em; color: rgba(255, 255, 255, 0.65); background: transparent; transition: all 160ms ease; cursor: pointer; }
+.pulse-seg button > span { display: inline-block; }
+.pulse-seg button:hover { color: #ffffff; background: rgba(255, 255, 255, 0.08); }
+.pulse-seg button[aria-pressed="true"] { color: #ffffff; background: #FF2A3B; box-shadow: 0 0 14px rgba(255, 42, 59, 0.4); }
 
 /* ---- 语言切换器 -------------------------------------------------------
    这个控件同时出现在碳黑导航条和登录页的浅色页头上，原本一律写死成
@@ -923,7 +1157,7 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 }
 @media (max-width: 767px) {
   .pulse-home__hero-grid { min-height: auto; padding-top: 2.5rem; padding-bottom: 1.5rem; }
-  .pulse-home__title { font-size: clamp(4rem, 18vw, 5.5rem); }
+  .pulse-home__title { font-size: clamp(2.4rem, 11vw, 4.2rem); }
   .pulse-home__sub { margin-top: 1.4rem; font-size: 1rem; }
   .pulse-home__cta { flex-direction: column; align-items: stretch; }
   .pulse-home__cta > * { width: 100%; }
@@ -953,6 +1187,13 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
   .pulse-session-hero__track .pulse-circuit { min-height: 13rem; }
   .pulse-timing-tower__head, .pulse-market-panel header, .pulse-slip__head { align-items: start; flex-direction: column; }
   .pulse-timing-row { grid-template-columns: 1.8rem .25rem 2rem minmax(0, 1fr) auto; gap: .55rem; padding-inline: .85rem; }
+}
+
+@media (min-width: 768px) and (max-width: 1024px) {
+  .pulse-home__hero-grid { min-height: auto; padding-top: 3.5rem; padding-bottom: 2.5rem; }
+  .pulse-home__title { font-size: clamp(3.2rem, 8vw, 5.5rem); }
+  .pulse-home__mode-panel { grid-template-columns: 1fr; }
+  .pulse-home__mode-visual { min-height: 18rem; border-top: 1px solid var(--night-line); border-left: 0; }
 }
 
 /* ============================================================
@@ -1074,20 +1315,34 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
    两个入口同时锁定，直到 Next 路由完成或安全超时释放。 */
 .pd-sport-switch[aria-busy="true"] { cursor: progress; }
 .pd-sport-pill { position: relative; overflow: hidden; isolation: isolate; transition: background 180ms, border-color 180ms, color 180ms, transform 180ms var(--pd-ease-out), opacity 180ms; }
-.pd-sport-pill.is-active { border-color: var(--pulse-red-deep); background: rgb(184 23 13 / 8%); color: var(--pulse-carbon); font-weight: 800; cursor: default; }
-.pd-sport-pill.is-active::after { content: ""; position: absolute; z-index: 0; right: .8rem; bottom: 0; left: .8rem; height: 3px; background: var(--pulse-red); transform: skewX(var(--pd-cut)); }
+.pd-sport-pill.is-active {
+  border-color: #FF2A3B;
+  background: #FF2A3B !important;
+  color: #ffffff !important;
+  font-weight: 800;
+  cursor: default;
+  box-shadow: 0 0 24px rgba(255, 42, 59, 0.4);
+}
+.pd-sport-pill.is-active small {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
 .pd-sport-pill > span, .pd-sport-pill > small { position: relative; z-index: 1; }
 .pd-sport-pill:disabled { opacity: 1; }
 .pd-sport-switch[aria-busy="true"] .pd-sport-pill:not(.is-switching) { opacity: .48; cursor: wait; }
-.pd-sport-pill.is-switching { border-color: var(--pulse-red); color: var(--pulse-carbon); cursor: wait; animation: pulse-sport-handoff 650ms var(--pd-ease-out) infinite; }
+.pd-sport-pill.is-switching { border-color: var(--pulse-red); color: #ffffff; cursor: wait; animation: pulse-sport-handoff 650ms var(--pd-ease-out) infinite; }
 .pd-sport-pill.is-switching::before { content: ""; position: absolute; z-index: 0; inset: 0; background: linear-gradient(110deg, transparent 10%, rgb(255 59 32 / 9%) 36%, rgb(255 59 32 / 58%) 50%, rgb(255 59 32 / 9%) 64%, transparent 90%); transform: translateX(-120%) skewX(var(--pd-cut)); animation: pulse-sport-scan 650ms linear infinite; }
-.pd-sport-pill.is-switching small { color: var(--pulse-red-deep); }
+.pd-sport-pill.is-switching small { color: rgba(255, 255, 255, 0.8); }
 @keyframes pulse-sport-scan { to { transform: translateX(120%) skewX(var(--pd-cut)); } }
 @keyframes pulse-sport-handoff { 50% { transform: skewX(calc(var(--pd-cut) * -1)) translateY(-2px); } }
 @media (prefers-reduced-motion: reduce) { .pd-sport-pill.is-switching, .pd-sport-pill.is-switching::before { animation: none; } }
 
 /* --- One shared session verification state -------------------------- */
-.session-verification-overlay { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; min-height: 100dvh; overflow: hidden; background: rgb(10 11 11 / 93%); backdrop-filter: blur(10px); isolation: isolate; }
+.session-verification-overlay {
+  position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; min-height: 100dvh; overflow: hidden;
+  background: rgb(10 11 11 / 93%); backdrop-filter: blur(10px); isolation: isolate;
+  animation: session-overlay-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1) 0.12s backwards;
+}
+@keyframes session-overlay-fade { from { opacity: 0; } to { opacity: 1; } }
 .session-verification-overlay::before, .session-verification-overlay::after { content: ""; position: absolute; pointer-events: none; }
 .session-verification-overlay::before { inset: 0; opacity: .18; background-image: linear-gradient(rgb(244 241 232 / 12%) 1px, transparent 1px), linear-gradient(90deg, rgb(244 241 232 / 12%) 1px, transparent 1px); background-size: 3.5rem 3.5rem; mask-image: radial-gradient(circle at center, black, transparent 68%); }
 .session-verification-overlay::after { width: min(62vw, 48rem); aspect-ratio: 1; border-radius: 50%; background: radial-gradient(circle, rgb(255 59 32 / 15%), transparent 68%); filter: blur(10px); }
@@ -1126,3 +1381,138 @@ html.no-scroll, body.no-scroll { overflow: hidden; }
 .avatar-editor__progress { width: 100%; height: .4rem; margin-top: .6rem; border-radius: 999px; background: var(--wash-neutral); overflow: hidden; }
 .avatar-editor__progress > span { display: block; height: 100%; background: var(--field); transition: width .2s var(--pd-ease-out); }
 .avatar-editor__note { margin-top: .6rem; font-size: .75rem; line-height: 1.5; color: var(--muted); }
+
+/* --- Responsive Bottom Sheet & Desktop Slide-Over Drawer ------------ */
+@keyframes sheet-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-slide-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes sheet-slide-left {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.bottom-sheet-overlay {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgb(0 0 0 / 68%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  animation: sheet-fade-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.bottom-sheet-panel {
+  position: fixed; inset-x: 0; bottom: 0; z-index: 51;
+  max-height: 88dvh;
+  background: var(--paper-raised);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  box-shadow: 0 -10px 40px rgb(0 0 0 / 35%), 0 0 0 1px rgb(255 255 255 / 8%);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  animation: sheet-slide-up 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+}
+
+@media (min-width: 768px) {
+  .bottom-sheet-panel {
+    inset-x: auto; right: 0; top: 0; bottom: 0;
+    width: 440px; max-height: 100dvh;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+    box-shadow: -10px 0 40px rgb(0 0 0 / 30%);
+    animation: sheet-slide-left 0.28s cubic-bezier(0.2, 0.9, 0.3, 1) forwards;
+  }
+}
+
+/* ============================================================
+   GOOGLE MATERIAL 3 & APPLE MODERN DESIGN UPGRADES
+   ============================================================ */
+.apple-card {
+  border-radius: 1.5rem; /* 24px Apple squircle */
+  transition: transform 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.38s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 4px 24px -2px rgba(26, 20, 14, 0.05), 0 0 0 1px rgba(26, 20, 14, 0.04);
+}
+.apple-card:hover {
+  transform: translateY(-3px) scale(1.004);
+  box-shadow: 0 18px 42px -6px rgba(26, 20, 14, 0.12), 0 0 0 1px rgba(26, 20, 14, 0.08);
+}
+
+.m3-fade-rail {
+  mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, black 16px, black calc(100% - 16px), transparent);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* --- Comprehensive iPhone & iOS Compatibility Enhancements --- */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.75rem);
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-area-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-area-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+html {
+  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  overflow-x: hidden;
+  min-height: 100dvh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@supports (min-height: 100dvh) {
+  .min-h-screen {
+    min-height: 100dvh !important;
+  }
+}
+
+/* iOS Safari auto-zoom prevention: ensure inputs have >= 16px font-size on mobile */
+@media screen and (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* iOS momentum scrolling on all scrollables */
+.overflow-x-auto,
+.overflow-y-auto,
+[class*="overflow-x-"],
+[class*="overflow-y-"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Touch responsiveness: eliminate 300ms tap delay & gray callout */
+button, a, input, select, textarea {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+
+

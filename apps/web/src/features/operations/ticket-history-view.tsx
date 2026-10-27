@@ -5,6 +5,8 @@ import { DataStatePanel } from "@/components/data-state-panel";
 import { formatEventTitle, formatSelectionLabel } from "../matchday/selection-label";
 import type { ApiEnvelope, ApiFailure } from "@/features/matchday/types";
 import { formatPoints, formatPointsDelta } from "@/lib/points";
+import { VictoryShareModal } from "@/components/victory-card/victory-share-modal";
+import type { VictoryCardData } from "@/components/victory-card/types";
 import { competitionFilterOptions, filterHistoryRecords, seasonCover, type CrossCompetitionRecord, type SettlementOutcome } from "./history-presentation";
 
 type HistoryArchive = {
@@ -21,6 +23,8 @@ export function TicketHistoryView() {
   const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [shareData, setShareData] = useState<VictoryCardData | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
   const options = useMemo(() => competitionFilterOptions(archive?.records ?? []), [archive]);
   const records = useMemo(() => filterHistoryRecords(archive?.records ?? [], filter), [archive, filter]);
 
@@ -43,12 +47,54 @@ export function TicketHistoryView() {
     return () => controller.abort();
   }, []);
 
+  function handleShareSeason(cover: ReturnType<typeof seasonCover>) {
+    if (!archive) return;
+    setShareData({
+      kind: "SEASON",
+      seasonLabel: cover.seasonLabel || "2026/27",
+      netPoints: `${formatPointsDelta(cover.net)} PTS`,
+      hitRate: cover.hitRate === null ? "—" : `${Math.round(cover.hitRate * 100)}%`,
+      settledTickets: archive.summary.settledTickets,
+      wins: archive.summary.wins,
+      voids: archive.summary.voids,
+      coveredTickets: cover.covered,
+    });
+    setShareOpen(true);
+  }
+
+  function handleShareRecord(record: CrossCompetitionRecord) {
+    const net = Number(record.settlement.grossReturnPoints) - Number(record.stakePoints);
+    const netLabel = net > 0 ? `+${formatPoints(net)} PTS` : `${formatPoints(net)} PTS`;
+    const stakeNum = Number(record.stakePoints);
+    const returnNum = Number(record.settlement.grossReturnPoints);
+    const oddsLabel = stakeNum > 0 && returnNum > 0 ? (returnNum / stakeNum).toFixed(2) : "—";
+
+    setShareData({
+      kind: "MATCH",
+      competition: `${record.competition.name} · ${record.competition.season}`,
+      homeTeam: record.fixture.homeTeam,
+      awayTeam: record.fixture.awayTeam,
+      kickoffAt: record.fixture.kickoffAt || record.settlement.settledAt,
+      settledAt: record.settlement.settledAt,
+      selection: formatSelectionLabel(record.selection),
+      odds: oddsLabel,
+      stakePoints: `${formatPoints(record.stakePoints)} PTS`,
+      grossReturnPoints: `${formatPoints(record.settlement.grossReturnPoints)} PTS`,
+      netPoints: netLabel,
+      outcome: record.settlement.outcome === "WIN" ? "WIN" : record.settlement.outcome === "PUSH" ? "PUSH" : "LOSS",
+      ticketId: record.ticketId,
+      roomName: record.room.name,
+      auditId: record.settlement.auditId,
+    });
+    setShareOpen(true);
+  }
+
   if (loading) return <DataStatePanel state="loading" title="正在加载长期档案" description="正在汇总已结算判断。"/>;
   if (error) return <DataStatePanel state="error" title="长期档案暂不可用" description={error}/>;
   if (!archive?.records.length) return <DataStatePanel state="empty" title="还没有已结算记录" description="这里只汇总已经结算的判断。刚提交、还没开赛的判断请到对应房间页面的「我的判断记录」查看；比赛结算后会自动出现在这里。"/>;
 
   return <div>
-    <SeasonCover archive={archive}/>
+    <SeasonCover archive={archive} onShare={handleShareSeason}/>
     <p className="mt-4 text-sm leading-6 text-[var(--muted)]">
       长期档案跨房间汇总的只有已结算判断次数。每个房间的可用、冻结和更正债务始终独立核算，不会在这里合并成余额。
     </p>
@@ -61,19 +107,30 @@ export function TicketHistoryView() {
       </label>
       <p className="text-xs text-[var(--muted)]">显示 {records.length} / {archive.records.length} 条</p>
     </div>
-    <ol className="mt-6 space-y-4">{records.map((record) => <HistoryRecord key={record.ticketId} record={record}/>)}</ol>
+    <ol className="mt-6 space-y-4">{records.map((record) => <HistoryRecord key={record.ticketId} record={record} onShare={() => handleShareRecord(record)}/>)}</ol>
+    <VictoryShareModal data={shareData} isOpen={shareOpen} onClose={() => setShareOpen(false)} />
   </div>;
 }
 
 /* §15.1 的年度赛季卡。此前这里是四个等宽小方块（已结算 / 命中 / 未命中 / 走盘），
    四个数字同样大小、没有主次，读者要自己算命中率。改成一张封面：净积分做主角，
    字号是标签的 10 倍以上，命中率用真实数据画成红条，其余降级为脚注。 */
-function SeasonCover({ archive }: { archive: HistoryArchive }) {
+function SeasonCover({ archive, onShare }: { archive: HistoryArchive; onShare: (cover: ReturnType<typeof seasonCover>) => void }) {
   const cover = seasonCover(archive.summary, archive.records);
   const hitRate = cover.hitRate === null ? "—" : `${Math.round(cover.hitRate * 100)}%`;
   return <section className="pulse-season" aria-label="长期表现摘要">
     <div>
-      <p className="pd-page-lead__index">{cover.seasonLabel ? `${cover.seasonLabel} SEASON` : "SEASON"}</p>
+      <div className="flex items-center justify-between gap-3">
+        <p className="pd-page-lead__index">{cover.seasonLabel ? `${cover.seasonLabel} SEASON` : "SEASON"}</p>
+        <button
+          type="button"
+          onClick={() => onShare(cover)}
+          className="pressable-btn inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-bold text-white transition hover:bg-white/25"
+        >
+          <span>🏆</span>
+          <span>生成战绩海报</span>
+        </button>
+      </div>
       <strong className="pulse-season__net mt-3">{formatPointsDelta(cover.net)}<span className="pulse-season__unit">PTS</span></strong>
       <p className="mt-3 text-xs leading-5 text-[color:rgb(244_241_232_/_60%)]">
         {cover.truncated ? `净积分覆盖最近 ${cover.covered} 笔结算，共 ${archive.summary.settledTickets} 笔` : `覆盖全部 ${cover.covered} 笔已结算判断`}
@@ -93,7 +150,7 @@ function SeasonCover({ archive }: { archive: HistoryArchive }) {
   </section>;
 }
 
-function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
+function HistoryRecord({ record, onShare }: { record: CrossCompetitionRecord; onShare: () => void }) {
   return <li className="surface p-4 sm:p-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -101,7 +158,18 @@ function HistoryRecord({ record }: { record: CrossCompetitionRecord }) {
         <h2 className="display mt-1 text-xl font-bold">{record.fixture.id.startsWith("f1:") ? formatEventTitle({ matchId: record.fixture.id, homeTeam: record.fixture.homeTeam, awayTeam: record.fixture.awayTeam }) : <>{record.fixture.homeTeam} <span className="text-sm font-normal text-[var(--muted)]">对</span> {record.fixture.awayTeam}</>}</h2>
         <p className="mt-1 text-xs text-[var(--muted)]">房间：{record.room.name} · 结算于 <time dateTime={record.settlement.settledAt}>{new Date(record.settlement.settledAt).toLocaleString("zh-CN")}</time></p>
       </div>
-      <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[var(--wash-neutral)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
+      <div className="flex items-center gap-2">
+        <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${record.settlement.outcome === "WIN" ? "bg-[var(--field)] text-white" : record.settlement.outcome === "LOSS" ? "bg-[var(--coral)] text-white" : "bg-[var(--wash-neutral)] text-[var(--muted)]"}`}>{outcomeLabel[record.settlement.outcome]}</span>
+        <button
+          type="button"
+          onClick={onShare}
+          aria-label="生成战报海报"
+          className="pressable-btn inline-flex items-center gap-1 rounded-full border border-[var(--line)] bg-[var(--wash-neutral-soft)] px-2.5 py-1 text-xs font-bold text-[var(--ink)] hover:border-[var(--field)]"
+        >
+          <span>↗</span>
+          <span className="hidden sm:inline">战报海报</span>
+        </button>
+      </div>
     </header>
     <dl className="mt-4 grid grid-cols-2 gap-3 border-t rule pt-4 sm:grid-cols-4">
       <Fact label="选择" value={formatSelectionLabel(record.selection)}/>
